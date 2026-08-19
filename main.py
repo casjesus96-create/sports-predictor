@@ -1,9 +1,9 @@
 from datetime import date,datetime,timezone
 from fastapi import FastAPI,HTTPException,Query
 from pydantic import BaseModel
-from .mlb_client import get_schedule
-from .prediction import baseline_prediction
-from .repository import save_prediction
+from mlb_client import get_schedule
+from prediction import baseline_prediction
+from repository import save_prediction
 app=FastAPI(title="Sports Predictor API",version="1.0.0")
 class PredictionRequest(BaseModel): event_id:str
 @app.get("/health")
