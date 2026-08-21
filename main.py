@@ -5,6 +5,7 @@ from mlb_client import get_schedule
 from prediction import baseline_prediction
 from analyzer import analyze_mlb_game
 from repository import save_prediction
+import requests
 app=FastAPI(title="Sports Predictor API",version="1.0.0")
 class PredictionRequest(BaseModel): event_id:str
 @app.get("/health")
