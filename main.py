@@ -72,4 +72,3 @@ def analyze_match(payload: dict):
         "error": "Deporte o liga todavía no implementado",
         "sport": sport,
         "league": league
-import requests
