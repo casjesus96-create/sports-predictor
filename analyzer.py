@@ -23,7 +23,7 @@ def get_json(url, params=None):
     return response.json()
 
 
-def get_game(game_id):
+def get_game(game_id): "823746"
     url = f"{MLB_API}.1/game/{game_id}/feed/live"
     return get_json(url)
 
