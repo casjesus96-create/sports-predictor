@@ -1,4 +1,5 @@
 from datetime import date,datetime,timezone
+import requests
 from fastapi import FastAPI,HTTPException,Query
 from pydantic import BaseModel
 from mlb_client import get_schedule
