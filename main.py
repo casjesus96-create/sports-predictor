@@ -22,7 +22,7 @@ def analyze(req:PredictionRequest):
     "away_probability":r["away_probability"],"confidence":r["confidence"],"data_quality":r["data_quality"],
     "features":r["features"],"result_status":"PENDING"}
     return {**payload,"experimental":True,"persistence":save_prediction(payload)}
-    @app.post("/api/v1/analyze")
+@app.post("/api/v1/analyze")
 def analyze_match(payload: dict):
     sport = payload.get("sport")
     league = payload.get("league")
