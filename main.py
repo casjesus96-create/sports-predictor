@@ -4,7 +4,7 @@ from fastapi import FastAPI,HTTPException,Query
 from pydantic import BaseModel
 from mlb_client import get_schedule
 from prediction import baseline_prediction
-from repository import save_prediction, save analysis
+from repository import save_prediction, save_analysis
 from analyzer import analyze_mlb_game
 app=FastAPI(title="Sports Predictor API",version="1.0.0")
 class PredictionRequest(BaseModel): event_id:str
