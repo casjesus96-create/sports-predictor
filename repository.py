@@ -167,7 +167,6 @@ def settle_prediction(
     )
 
     if not existing.data:
-
         return {
             "updated": False,
             "reason": (
@@ -213,15 +212,12 @@ def settle_prediction(
     predicted_winner = None
 
     if home_probability > away_probability:
-
         predicted_winner = home_team
 
     elif away_probability > home_probability:
-
         predicted_winner = away_team
 
     if predicted_winner is None:
-
         return {
             "updated": False,
             "reason": (
@@ -236,11 +232,8 @@ def settle_prediction(
     )
 
     if correct:
-
         prediction_result = "CORRECT"
-
     else:
-
         prediction_result = "INCORRECT"
 
     settled_at = datetime.now(
@@ -272,3 +265,16 @@ def settle_prediction(
         "settled_at": settled_at,
         "data": updated.data
     }
+
+
+def get_performance():
+    """
+    Obtiene estadísticas generales del modelo
+    a partir de las predicciones almacenadas.
+    """
+
+    client = get_supabase_client()
+
+    if client is None:
+        return {
+            "success
