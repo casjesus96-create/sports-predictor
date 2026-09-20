@@ -323,18 +323,4 @@ def get_performance():
                 accuracy,
                 2,
             ),
-            "average_confidence": round(
-                average_confidence,
-                4,
-            ),
-            "average_data_quality": round(
-                average_data_quality,
-                2,
-            ),
-        },
-        "results": {
-            "correct": correct_predictions,
-            "incorrect": incorrect_predictions,
-            "pending": pending_predictions,
-        },
-        }
+            "average_confidence
