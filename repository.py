@@ -1,20 +1,38 @@
 import os
+from datetime import datetime, timezone
 
 from supabase import create_client
 
 
-def save_prediction(payload):
+def get_supabase_client():
+    """
+    Crea y devuelve el cliente de Supabase.
+    """
+
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_SECRET_KEY")
 
     if not url or not key:
+        return None
+
+    return create_client(url, key)
+
+
+def save_prediction(payload):
+    """
+    Guarda una predicción nueva en prediction_snapshots.
+    """
+
+    client = get_supabase_client()
+
+    if client is None:
         return {
             "persisted": False,
             "reason": "Supabase variables not configured"
         }
 
     result = (
-        create_client(url, key)
+        client
         .table("prediction_snapshots")
         .insert(payload)
         .execute()
@@ -93,7 +111,8 @@ def save_analysis(analysis):
             "factors": factors,
             "game": game
         },
-        "result_status": "PENDING"
+        "result_status": "PENDING",
+        "prediction_result": None
     }
 
     return save_prediction(payload)
@@ -104,30 +123,37 @@ def settle_prediction(
     actual_winner
 ):
     """
-    Actualiza una predicción existente
-    con el resultado real del partido.
+    Liquida una predicción existente.
+
+    Determina si el ganador proyectado
+    coincide con el ganador real.
+
+    Guarda:
+    - result_status
+    - prediction_result
+    - actual_winner
+    - settled_at
     """
 
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SECRET_KEY")
+    client = get_supabase_client()
 
-    if not url or not key:
+    if client is None:
         return {
             "updated": False,
             "reason": "Supabase variables not configured"
         }
 
-    client = create_client(
-        url,
-        key
-    )
-
     existing = (
         client
         .table("prediction_snapshots")
         .select(
-            "id,event_id,home_probability,"
-            "away_probability,features,result_status"
+            "id,"
+            "event_id,"
+            "home_probability,"
+            "away_probability,"
+            "features,"
+            "result_status,"
+            "prediction_result"
         )
         .eq(
             "event_id",
@@ -141,6 +167,7 @@ def settle_prediction(
     )
 
     if not existing.data:
+
         return {
             "updated": False,
             "reason": (
@@ -186,39 +213,48 @@ def settle_prediction(
     predicted_winner = None
 
     if home_probability > away_probability:
+
         predicted_winner = home_team
 
     elif away_probability > home_probability:
+
         predicted_winner = away_team
+
+    if predicted_winner is None:
+
+        return {
+            "updated": False,
+            "reason": (
+                "No se pudo determinar "
+                "el ganador proyectado"
+            ),
+            "event_id": str(event_id)
+        }
 
     correct = (
         predicted_winner == actual_winner
     )
 
-    result = (
-        "CORRECT"
-        if correct
-        else "INCORRECT"
-    )
+    if correct:
+
+        prediction_result = "CORRECT"
+
+    else:
+
+        prediction_result = "INCORRECT"
+
+    settled_at = datetime.now(
+        timezone.utc
+    ).isoformat()
 
     updated = (
         client
         .table("prediction_snapshots")
         .update({
             "result_status": "SETTLED",
+            "prediction_result": prediction_result,
             "actual_winner": actual_winner,
-            "settled_at": (
-                __import__(
-                    "datetime"
-                )
-                .datetime
-                .now(
-                    __import__(
-                        "datetime"
-                    ).timezone.utc
-                )
-                .isoformat()
-            )
+            "settled_at": settled_at
         })
         .eq(
             "id",
@@ -232,6 +268,7 @@ def settle_prediction(
         "event_id": str(event_id),
         "predicted_winner": predicted_winner,
         "actual_winner": actual_winner,
-        "result": result,
+        "result": prediction_result,
+        "settled_at": settled_at,
         "data": updated.data
     }
