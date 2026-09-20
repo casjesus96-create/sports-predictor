@@ -3,6 +3,9 @@ name: Automatic MLB Settlement
 on:
   workflow_dispatch:
 
+  schedule:
+    - cron: "*/15 * * * *"
+
 jobs:
   settlement:
     runs-on: ubuntu-latest
