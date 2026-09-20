@@ -6,7 +6,11 @@ from pydantic import BaseModel
 
 from mlb_client import get_schedule
 from prediction import baseline_prediction
-from repository import save_prediction, save_analysis
+from repository import (
+    save_prediction,
+    save_analysis,
+    settle_prediction
+)
 from analyzer import analyze_mlb_game
 
 
@@ -264,6 +268,11 @@ def settle_prediction(event_id: str):
                 )
             }
 
+                settlement = settle_prediction(
+            event_id,
+            actual_winner
+        )
+
         return {
             "success": True,
             "event_id": event_id,
@@ -275,7 +284,8 @@ def settle_prediction(event_id: str):
             "actual_winner": actual_winner,
             "settled_at": datetime.now(
                 timezone.utc
-            ).isoformat()
+            ).isoformat(),
+            "settlement": settlement
         }
 
     except requests.RequestException as error:
