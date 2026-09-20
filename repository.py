@@ -116,6 +116,29 @@ def save_analysis(analysis):
     }
 
 
+def get_pending_predictions():
+    """
+    Obtiene todas las predicciones que todavía
+    no han sido liquidadas.
+    """
+
+    supabase = get_supabase_client()
+
+    response = (
+        supabase
+        .table("prediction_snapshots")
+        .select(
+            "id,event_id,model_version,"
+            "result_status,created_at"
+        )
+        .eq("result_status", "PENDING")
+        .order("created_at", desc=False)
+        .execute()
+    )
+
+    return response.data or []
+
+
 def settle_prediction(
     event_id,
     actual_winner,
@@ -137,7 +160,10 @@ def settle_prediction(
     if not existing.data:
         return {
             "updated": False,
-            "reason": "No existe una predicción PENDING para este event_id",
+            "reason": (
+                "No existe una predicción PENDING "
+                "para este event_id"
+            ),
             "event_id": str(event_id),
         }
 
@@ -171,8 +197,10 @@ def settle_prediction(
 
         if actual_winner == home_name:
             predicted_winner = home_name
+
         elif actual_winner == away_name:
             predicted_winner = away_name
+
         else:
             predicted_winner = (
                 home_name
@@ -434,7 +462,10 @@ def get_predictions():
                     ),
                 },
 
-                "factors": features.get("factors", {}),
+                "factors": features.get(
+                    "factors",
+                    {}
+                ),
             }
         )
 
