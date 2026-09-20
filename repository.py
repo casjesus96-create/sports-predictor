@@ -43,6 +43,8 @@ def save_prediction(
         "features": features or {},
         "result_status": "PENDING",
         "actual_winner": None,
+        "actual_home_score": None,
+        "actual_away_score": None,
         "settled_at": None,
         "prediction_result": None,
     }
@@ -94,6 +96,8 @@ def save_analysis(analysis):
         },
         "result_status": "PENDING",
         "actual_winner": None,
+        "actual_home_score": None,
+        "actual_away_score": None,
         "settled_at": None,
         "prediction_result": None,
     }
@@ -112,7 +116,12 @@ def save_analysis(analysis):
     }
 
 
-def settle_prediction(event_id, actual_winner):
+def settle_prediction(
+    event_id,
+    actual_winner,
+    actual_home_score,
+    actual_away_score,
+):
     supabase = get_supabase_client()
 
     existing = (
@@ -183,6 +192,8 @@ def settle_prediction(event_id, actual_winner):
         "result_status": "SETTLED",
         "prediction_result": prediction_result,
         "actual_winner": actual_winner,
+        "actual_home_score": actual_home_score,
+        "actual_away_score": actual_away_score,
         "settled_at": now,
     }
 
@@ -199,6 +210,9 @@ def settle_prediction(event_id, actual_winner):
         "event_id": str(event_id),
         "prediction_result": prediction_result,
         "actual_winner": actual_winner,
+        "actual_home_score": actual_home_score,
+        "actual_away_score": actual_away_score,
+        "settled_at": now,
         "data": response.data,
     }
 
@@ -296,7 +310,10 @@ def get_performance():
             "settled_predictions": settled,
             "correct_predictions": correct,
             "incorrect_predictions": incorrect,
-            "accuracy_percentage": round(accuracy, 2),
+            "accuracy_percentage": round(
+                accuracy,
+                2
+            ),
             "average_confidence": round(
                 average_confidence,
                 4
@@ -406,7 +423,15 @@ def get_predictions():
                     "actual_winner": row.get(
                         "actual_winner"
                     ),
-                    "settled_at": row.get("settled_at"),
+                    "actual_home_score": row.get(
+                        "actual_home_score"
+                    ),
+                    "actual_away_score": row.get(
+                        "actual_away_score"
+                    ),
+                    "settled_at": row.get(
+                        "settled_at"
+                    ),
                 },
 
                 "factors": features.get("factors", {}),
@@ -417,4 +442,4 @@ def get_predictions():
         "success": True,
         "total": len(predictions),
         "predictions": predictions,
-        }
+    }
