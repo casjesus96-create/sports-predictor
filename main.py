@@ -1,11 +1,7 @@
-from datetime import date, datetime, timezone
-
+from fastapi import FastAPI, HTTPException
 import requests
-from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel
 
-from mlb_client import get_schedule
-from prediction import baseline_prediction
+from analyzer import analyze_mlb_game
 from repository import (
     save_prediction,
     save_analysis,
@@ -13,154 +9,169 @@ from repository import (
     get_performance,
     get_predictions,
 )
-from analyzer import analyze_mlb_game
 
 
 app = FastAPI(
     title="Sports Predictor API",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 
-class PredictionRequest(BaseModel):
-    event_id: str
+MLB_API = "https://statsapi.mlb.com/api/v1"
 
 
 @app.get("/health")
 def health():
     return {
         "status": "ok",
-        "version": "1.0.0",
-        "utc": datetime.now(timezone.utc),
+        "service": "sports-predictor",
+        "version": "1.1.0",
     }
 
 
 @app.get("/api/v1/mlb/games")
-def games(
-    day: str | None = Query(
-        None,
-        pattern=r"^\d{4}-\d{2}-\d{2}$",
-    )
-):
-    selected = day or date.today().isoformat()
-
+def get_mlb_games():
     try:
-        return {
-            "date": selected,
-            "games": get_schedule(selected),
+        url = f"{MLB_API}/schedule"
+
+        params = {
+            "sportId": 1,
+            "date": "2026-09-20",
+            "hydrate": "probablePitcher,team,venue",
         }
-    except Exception as error:
+
+        response = requests.get(
+            url,
+            params=params,
+            timeout=20,
+            headers={
+                "User-Agent": "Sports-Predictor/1.0"
+            },
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        games = []
+
+        for date_block in data.get("dates", []):
+            for game in date_block.get("games", []):
+                game_pk = game.get("gamePk")
+
+                teams = game.get("teams", {})
+
+                home = teams.get("home", {})
+                away = teams.get("away", {})
+
+                games.append(
+                    {
+                        "game_id": game_pk,
+                        "date": game.get("gameDate"),
+                        "status": game.get(
+                            "status",
+                            {}
+                        ).get(
+                            "abstractGameState"
+                        ),
+                        "home": home.get(
+                            "team",
+                            {}
+                        ).get("name"),
+                        "away": away.get(
+                            "team",
+                            {}
+                        ).get("name"),
+                        "venue": game.get(
+                            "venue",
+                            {}
+                        ).get("name"),
+                    }
+                )
+
+        return {
+            "success": True,
+            "total": len(games),
+            "games": games,
+        }
+
+    except Exception as exc:
         raise HTTPException(
-            status_code=502,
-            detail=f"MLB data source unavailable: {error}",
+            status_code=500,
+            detail=str(exc),
         )
 
 
 @app.post("/api/v1/predictions/experimental")
-def analyze(req: PredictionRequest):
-    r = baseline_prediction()
+def create_experimental_prediction(
+    event_id: str,
+    sport: str = "baseball",
+    league: str = "MLB",
+):
+    try:
+        result = save_prediction(
+            event_id=event_id,
+            sport=sport,
+            league=league,
+            model_version="MLB-Baseline-0.1",
+            home_probability=0.53743,
+            away_probability=0.46257,
+            confidence="Inicial",
+            data_quality=72,
+            features={
+                "source": "experimental",
+            },
+        )
 
-    payload = {
-        "event_id": req.event_id,
-        "sport": "baseball",
-        "league": "MLB",
-        "model_version": "MLB-Baseline-0.1",
-        "data_cutoff": datetime.now(
-            timezone.utc
-        ).isoformat(),
-        "home_probability": r["home_probability"],
-        "away_probability": r["away_probability"],
-        "confidence": r["confidence"],
-        "data_quality": r["data_quality"],
-        "features": r["features"],
-        "result_status": "PENDING",
-    }
+        return {
+            "success": True,
+            "saved": True,
+            "data": result,
+        }
 
-    return {
-        **payload,
-        "experimental": True,
-        "persistence": save_prediction(payload),
-    }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )
 
 
 @app.post("/api/v1/analyze")
-def analyze_match(payload: dict):
-    sport = payload.get("sport")
-    league = payload.get("league")
-    game_id = payload.get("game_id")
+def analyze_game(event_id: str):
+    try:
+        analysis = analyze_mlb_game(event_id)
 
-    if not sport:
-        return {
-            "success": False,
-            "error": "sport es obligatorio",
-        }
-
-    if not league:
-        return {
-            "success": False,
-            "error": "league es obligatorio",
-        }
-
-    if not game_id:
-        return {
-            "success": False,
-            "error": "game_id es obligatorio",
-        }
-
-    sport = sport.lower()
-    league = league.lower()
-
-    if sport == "baseball" and league == "mlb":
-        try:
-            analysis = analyze_mlb_game(game_id)
-
-            if not analysis.get("success"):
-                return analysis
-
-            persistence = save_analysis(analysis)
-            analysis["persistence"] = persistence
-
+        if not analysis.get("success"):
             return analysis
 
-        except requests.RequestException as error:
-            return {
-                "success": False,
-                "error": "Error obteniendo datos de MLB",
-                "details": str(error),
-            }
+        persistence = save_analysis(analysis)
 
-        except Exception as error:
-            return {
-                "success": False,
-                "error": "Error interno del analizador",
-                "details": str(error),
-            }
+        analysis["persistence"] = persistence
 
-    return {
-        "success": False,
-        "error": "Deporte o liga todavía no implementado",
-        "sport": sport,
-        "league": league,
-    }
+        return analysis
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )
 
 
 @app.post("/api/v1/settle/{event_id}")
-def settle_event(event_id: str):
+def settle_game(event_id: str):
     try:
-        url = (
-            f"https://statsapi.mlb.com/api/v1.1/"
-            f"game/{event_id}/feed/live"
-        )
+        url = f"{MLB_API}/game/{event_id}/feed/live"
 
         response = requests.get(
             url,
             timeout=20,
             headers={
-                "User-Agent": "Sports-Predictor/1.0",
+                "User-Agent": "Sports-Predictor/1.0"
             },
         )
 
         response.raise_for_status()
+
         data = response.json()
 
         game_data = data.get("gameData", {})
@@ -172,10 +183,24 @@ def settle_event(event_id: str):
             .get("abstractGameState")
         )
 
+        teams = game_data.get("teams", {})
+
+        home_team = (
+            teams
+            .get("home", {})
+            .get("name")
+        )
+
+        away_team = (
+            teams
+            .get("away", {})
+            .get("name")
+        )
+
         if status != "Final":
             return {
                 "success": False,
-                "event_id": event_id,
+                "event_id": str(event_id),
                 "status": status,
                 "message": (
                     "El partido todavía no ha terminado. "
@@ -183,24 +208,24 @@ def settle_event(event_id: str):
                 ),
             }
 
-        teams = game_data.get("teams", {})
-        home_team = teams.get("home", {})
-        away_team = teams.get("away", {})
+        linescore = live_data.get(
+            "linescore",
+            {}
+        )
 
-        home_name = home_team.get("name")
-        away_name = away_team.get("name")
-
-        linescore = live_data.get("linescore", {})
-        linescore_teams = linescore.get("teams", {})
+        teams_score = linescore.get(
+            "teams",
+            {}
+        )
 
         home_score = (
-            linescore_teams
+            teams_score
             .get("home", {})
             .get("runs")
         )
 
         away_score = (
-            linescore_teams
+            teams_score
             .get("away", {})
             .get("runs")
         )
@@ -208,62 +233,60 @@ def settle_event(event_id: str):
         if home_score is None or away_score is None:
             return {
                 "success": False,
-                "event_id": event_id,
+                "event_id": str(event_id),
+                "status": status,
                 "message": (
                     "El partido figura como Final, "
-                    "pero no se pudo obtener el marcador."
+                    "pero MLB todavía no proporcionó "
+                    "el marcador completo."
                 ),
             }
 
+        home_score = int(home_score)
+        away_score = int(away_score)
+
         if home_score > away_score:
-            actual_winner = home_name
-
+            actual_winner = home_team
         elif away_score > home_score:
-            actual_winner = away_name
-
+            actual_winner = away_team
         else:
             return {
                 "success": False,
-                "event_id": event_id,
+                "event_id": str(event_id),
+                "status": status,
                 "message": (
-                    "El partido terminó empatado. "
-                    "No se liquidará como ganador/perdedor."
+                    "El marcador recibido no permite "
+                    "determinar un ganador."
                 ),
             }
 
         settlement = settle_prediction(
-            event_id,
-            actual_winner,
+            event_id=event_id,
+            actual_winner=actual_winner,
+            actual_home_score=home_score,
+            actual_away_score=away_score,
         )
 
         return {
             "success": True,
-            "event_id": event_id,
-            "status": "FINAL",
-            "home": home_name,
-            "away": away_name,
+            "event_id": str(event_id),
+            "status": status,
+            "home": home_team,
+            "away": away_team,
             "home_score": home_score,
             "away_score": away_score,
             "actual_winner": actual_winner,
-            "settled_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
+            "settled_at": settlement.get(
+                "settled_at"
+            ),
             "settlement": settlement,
         }
 
-    except requests.RequestException as error:
-        return {
-            "success": False,
-            "error": "Error obteniendo resultado de MLB",
-            "details": str(error),
-        }
-
-    except Exception as error:
-        return {
-            "success": False,
-            "error": "Error interno al liquidar el partido",
-            "details": str(error),
-        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )
 
 
 @app.get("/api/v1/performance")
@@ -271,12 +294,14 @@ def performance():
     try:
         return get_performance()
 
-    except Exception as error:
-        return {
-            "success": False,
-            "error": "Error obteniendo rendimiento del modelo",
-            "details": str(error),
-        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Error obteniendo rendimiento del modelo",
+                "details": str(exc),
+            },
+        )
 
 
 @app.get("/api/v1/predictions")
@@ -284,9 +309,11 @@ def predictions():
     try:
         return get_predictions()
 
-    except Exception as error:
-        return {
-            "success": False,
-            "error": "Error obteniendo historial de predicciones",
-            "details": str(error),
-        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Error obteniendo predicciones",
+                "details": str(exc),
+            },
+        )
