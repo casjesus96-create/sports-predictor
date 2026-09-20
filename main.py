@@ -51,31 +51,31 @@ def analyze_match(payload: dict):
     league = league.lower()
 
     if sport == "baseball" and league == "mlb":
-    try:
-        analysis = analyze_mlb_game(game_id)
+        try:
+            analysis = analyze_mlb_game(game_id)
 
-        if not analysis.get("success"):
+            if not analysis.get("success"):
+                return analysis
+
+            persistence = save_analysis(analysis)
+
+            analysis["persistence"] = persistence
+
             return analysis
 
-        persistence = save_analysis(analysis)
+        except requests.RequestException as error:
+            return {
+                "success": False,
+                "error": "Error obteniendo datos de MLB",
+                "details": str(error)
+            }
 
-        analysis["persistence"] = persistence
-
-        return analysis
-
-    except requests.RequestException as error:
-        return {
-            "success": False,
-            "error": "Error obteniendo datos de MLB",
-            "details": str(error)
-        }
-
-    except Exception as error:
-        return {
-            "success": False,
-            "error": "Error interno del analizador",
-            "details": str(error)
-        }
+        except Exception as error:
+            return {
+                "success": False,
+                "error": "Error interno del analizador",
+                "details": str(error)
+            }
 
     return {
         "success": False,
