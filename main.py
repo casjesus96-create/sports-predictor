@@ -11,6 +11,7 @@ from repository import (
     save_analysis,
     settle_prediction,
     get_performance,
+    get_predictions,
 )
 from analyzer import analyze_mlb_game
 
@@ -216,8 +217,10 @@ def settle_event(event_id: str):
 
         if home_score > away_score:
             actual_winner = home_name
+
         elif away_score > home_score:
             actual_winner = away_name
+
         else:
             return {
                 "success": False,
@@ -272,5 +275,18 @@ def performance():
         return {
             "success": False,
             "error": "Error obteniendo rendimiento del modelo",
+            "details": str(error),
+        }
+
+
+@app.get("/api/v1/predictions")
+def predictions():
+    try:
+        return get_predictions()
+
+    except Exception as error:
+        return {
+            "success": False,
+            "error": "Error obteniendo historial de predicciones",
             "details": str(error),
         }
