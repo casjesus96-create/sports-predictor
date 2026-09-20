@@ -10,7 +10,8 @@ from prediction import baseline_prediction
 from repository import (
     save_prediction,
     save_analysis,
-    settle_prediction
+    settle_prediction,
+    get_performance
 )
 from analyzer import analyze_mlb_game
 
@@ -58,7 +59,6 @@ def games(
 
 @app.post("/api/v1/predictions/experimental")
 def analyze(req: PredictionRequest):
-
     r = baseline_prediction()
 
     payload = {
@@ -120,7 +120,9 @@ def analyze_match(payload: dict):
             if not analysis.get("success"):
                 return analysis
 
-            persistence = save_analysis(analysis)
+            persistence = save_analysis(
+                analysis
+            )
 
             analysis["persistence"] = persistence
 
@@ -308,5 +310,21 @@ def settle_event(event_id: str):
         return {
             "success": False,
             "error": "Error interno al liquidar el partido",
+            "details": str(error)
+        }
+
+
+@app.get("/api/v1/performance")
+def performance():
+
+    try:
+
+        return get_performance()
+
+    except Exception as error:
+
+        return {
+            "success": False,
+            "error": "Error obteniendo rendimiento del modelo",
             "details": str(error)
         }
