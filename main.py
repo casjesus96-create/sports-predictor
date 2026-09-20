@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+
 import requests
 
 from fastapi import FastAPI, HTTPException, Query
@@ -50,8 +51,8 @@ def games(
 
     except Exception as error:
         raise HTTPException(
-            502,
-            f"MLB data source unavailable: {error}"
+            status_code=502,
+            detail=f"MLB data source unavailable: {error}"
         )
 
 
@@ -150,7 +151,7 @@ def analyze_match(payload: dict):
 
 
 @app.post("/api/v1/settle/{event_id}")
-def settle_prediction(event_id: str):
+def settle_event(event_id: str):
 
     try:
 
@@ -171,14 +172,20 @@ def settle_prediction(event_id: str):
 
         data = response.json()
 
-        game_data = data.get("gameData", {})
-        live_data = data.get("liveData", {})
-
-        status = game_data.get(
-            "status",
+        game_data = data.get(
+            "gameData",
             {}
-        ).get(
-            "abstractGameState"
+        )
+
+        live_data = data.get(
+            "liveData",
+            {}
+        )
+
+        status = (
+            game_data
+            .get("status", {})
+            .get("abstractGameState")
         )
 
         if status != "Final":
@@ -221,24 +228,21 @@ def settle_prediction(event_id: str):
             {}
         )
 
-        home_score = linescore.get(
+        linescore_teams = linescore.get(
             "teams",
             {}
-        ).get(
-            "home",
-            {}
-        ).get(
-            "runs"
         )
 
-        away_score = linescore.get(
-            "teams",
-            {}
-        ).get(
-            "away",
-            {}
-        ).get(
-            "runs"
+        home_score = (
+            linescore_teams
+            .get("home", {})
+            .get("runs")
+        )
+
+        away_score = (
+            linescore_teams
+            .get("away", {})
+            .get("runs")
         )
 
         if home_score is None or away_score is None:
@@ -253,12 +257,15 @@ def settle_prediction(event_id: str):
             }
 
         if home_score > away_score:
+
             actual_winner = home_name
 
         elif away_score > home_score:
+
             actual_winner = away_name
 
         else:
+
             return {
                 "success": False,
                 "event_id": event_id,
@@ -268,7 +275,7 @@ def settle_prediction(event_id: str):
                 )
             }
 
-                settlement = settle_prediction(
+        settlement = settle_prediction(
             event_id,
             actual_winner
         )
