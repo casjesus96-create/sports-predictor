@@ -1,448 +1,387 @@
-import os
 from datetime import datetime, timezone
 
-from supabase import create_client
+from supabase import create_client, Client
+import os
 
 
-def get_supabase_client():
+def get_supabase_client() -> Client:
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SECRET_KEY")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
     if not url or not key:
-        return None
+        raise RuntimeError(
+            "Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY"
+        )
 
     return create_client(url, key)
 
 
-def save_prediction(payload):
-    client = get_supabase_client()
+def save_prediction(
+    event_id,
+    sport,
+    league,
+    model_version,
+    home_probability,
+    away_probability,
+    confidence,
+    data_quality,
+    features=None,
+):
+    supabase = get_supabase_client()
 
-    if client is None:
+    payload = {
+        "event_id": str(event_id),
+        "sport": sport,
+        "league": league,
+        "model_version": model_version,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "data_cutoff": datetime.now(timezone.utc).isoformat(),
+        "home_probability": home_probability,
+        "away_probability": away_probability,
+        "confidence": confidence,
+        "data_quality": data_quality,
+        "features": features or {},
+        "result_status": "PENDING",
+        "actual_winner": None,
+        "settled_at": None,
+        "prediction_result": None,
+    }
+
+    response = (
+        supabase
+        .table("prediction_snapshots")
+        .insert(payload)
+        .execute()
+    )
+
+    return response.data
+
+
+def save_analysis(analysis):
+    if not analysis.get("success"):
         return {
-            "persisted": False,
-            "reason": "Supabase variables not configured",
+            "success": False,
+            "message": "No se puede guardar un análisis fallido."
         }
 
-    result = (
-        client
+    game = analysis["game"]
+    prediction = analysis["prediction"]
+    factors = analysis.get("factors", {})
+
+    supabase = get_supabase_client()
+
+    payload = {
+        "event_id": str(game["game_id"]),
+        "sport": "baseball",
+        "league": "MLB",
+        "model_version": analysis.get(
+            "model_version",
+            "1.1.0-baseline"
+        ),
+        "created_at": analysis.get(
+            "generated_at",
+            datetime.now(timezone.utc).isoformat()
+        ),
+        "data_cutoff": datetime.now(timezone.utc).isoformat(),
+        "home_probability": prediction["home_probability"],
+        "away_probability": prediction["away_probability"],
+        "confidence": prediction["confidence"],
+        "data_quality": 100,
+        "features": {
+            "game": game,
+            "factors": factors,
+            "predicted_winner": prediction["winner"],
+        },
+        "result_status": "PENDING",
+        "actual_winner": None,
+        "settled_at": None,
+        "prediction_result": None,
+    }
+
+    response = (
+        supabase
         .table("prediction_snapshots")
         .insert(payload)
         .execute()
     )
 
     return {
-        "persisted": True,
-        "data": result.data,
+        "success": True,
+        "saved": True,
+        "data": response.data,
     }
-
-
-def save_analysis(analysis):
-    prediction = analysis.get("prediction", {})
-    game = analysis.get("game", {})
-    factors = analysis.get("factors", {})
-
-    available_factors = [
-        factors.get("home_team_ops"),
-        factors.get("away_team_ops"),
-        factors.get("home_team_era"),
-        factors.get("away_team_era"),
-        factors.get("home_pitcher_era"),
-        factors.get("away_pitcher_era"),
-    ]
-
-    available_count = sum(
-        1
-        for value in available_factors
-        if value is not None
-    )
-
-    data_quality = round(
-        (available_count / len(available_factors)) * 100
-    )
-
-    payload = {
-        "event_id": str(game.get("game_id")),
-        "sport": "baseball",
-        "league": "MLB",
-        "model_version": analysis.get(
-            "model_version",
-            "1.1.0-baseline",
-        ),
-        "data_cutoff": analysis.get("generated_at"),
-        "home_probability": prediction.get(
-            "home_probability"
-        ),
-        "away_probability": prediction.get(
-            "away_probability"
-        ),
-        "confidence": str(
-            prediction.get("confidence")
-        ),
-        "data_quality": data_quality,
-        "features": {
-            "factors": factors,
-            "game": game,
-        },
-        "result_status": "PENDING",
-        "prediction_result": None,
-    }
-
-    return save_prediction(payload)
 
 
 def settle_prediction(event_id, actual_winner):
-    client = get_supabase_client()
-
-    if client is None:
-        return {
-            "updated": False,
-            "reason": "Supabase variables not configured",
-        }
+    supabase = get_supabase_client()
 
     existing = (
-        client
+        supabase
         .table("prediction_snapshots")
-        .select(
-            "id,event_id,home_probability,"
-            "away_probability,features,result_status,"
-            "prediction_result"
-        )
-        .eq(
-            "event_id",
-            str(event_id),
-        )
-        .eq(
-            "result_status",
-            "PENDING",
-        )
+        .select("*")
+        .eq("event_id", str(event_id))
+        .eq("result_status", "PENDING")
+        .limit(1)
         .execute()
     )
 
     if not existing.data:
         return {
             "updated": False,
-            "reason": (
-                "No existe una predicción PENDING "
-                "para este event_id"
-            ),
+            "reason": "No existe una predicción PENDING para este event_id",
             "event_id": str(event_id),
         }
 
     prediction = existing.data[0]
 
-    features = prediction.get("features") or {}
-    game = features.get("game", {})
-
-    home_team = game.get("home")
-    away_team = game.get("away")
-
     home_probability = float(
-        prediction.get("home_probability", 0)
+        prediction.get("home_probability") or 0
     )
 
     away_probability = float(
-        prediction.get("away_probability", 0)
+        prediction.get("away_probability") or 0
     )
 
-    if home_probability > away_probability:
-        predicted_winner = home_team
-    elif away_probability > home_probability:
-        predicted_winner = away_team
-    else:
-        return {
-            "updated": False,
-            "reason": (
-                "No se pudo determinar "
-                "el ganador proyectado"
-            ),
-            "event_id": str(event_id),
-        }
+    predicted_winner = (
+        prediction.get("features", {})
+        .get("predicted_winner")
+    )
 
-    if predicted_winner == actual_winner:
-        prediction_result = "CORRECT"
-    else:
-        prediction_result = "INCORRECT"
+    if not predicted_winner:
+        home_name = (
+            prediction.get("features", {})
+            .get("game", {})
+            .get("home")
+        )
 
-    settled_at = datetime.now(
-        timezone.utc
-    ).isoformat()
+        away_name = (
+            prediction.get("features", {})
+            .get("game", {})
+            .get("away")
+        )
 
-    updated = (
-        client
+        if actual_winner == home_name:
+            predicted_winner = home_name
+        elif actual_winner == away_name:
+            predicted_winner = away_name
+        else:
+            predicted_winner = (
+                home_name
+                if home_probability >= away_probability
+                else away_name
+            )
+
+    prediction_result = (
+        "CORRECT"
+        if predicted_winner == actual_winner
+        else "INCORRECT"
+    )
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    update_data = {
+        "result_status": "SETTLED",
+        "prediction_result": prediction_result,
+        "actual_winner": actual_winner,
+        "settled_at": now,
+    }
+
+    response = (
+        supabase
         .table("prediction_snapshots")
-        .update(
-            {
-                "result_status": "SETTLED",
-                "prediction_result": prediction_result,
-                "actual_winner": actual_winner,
-                "settled_at": settled_at,
-            }
-        )
-        .eq(
-            "id",
-            prediction["id"],
-        )
+        .update(update_data)
+        .eq("id", prediction["id"])
         .execute()
     )
 
     return {
         "updated": True,
         "event_id": str(event_id),
-        "predicted_winner": predicted_winner,
+        "prediction_result": prediction_result,
         "actual_winner": actual_winner,
-        "result": prediction_result,
-        "settled_at": settled_at,
-        "data": updated.data,
+        "data": response.data,
     }
 
 
 def get_performance():
-    client = get_supabase_client()
+    supabase = get_supabase_client()
 
-    if client is None:
-        return {
-            "success": False,
-            "reason": "Supabase variables not configured",
-        }
-
-    result = (
-        client
+    response = (
+        supabase
         .table("prediction_snapshots")
-        .select(
-            "event_id,sport,league,model_version,"
-            "home_probability,away_probability,"
-            "confidence,data_quality,result_status,"
-            "prediction_result,actual_winner,"
-            "created_at,settled_at"
-        )
+        .select("*")
+        .order("created_at", desc=True)
         .execute()
     )
 
-    rows = result.data or []
-
-    total_predictions = len(rows)
-
-    pending_predictions = sum(
-        1
-        for row in rows
-        if row.get("result_status") == "PENDING"
-    )
-
-    settled_predictions = sum(
-        1
-        for row in rows
-        if row.get("result_status") == "SETTLED"
-    )
-
-    correct_predictions = sum(
-        1
-        for row in rows
-        if row.get("prediction_result") == "CORRECT"
-    )
-
-    incorrect_predictions = sum(
-        1
-        for row in rows
-        if row.get("prediction_result") == "INCORRECT"
-    )
-
-    accuracy = 0.0
-
-    if settled_predictions > 0:
-        accuracy = (
-            correct_predictions
-            / settled_predictions
-        ) * 100
-
-    confidence_values = []
-
-    for row in rows:
-        try:
-            value = row.get("confidence")
-
-            if value is not None:
-                confidence_values.append(
-                    float(value)
-                )
-
-        except (TypeError, ValueError):
-            pass
-
-    average_confidence = 0.0
-
-    if confidence_values:
-        average_confidence = (
-            sum(confidence_values)
-            / len(confidence_values)
-        )
-
-    quality_values = []
-
-    for row in rows:
-        try:
-            value = row.get("data_quality")
-
-            if value is not None:
-                quality_values.append(
-                    float(value)
-                )
-
-        except (TypeError, ValueError):
-            pass
-
-    average_data_quality = 0.0
-
-    if quality_values:
-        average_data_quality = (
-            sum(quality_values)
-            / len(quality_values)
-        )
+    rows = response.data or []
 
     versions = sorted(
         list(
-            set(
-                row.get("model_version")
+            {
+                row.get("model_version") or "unknown"
                 for row in rows
-                if row.get("model_version")
-            )
+            }
         )
     )
+
+    def calculate_stats(model_rows):
+        total = len(model_rows)
+
+        pending = sum(
+            1
+            for row in model_rows
+            if row.get("result_status") == "PENDING"
+        )
+
+        settled = sum(
+            1
+            for row in model_rows
+            if row.get("result_status") == "SETTLED"
+        )
+
+        correct = sum(
+            1
+            for row in model_rows
+            if row.get("prediction_result") == "CORRECT"
+        )
+
+        incorrect = sum(
+            1
+            for row in model_rows
+            if row.get("prediction_result") == "INCORRECT"
+        )
+
+        confidences = []
+
+        for row in model_rows:
+            value = row.get("confidence")
+
+            try:
+                confidences.append(float(value))
+            except (TypeError, ValueError):
+                pass
+
+        data_qualities = []
+
+        for row in model_rows:
+            value = row.get("data_quality")
+
+            try:
+                data_qualities.append(float(value))
+            except (TypeError, ValueError):
+                pass
+
+        accuracy = (
+            (correct / settled) * 100
+            if settled > 0
+            else 0
+        )
+
+        average_confidence = (
+            sum(confidences) / len(confidences)
+            if confidences
+            else 0
+        )
+
+        average_data_quality = (
+            sum(data_qualities) / len(data_qualities)
+            if data_qualities
+            else 0
+        )
+
+        return {
+            "total_predictions": total,
+            "pending_predictions": pending,
+            "settled_predictions": settled,
+            "correct_predictions": correct,
+            "incorrect_predictions": incorrect,
+            "accuracy_percentage": round(accuracy, 2),
+            "average_confidence": round(
+                average_confidence,
+                4
+            ),
+            "average_data_quality": round(
+                average_data_quality,
+                2
+            ),
+        }
+
+    overall = calculate_stats(rows)
+
+    models = {}
+
+    for version in versions:
+        model_rows = [
+            row
+            for row in rows
+            if (row.get("model_version") or "unknown") == version
+        ]
+
+        models[version] = calculate_stats(model_rows)
 
     return {
         "success": True,
         "model": {
             "versions": versions,
+            "current": "1.1.0-baseline",
         },
-        "summary": {
-            "total_predictions": total_predictions,
-            "pending_predictions": pending_predictions,
-            "settled_predictions": settled_predictions,
-            "correct_predictions": correct_predictions,
-            "incorrect_predictions": incorrect_predictions,
-            "accuracy_percentage": round(
-                accuracy,
-                2,
-            ),
-            "average_confidence": round(
-                average_confidence,
-                4,
-            ),
-            "average_data_quality": round(
-                average_data_quality,
-                2,
-            ),
-        },
+        "summary": overall,
+        "models": models,
         "results": {
-            "correct": correct_predictions,
-            "incorrect": incorrect_predictions,
-            "pending": pending_predictions,
+            "correct": overall["correct_predictions"],
+            "incorrect": overall["incorrect_predictions"],
+            "pending": overall["pending_predictions"],
         },
     }
 
 
 def get_predictions():
-    """
-    Obtiene el historial completo de predicciones.
-    """
+    supabase = get_supabase_client()
 
-    client = get_supabase_client()
-
-    if client is None:
-        return {
-            "success": False,
-            "reason": "Supabase variables not configured",
-        }
-
-    result = (
-        client
+    response = (
+        supabase
         .table("prediction_snapshots")
-        .select(
-            "id,"
-            "event_id,"
-            "sport,"
-            "league,"
-            "model_version,"
-            "created_at,"
-            "data_cutoff,"
-            "home_probability,"
-            "away_probability,"
-            "confidence,"
-            "data_quality,"
-            "features,"
-            "result_status,"
-            "prediction_result,"
-            "actual_winner,"
-            "settled_at"
-        )
-        .order(
-            "created_at",
-            desc=True,
-        )
+        .select("*")
+        .order("created_at", desc=True)
         .execute()
     )
 
-    rows = result.data or []
+    rows = response.data or []
 
     predictions = []
 
     for row in rows:
-
         features = row.get("features") or {}
         game = features.get("game") or {}
+        prediction = features.get("predicted_winner")
 
-        home_probability = row.get(
-            "home_probability"
-        )
+        home_probability = row.get("home_probability")
+        away_probability = row.get("away_probability")
 
-        away_probability = row.get(
-            "away_probability"
-        )
+        if prediction is None:
+            home_name = game.get("home")
+            away_name = game.get("away")
 
-        predicted_winner = None
-
-        try:
-
-            if (
-                home_probability is not None
-                and away_probability is not None
-            ):
-
-                home_probability = float(
-                    home_probability
-                )
-
-                away_probability = float(
-                    away_probability
-                )
-
-                if home_probability > away_probability:
-                    predicted_winner = game.get(
-                        "home"
-                    )
-
-                elif away_probability > home_probability:
-                    predicted_winner = game.get(
-                        "away"
-                    )
-
-        except (TypeError, ValueError):
-            predicted_winner = None
+            if home_name and away_name:
+                try:
+                    if float(home_probability) >= float(
+                        away_probability
+                    ):
+                        prediction = home_name
+                    else:
+                        prediction = away_name
+                except (TypeError, ValueError):
+                    prediction = None
 
         predictions.append(
             {
                 "id": row.get("id"),
                 "event_id": row.get("event_id"),
-                "sport": row.get("sport"),
-                "league": row.get("league"),
-                "model_version": row.get(
-                    "model_version"
-                ),
-                "created_at": row.get(
-                    "created_at"
-                ),
-                "data_cutoff": row.get(
-                    "data_cutoff"
-                ),
+                "model_version": row.get("model_version"),
+                "created_at": row.get("created_at"),
+                "data_cutoff": row.get("data_cutoff"),
+
                 "game": {
                     "date": game.get("date"),
                     "status": game.get("status"),
@@ -450,35 +389,27 @@ def get_predictions():
                     "home": game.get("home"),
                     "away": game.get("away"),
                 },
+
                 "prediction": {
-                    "predicted_winner": predicted_winner,
-                    "home_probability": (
-                        home_probability
-                    ),
-                    "away_probability": (
-                        away_probability
-                    ),
-                    "confidence": row.get(
-                        "confidence"
-                    ),
+                    "predicted_winner": prediction,
+                    "home_probability": home_probability,
+                    "away_probability": away_probability,
+                    "confidence": row.get("confidence"),
+                    "data_quality": row.get("data_quality"),
                 },
-                "data_quality": row.get(
-                    "data_quality"
-                ),
+
                 "result": {
-                    "status": row.get(
-                        "result_status"
-                    ),
+                    "status": row.get("result_status"),
                     "prediction_result": row.get(
                         "prediction_result"
                     ),
                     "actual_winner": row.get(
                         "actual_winner"
                     ),
-                    "settled_at": row.get(
-                        "settled_at"
-                    ),
+                    "settled_at": row.get("settled_at"),
                 },
+
+                "factors": features.get("factors", {}),
             }
         )
 
@@ -486,4 +417,4 @@ def get_predictions():
         "success": True,
         "total": len(predictions),
         "predictions": predictions,
-            }
+        }
