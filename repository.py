@@ -323,4 +323,167 @@ def get_performance():
                 accuracy,
                 2,
             ),
-            "average_confidence
+            "average_confidence": round(
+                average_confidence,
+                4,
+            ),
+            "average_data_quality": round(
+                average_data_quality,
+                2,
+            ),
+        },
+        "results": {
+            "correct": correct_predictions,
+            "incorrect": incorrect_predictions,
+            "pending": pending_predictions,
+        },
+    }
+
+
+def get_predictions():
+    """
+    Obtiene el historial completo de predicciones.
+    """
+
+    client = get_supabase_client()
+
+    if client is None:
+        return {
+            "success": False,
+            "reason": "Supabase variables not configured",
+        }
+
+    result = (
+        client
+        .table("prediction_snapshots")
+        .select(
+            "id,"
+            "event_id,"
+            "sport,"
+            "league,"
+            "model_version,"
+            "created_at,"
+            "data_cutoff,"
+            "home_probability,"
+            "away_probability,"
+            "confidence,"
+            "data_quality,"
+            "features,"
+            "result_status,"
+            "prediction_result,"
+            "actual_winner,"
+            "settled_at"
+        )
+        .order(
+            "created_at",
+            desc=True,
+        )
+        .execute()
+    )
+
+    rows = result.data or []
+
+    predictions = []
+
+    for row in rows:
+
+        features = row.get("features") or {}
+        game = features.get("game") or {}
+
+        home_probability = row.get(
+            "home_probability"
+        )
+
+        away_probability = row.get(
+            "away_probability"
+        )
+
+        predicted_winner = None
+
+        try:
+
+            if (
+                home_probability is not None
+                and away_probability is not None
+            ):
+
+                home_probability = float(
+                    home_probability
+                )
+
+                away_probability = float(
+                    away_probability
+                )
+
+                if home_probability > away_probability:
+                    predicted_winner = game.get(
+                        "home"
+                    )
+
+                elif away_probability > home_probability:
+                    predicted_winner = game.get(
+                        "away"
+                    )
+
+        except (TypeError, ValueError):
+            predicted_winner = None
+
+        predictions.append(
+            {
+                "id": row.get("id"),
+                "event_id": row.get("event_id"),
+                "sport": row.get("sport"),
+                "league": row.get("league"),
+                "model_version": row.get(
+                    "model_version"
+                ),
+                "created_at": row.get(
+                    "created_at"
+                ),
+                "data_cutoff": row.get(
+                    "data_cutoff"
+                ),
+                "game": {
+                    "date": game.get("date"),
+                    "status": game.get("status"),
+                    "venue": game.get("venue"),
+                    "home": game.get("home"),
+                    "away": game.get("away"),
+                },
+                "prediction": {
+                    "predicted_winner": predicted_winner,
+                    "home_probability": (
+                        home_probability
+                    ),
+                    "away_probability": (
+                        away_probability
+                    ),
+                    "confidence": row.get(
+                        "confidence"
+                    ),
+                },
+                "data_quality": row.get(
+                    "data_quality"
+                ),
+                "result": {
+                    "status": row.get(
+                        "result_status"
+                    ),
+                    "prediction_result": row.get(
+                        "prediction_result"
+                    ),
+                    "actual_winner": row.get(
+                        "actual_winner"
+                    ),
+                    "settled_at": row.get(
+                        "settled_at"
+                    ),
+                },
+            }
+        )
+
+    return {
+        "success": True,
+        "total": len(predictions),
+        "predictions": predictions,
+            }
