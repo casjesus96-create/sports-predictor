@@ -1,4 +1,3 @@
-from historical_data import get_json
 from form_engine import get_matchup_form
 from repository import get_supabase_client
 
