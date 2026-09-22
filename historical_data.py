@@ -1,340 +1,294 @@
-import os
-from datetime import datetime, timedelta, timezone
+import time
+from datetime import date, datetime, timedelta, timezone
 
 import requests
-from supabase import create_client
+
+from repository import get_supabase_client
 
 
 MLB_API = "https://statsapi.mlb.com/api/v1"
-
-HEADERS = {
-    "User-Agent": "Sports-Predictor/1.0"
-}
+SPORT_ID = 1
+SEASON = 2026
 
 
-def get_supabase_client():
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-    if not url or not key:
-        raise RuntimeError(
-            "Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY"
-        )
-
-    return create_client(url, key)
-
-
-def get_schedule(start_date, end_date):
-    """
-    Obtiene partidos MLB dentro de un rango de fechas.
-    """
-
-    url = f"{MLB_API}/schedule"
-
-    params = {
-        "sportId": 1,
-        "startDate": start_date,
-        "endDate": end_date,
-        "hydrate": "team,venue",
-    }
-
+def _get_json(url, params=None, timeout=30):
     response = requests.get(
         url,
         params=params,
-        timeout=30,
-        headers=HEADERS,
+        timeout=timeout,
     )
-
     response.raise_for_status()
-
     return response.json()
 
 
-def extract_games(data):
-    """
-    Convierte la respuesta de MLB en registros
-    compatibles con mlb_game_history.
-    """
-
+def _extract_games(schedule_data):
     games = []
 
-    for date_block in data.get("dates", []):
-
-        for game in date_block.get("games", []):
-
-            game_pk = game.get("gamePk")
-
-            if not game_pk:
-                continue
-
-            status_data = game.get(
-                "status",
-                {}
-            )
-
-            teams = game.get(
-                "teams",
-                {}
-            )
-
-            home_data = teams.get(
-                "home",
-                {}
-            )
-
-            away_data = teams.get(
-                "away",
-                {}
-            )
-
-            home_team_data = home_data.get(
-                "team",
-                {}
-            )
-
-            away_team_data = away_data.get(
-                "team",
-                {}
-            )
-
-            home_team_id = home_team_data.get(
-                "id"
-            )
-
-            away_team_id = away_team_data.get(
-                "id"
-            )
-
-            home_team = home_team_data.get(
-                "name"
-            )
-
-            away_team = away_team_data.get(
-                "name"
-            )
-
-            home_score = home_data.get(
-                "score"
-            )
-
-            away_score = away_data.get(
-                "score"
-            )
-
-            home_winner = None
-
-            if (
-                home_score is not None
-                and away_score is not None
-            ):
-
-                try:
-
-                    home_score_int = int(
-                        home_score
-                    )
-
-                    away_score_int = int(
-                        away_score
-                    )
-
-                    if home_score_int > away_score_int:
-                        home_winner = True
-
-                    elif home_score_int < away_score_int:
-                        home_winner = False
-
-                except (
-                    TypeError,
-                    ValueError
-                ):
-                    home_winner = None
-
-            game_date = game.get(
-                "gameDate"
-            )
-
-            season = game.get(
-                "season"
-            )
-
-            if season is None and game_date:
-
-                try:
-                    season = int(
-                        game_date[:4]
-                    )
-                except (
-                    TypeError,
-                    ValueError
-                ):
-                    season = None
-
-            venue = (
-                game.get("venue", {})
-                .get("name")
-            )
-
-            games.append(
-                {
-                    "game_id": str(game_pk),
-
-                    "game_date": game_date,
-
-                    "season": season,
-
-                    "home_team_id": home_team_id,
-
-                    "home_team": home_team,
-
-                    "away_team_id": away_team_id,
-
-                    "away_team": away_team,
-
-                    "home_score": (
-                        int(home_score)
-                        if home_score is not None
-                        else None
-                    ),
-
-                    "away_score": (
-                        int(away_score)
-                        if away_score is not None
-                        else None
-                    ),
-
-                    "home_winner": home_winner,
-
-                    "status": status_data.get(
-                        "abstractGameState"
-                    ),
-
-                    "detailed_status": status_data.get(
-                        "detailedState"
-                    ),
-
-                    "venue": venue,
-
-                    "updated_at": (
-                        datetime.now(
-                            timezone.utc
-                        ).isoformat()
-                    ),
-                }
-            )
+    for schedule_date in schedule_data.get("dates", []):
+        games.extend(schedule_date.get("games", []))
 
     return games
 
 
-def save_games(games):
-    """
-    Guarda o actualiza partidos en Supabase.
-    """
+def _get_schedule_range(start_date, end_date):
+    data = _get_json(
+        f"{MLB_API}/schedule",
+        params={
+            "sportId": SPORT_ID,
+            "startDate": start_date,
+            "endDate": end_date,
+            "gameTypes": "R",
+            "hydrate": "team,venue",
+        },
+    )
+
+    return _extract_games(data)
+
+
+def _get_game_details(game_id):
+    data = _get_json(
+        f"{MLB_API}/schedule",
+        params={
+            "sportId": SPORT_ID,
+            "gamePk": str(game_id),
+            "hydrate": "team,venue",
+        },
+    )
+
+    games = _extract_games(data)
 
     if not games:
-        return 0
+        return None
+
+    return games[0]
+
+
+def _build_payload(game):
+    game_id = game.get("gamePk")
+
+    teams = game.get("teams") or {}
+    home = teams.get("home") or {}
+    away = teams.get("away") or {}
+
+    home_team = home.get("team") or {}
+    away_team = away.get("team") or {}
+
+    home_score = home.get("score")
+    away_score = away.get("score")
+
+    status = (game.get("status") or {}).get("abstractGameState")
+    detailed_status = (game.get("status") or {}).get("detailedState")
+
+    home_winner = None
+
+    if home.get("isWinner") is not None:
+        home_winner = bool(home.get("isWinner"))
+    elif (
+        home_score is not None
+        and away_score is not None
+    ):
+        home_winner = int(home_score) > int(away_score)
+
+    venue = game.get("venue") or {}
+
+    game_date = game.get("gameDate")
+
+    return {
+        "game_id": str(game_id),
+        "game_date": game_date,
+        "season": int(game.get("season") or SEASON),
+        "home_team_id": home_team.get("id"),
+        "home_team": home_team.get("name"),
+        "away_team_id": away_team.get("id"),
+        "away_team": away_team.get("name"),
+        "home_score": home_score,
+        "away_score": away_score,
+        "home_winner": home_winner,
+        "status": status,
+        "detailed_status": detailed_status,
+        "venue": venue.get("name"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def sync_historical_games(
+    start_date="2026-03-25",
+    end_date=None,
+    chunk_days=7,
+    pause_seconds=0.15,
+):
+    """
+    Sincroniza partidos MLB de temporada regular.
+
+    Por defecto:
+    - inicia el 25 de marzo de 2026
+    - termina en la fecha actual UTC
+
+    La consulta se realiza por bloques para evitar
+    solicitar toda la temporada en una sola petición.
+    """
+
+    if end_date is None:
+        end_date = datetime.now(
+            timezone.utc
+        ).date().isoformat()
+
+    start = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+
+    if start > end:
+        raise ValueError(
+            "start_date no puede ser posterior a end_date"
+        )
 
     supabase = get_supabase_client()
 
-    response = (
-        supabase
-        .table("mlb_game_history")
-        .upsert(
-            games,
-            on_conflict="game_id"
+    total_games = 0
+    inserted = 0
+    updated = 0
+    skipped = 0
+    failed = 0
+
+    current = start
+
+    print("=" * 60)
+    print("SINCRONIZACIÓN HISTÓRICA MLB")
+    print("=" * 60)
+    print(f"Temporada: {SEASON}")
+    print(f"Desde: {start.isoformat()}")
+    print(f"Hasta: {end.isoformat()}")
+    print()
+
+    while current <= end:
+        chunk_end = min(
+            current + timedelta(days=chunk_days - 1),
+            end,
         )
-        .execute()
-    )
 
-    return len(
-        response.data or []
-    )
+        chunk_start_str = current.isoformat()
+        chunk_end_str = chunk_end.isoformat()
 
-
-def sync_historical_games(days=30):
-    """
-    Sincroniza los últimos N días de MLB.
-    """
-
-    today = datetime.now(
-        timezone.utc
-    ).date()
-
-    start_date = (
-        today - timedelta(
-            days=days
+        print(
+            f"[RANGO] {chunk_start_str} -> "
+            f"{chunk_end_str}"
         )
-    )
 
-    start_date_str = start_date.isoformat()
-    end_date_str = today.isoformat()
+        try:
+            games = _get_schedule_range(
+                chunk_start_str,
+                chunk_end_str,
+            )
 
-    print(
-        "===================================="
-    )
+            print(
+                f"[API] Partidos encontrados: "
+                f"{len(games)}"
+            )
 
-    print(
-        " SPORTS PREDICTOR - MLB HISTORY"
-    )
+            for game in games:
+                total_games += 1
 
-    print(
-        "===================================="
-    )
+                try:
+                    game_status = (
+                        game.get("status") or {}
+                    ).get("abstractGameState")
 
-    print(
-        f"Periodo: {start_date_str} "
-        f"hasta {end_date_str}"
-    )
+                    detailed_status = (
+                        game.get("status") or {}
+                    ).get("detailedState")
 
-    data = get_schedule(
-        start_date=start_date_str,
-        end_date=end_date_str,
-    )
+                    # Solo almacenamos partidos terminados.
+                    if (
+                        game_status != "Final"
+                        and detailed_status != "Final"
+                    ):
+                        skipped += 1
+                        continue
 
-    games = extract_games(
-        data
-    )
+                    payload = _build_payload(game)
 
-    print(
-        f"Partidos encontrados: {len(games)}"
-    )
+                    game_id = payload["game_id"]
 
-    final_games = [
-        game
-        for game in games
-        if game.get("status") == "Final"
-    ]
+                    if not game_id:
+                        skipped += 1
+                        continue
 
-    print(
-        f"Partidos Final encontrados: "
-        f"{len(final_games)}"
-    )
+                    existing = (
+                        supabase
+                        .table("mlb_game_history")
+                        .select("id")
+                        .eq("game_id", game_id)
+                        .limit(1)
+                        .execute()
+                    )
 
-    saved = save_games(
-        final_games
-    )
+                    if existing.data:
+                        (
+                            supabase
+                            .table("mlb_game_history")
+                            .update(payload)
+                            .eq(
+                                "game_id",
+                                game_id,
+                            )
+                            .execute()
+                        )
 
-    print(
-        f"Partidos guardados/actualizados: "
-        f"{saved}"
-    )
+                        updated += 1
 
-    print(
-        "===================================="
-    )
+                    else:
+                        (
+                            supabase
+                            .table("mlb_game_history")
+                            .insert(payload)
+                            .execute()
+                        )
+
+                        inserted += 1
+
+                except Exception as exc:
+                    failed += 1
+
+                    print(
+                        f"[ERROR GAME] "
+                        f"{game.get('gamePk')}: "
+                        f"{exc}"
+                    )
+
+            time.sleep(pause_seconds)
+
+        except Exception as exc:
+            failed += 1
+
+            print(
+                f"[ERROR RANGO] "
+                f"{chunk_start_str} -> "
+                f"{chunk_end_str}: {exc}"
+            )
+
+        current = chunk_end + timedelta(days=1)
+
+    print()
+    print("=" * 60)
+    print("SINCRONIZACIÓN FINALIZADA")
+    print("=" * 60)
+    print(f"Partidos procesados: {total_games}")
+    print(f"Nuevos: {inserted}")
+    print(f"Actualizados: {updated}")
+    print(f"Omitidos: {skipped}")
+    print(f"Errores: {failed}")
 
     return {
-        "success": True,
-        "found": len(games),
-        "final": len(final_games),
-        "saved": saved,
-        "start_date": start_date_str,
-        "end_date": end_date_str,
+        "success": failed == 0,
+        "season": SEASON,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "total_games": total_games,
+        "inserted": inserted,
+        "updated": updated,
+        "skipped": skipped,
+        "failed": failed,
     }
 
 
 if __name__ == "__main__":
-
-    sync_historical_games(
-        days=30
-          )
+    sync_historical_games()
