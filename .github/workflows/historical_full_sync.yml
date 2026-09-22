@@ -1,0 +1,40 @@
+name: MLB Historical Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Fecha inicial (YYYY-MM-DD)"
+        required: true
+        default: "2026-03-25"
+
+      end_date:
+        description: "Fecha final (YYYY-MM-DD)"
+        required: true
+        default: "2026-09-22"
+
+jobs:
+  historical-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Sync MLB historical data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          START_DATE: ${{ inputs.start_date }}
+          END_DATE: ${{ inputs.end_date }}
+        run: |
+          python -c "from historical_data import sync_historical_games; sync_historical_games(start_date='$START_DATE', end_date='$END_DATE', chunk_days=7)"
