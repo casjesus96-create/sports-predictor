@@ -170,20 +170,12 @@ def get_mlb_games(
                     {}
                 )
 
-                # -------------------------------------------------
-                # Pitcher probable local
-                # -------------------------------------------------
-
                 home_pitcher = (
                     home.get(
                         "probablePitcher",
                         {}
                     )
                 )
-
-                # -------------------------------------------------
-                # Pitcher probable visitante
-                # -------------------------------------------------
 
                 away_pitcher = (
                     away.get(
@@ -192,18 +184,10 @@ def get_mlb_games(
                     )
                 )
 
-                # -------------------------------------------------
-                # Estado
-                # -------------------------------------------------
-
                 status = game.get(
                     "status",
                     {}
                 )
-
-                # -------------------------------------------------
-                # Partido
-                # -------------------------------------------------
 
                 games.append(
                     {
@@ -271,10 +255,6 @@ def get_mlb_games(
                         },
                     }
                 )
-
-        # -------------------------------------------------
-        # 5. Respuesta
-        # -------------------------------------------------
 
         return {
             "success": True,
@@ -355,19 +335,10 @@ def analyze_mlb_day(
 
     try:
 
-        # -------------------------------------------------
-        # 1. Determinar fecha
-        # -------------------------------------------------
-
         if not date:
-
             date = datetime.now(
                 timezone.utc
             ).strftime("%Y-%m-%d")
-
-        # -------------------------------------------------
-        # 2. Validar fecha
-        # -------------------------------------------------
 
         try:
 
@@ -386,10 +357,6 @@ def analyze_mlb_day(
                 ),
             )
 
-        # -------------------------------------------------
-        # 3. Obtener partidos
-        # -------------------------------------------------
-
         games_response = get_mlb_games(
             date=date
         )
@@ -399,13 +366,7 @@ def analyze_mlb_day(
             []
         )
 
-        total_games = len(
-            games
-        )
-
-        # -------------------------------------------------
-        # 4. Preparar respuesta
-        # -------------------------------------------------
+        total_games = len(games)
 
         predictions = []
         skipped = []
@@ -415,15 +376,7 @@ def analyze_mlb_day(
         skipped_count = 0
         failed_count = 0
 
-        # -------------------------------------------------
-        # 5. Cliente Supabase
-        # -------------------------------------------------
-
         supabase = get_supabase_client()
-
-        # -------------------------------------------------
-        # 6. Analizar cada partido
-        # -------------------------------------------------
 
         for game in games:
 
@@ -473,7 +426,7 @@ def analyze_mlb_day(
                 continue
 
             # -------------------------------------------------
-            # No analizar partidos ya finalizados
+            # No analizar partidos Final
             # -------------------------------------------------
 
             if game_status == "Final":
@@ -506,9 +459,7 @@ def analyze_mlb_day(
                     .table(
                         "prediction_snapshots"
                     )
-                    .select(
-                        "*"
-                    )
+                    .select("*")
                     .eq(
                         "event_id",
                         str(event_id)
@@ -534,24 +485,17 @@ def analyze_mlb_day(
                     or []
                 )
 
-            except Exception as exc:
-
-                # Si falla la consulta de duplicados,
-                # dejamos constancia pero continuamos
-                # con el análisis.
+            except Exception:
 
                 existing_rows = []
 
             # -------------------------------------------------
-            # Si ya existe una predicción PENDING,
-            # no crear otra
+            # Si ya existe, no duplicar
             # -------------------------------------------------
 
             if existing_rows:
 
-                existing = (
-                    existing_rows[0]
-                )
+                existing = existing_rows[0]
 
                 features = (
                     existing.get(
@@ -598,23 +542,15 @@ def analyze_mlb_day(
                         "prediction_id": existing.get(
                             "id"
                         ),
-                        "predicted_winner": (
-                            predicted_winner
+                        "predicted_winner": predicted_winner,
+                        "home_probability": existing.get(
+                            "home_probability"
                         ),
-                        "home_probability": (
-                            existing.get(
-                                "home_probability"
-                            )
+                        "away_probability": existing.get(
+                            "away_probability"
                         ),
-                        "away_probability": (
-                            existing.get(
-                                "away_probability"
-                            )
-                        ),
-                        "confidence": (
-                            existing.get(
-                                "confidence"
-                            )
+                        "confidence": existing.get(
+                            "confidence"
                         ),
                     }
                 )
@@ -630,10 +566,6 @@ def analyze_mlb_day(
                 analysis = analyze_mlb_game(
                     str(event_id)
                 )
-
-                # ---------------------------------------------
-                # Análisis fallido
-                # ---------------------------------------------
 
                 if not analysis.get(
                     "success"
@@ -661,17 +593,13 @@ def analyze_mlb_day(
 
                     continue
 
-                # ---------------------------------------------
+                # -------------------------------------------------
                 # Guardar análisis
-                # ---------------------------------------------
+                # -------------------------------------------------
 
                 persistence = save_analysis(
                     analysis
                 )
-
-                # ---------------------------------------------
-                # Obtener predicción
-                # ---------------------------------------------
 
                 prediction = (
                     analysis.get(
@@ -690,47 +618,31 @@ def analyze_mlb_day(
                         "home": home_name,
                         "away": away_name,
                         "status": game_status,
-                        "detailed_status": (
-                            detailed_status
-                        ),
+                        "detailed_status": detailed_status,
                         "game_date": game.get(
                             "date"
                         ),
                         "venue": game.get(
                             "venue"
                         ),
-                        "predicted_winner": (
-                            prediction.get(
-                                "winner"
-                            )
+                        "predicted_winner": prediction.get(
+                            "winner"
                         ),
-                        "home_probability": (
-                            prediction.get(
-                                "home_probability"
-                            )
+                        "home_probability": prediction.get(
+                            "home_probability"
                         ),
-                        "away_probability": (
-                            prediction.get(
-                                "away_probability"
-                            )
+                        "away_probability": prediction.get(
+                            "away_probability"
                         ),
-                        "confidence": (
-                            prediction.get(
-                                                        "confidence": (
-                            prediction.get(
-                                "confidence"
-                            )
+                        "confidence": prediction.get(
+                            "confidence"
                         ),
-                        "data_quality": (
-                            prediction.get(
-                                "data_quality"
-                            )
+                        "data_quality": prediction.get(
+                            "data_quality"
                         ),
-                        "model_version": (
-                            analysis.get(
-                                "model_version",
-                                CURRENT_MODEL_VERSION
-                            )
+                        "model_version": analysis.get(
+                            "model_version",
+                            CURRENT_MODEL_VERSION
                         ),
                         "saved": (
                             persistence.get(
@@ -774,14 +686,10 @@ def analyze_mlb_day(
                     }
                 )
 
-                # ---------------------------------------------
-                # Continuar con el siguiente partido
-                # ---------------------------------------------
-
                 continue
 
         # -------------------------------------------------
-        # 7. Resumen
+        # Resultado final del análisis diario
         # -------------------------------------------------
 
         return {
@@ -880,6 +788,7 @@ def analyze_game(
         if not analysis.get(
             "success"
         ):
+
             return analysis
 
         persistence = save_analysis(
@@ -915,7 +824,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # 1. Consultar calendario MLB
+        # Consultar calendario MLB
         # -------------------------------------------------
 
         schedule_url = (
@@ -938,10 +847,6 @@ def settle_game(
             timeout=20,
             headers=MLB_HEADERS,
         )
-
-        # -------------------------------------------------
-        # 2. Partido no encontrado
-        # -------------------------------------------------
 
         if schedule_response.status_code == 404:
 
@@ -977,7 +882,7 @@ def settle_game(
             )
 
         # -------------------------------------------------
-        # 3. Buscar partido
+        # Buscar partido
         # -------------------------------------------------
 
         target_game = None
@@ -1009,7 +914,7 @@ def settle_game(
             }
 
         # -------------------------------------------------
-        # 4. Información del partido
+        # Estado del partido
         # -------------------------------------------------
 
         game_status = (
@@ -1039,6 +944,10 @@ def settle_game(
             {}
         )
 
+        # -------------------------------------------------
+        # Equipo local
+        # -------------------------------------------------
+
         home_team = (
             teams
             .get(
@@ -1054,6 +963,10 @@ def settle_game(
             )
         )
 
+        # -------------------------------------------------
+        # Equipo visitante
+        # -------------------------------------------------
+
         away_team = (
             teams
             .get(
@@ -1068,6 +981,10 @@ def settle_game(
                 "name"
             )
         )
+
+        # -------------------------------------------------
+        # Marcadores
+        # -------------------------------------------------
 
         home_score = (
             teams
@@ -1092,7 +1009,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # 5. Partido todavía no terminado
+        # Partido todavía no terminado
         # -------------------------------------------------
 
         if game_status != "Final":
@@ -1113,7 +1030,7 @@ def settle_game(
             }
 
         # -------------------------------------------------
-        # 6. Verificar marcador
+        # Verificar marcador
         # -------------------------------------------------
 
         if (
@@ -1143,7 +1060,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # 7. Determinar ganador
+        # Determinar ganador
         # -------------------------------------------------
 
         if home_score > away_score:
@@ -1171,7 +1088,7 @@ def settle_game(
             }
 
         # -------------------------------------------------
-        # 8. Actualizar Supabase
+        # Liquidar predicción
         # -------------------------------------------------
 
         settlement = settle_prediction(
@@ -1182,7 +1099,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # 9. Respuesta
+        # Respuesta
         # -------------------------------------------------
 
         return {
@@ -1288,4 +1205,3 @@ def predictions():
                 "details": str(exc),
             },
         )
-              
