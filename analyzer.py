@@ -2,6 +2,9 @@ import math
 import requests
 from datetime import datetime, timezone
 
+from form_engine import get_matchup_form
+
+
 MLB_API = "https://statsapi.mlb.com/api/v1"
 
 
@@ -20,15 +23,25 @@ def get_json(url, params=None):
     )
 
     response.raise_for_status()
+
     return response.json()
 
 
 def get_game(game_id):
-    url = f"{MLB_API}.1/game/{game_id}/feed/live"
+    """
+    Obtiene la información completa de un partido MLB.
+    """
+
+    url = f"{MLB_API}/game/{game_id}/feed/live"
+
     return get_json(url)
 
 
 def get_team_season_stats(team_id, season=2026):
+    """
+    Obtiene estadísticas de temporada del equipo.
+    """
+
     url = f"{MLB_API}/teams/{team_id}/stats"
 
     params = {
@@ -45,22 +58,45 @@ def get_team_season_stats(team_id, season=2026):
     }
 
     for split in data.get("stats", []):
-        group = split.get("group", {}).get("displayName", "").lower()
+
+        group = (
+            split
+            .get("group", {})
+            .get("displayName", "")
+            .lower()
+        )
 
         if group == "hitting":
-            result["hitting"] = split.get("splits", [{}])[0].get(
-                "stat", {}
-            )
+
+            splits = split.get("splits", [])
+
+            if splits:
+                result["hitting"] = (
+                    splits[0]
+                    .get("stat", {})
+                )
 
         elif group == "pitching":
-            result["pitching"] = split.get("splits", [{}])[0].get(
-                "stat", {}
-            )
+
+            splits = split.get("splits", [])
+
+            if splits:
+                result["pitching"] = (
+                    splits[0]
+                    .get("stat", {})
+                )
 
     return result
 
 
-def get_player_pitching_stats(player_id, season=2026):
+def get_player_pitching_stats(
+    player_id,
+    season=2026
+):
+    """
+    Obtiene estadísticas del pitcher probable.
+    """
+
     if not player_id:
         return {}
 
@@ -74,7 +110,11 @@ def get_player_pitching_stats(player_id, season=2026):
 
     data = get_json(url, params)
 
-    splits = data.get("stats", [{}])[0].get("splits", [])
+    splits = (
+        data
+        .get("stats", [{}])[0]
+        .get("splits", [])
+    )
 
     if not splits:
         return {}
@@ -82,11 +122,120 @@ def get_player_pitching_stats(player_id, season=2026):
     return splits[0].get("stat", {})
 
 
-def safe_float(value, default=None):
+def safe_float(
+    value,
+    default=None
+):
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def calculate_recent_form_score(form):
+    """
+    Calcula una señal de forma reciente.
+
+    Los últimos 5 partidos tienen mayor peso,
+    seguidos por los últimos 10 y 15.
+
+    Retorna una puntuación centrada aproximadamente
+    alrededor de 0.5.
+    """
+
+    last_5 = form.get("last_5", {})
+    last_10 = form.get("last_10", {})
+    last_15 = form.get("last_15", {})
+
+    win_rate_5 = safe_float(
+        last_5.get("win_rate"),
+        0.5
+    )
+
+    win_rate_10 = safe_float(
+        last_10.get("win_rate"),
+        0.5
+    )
+
+    win_rate_15 = safe_float(
+        last_15.get("win_rate"),
+        0.5
+    )
+
+    weighted_win_rate = (
+        win_rate_5 * 0.50
+        + win_rate_10 * 0.30
+        + win_rate_15 * 0.20
+    )
+
+    return weighted_win_rate
+
+
+def calculate_run_form_score(form):
+    """
+    Calcula la señal de diferencial de carreras
+    por partido utilizando 5/10/15 partidos.
+    """
+
+    last_5 = form.get("last_5", {})
+    last_10 = form.get("last_10", {})
+    last_15 = form.get("last_15", {})
+
+    diff_5 = safe_float(
+        last_5.get("run_differential"),
+        0
+    )
+
+    games_5 = safe_float(
+        last_5.get("games"),
+        0
+    )
+
+    diff_10 = safe_float(
+        last_10.get("run_differential"),
+        0
+    )
+
+    games_10 = safe_float(
+        last_10.get("games"),
+        0
+    )
+
+    diff_15 = safe_float(
+        last_15.get("run_differential"),
+        0
+    )
+
+    games_15 = safe_float(
+        last_15.get("games"),
+        0
+    )
+
+    per_game_5 = (
+        diff_5 / games_5
+        if games_5 > 0
+        else 0
+    )
+
+    per_game_10 = (
+        diff_10 / games_10
+        if games_10 > 0
+        else 0
+    )
+
+    per_game_15 = (
+        diff_15 / games_15
+        if games_15 > 0
+        else 0
+    )
+
+    weighted_run_diff = (
+        per_game_5 * 0.50
+        + per_game_10 * 0.30
+        + per_game_15 * 0.20
+    )
+
+    return weighted_run_diff
 
 
 def calculate_probability(
@@ -95,102 +244,366 @@ def calculate_probability(
     home_pitching,
     away_pitching,
     home_pitcher,
-    away_pitcher
+    away_pitcher,
+    home_form,
+    away_form
 ):
+    """
+    Calcula la probabilidad inicial del partido.
+
+    Componentes:
+
+    1. Ofensiva
+    2. Pitcheo colectivo
+    3. Pitchers probables
+    4. Ventaja de local
+    5. Forma reciente
+    6. Diferencial reciente de carreras
+    """
+
     home_score = 0.50
 
-    # Offensive comparison
-    home_ops = safe_float(home_hitting.get("ops"), 0.700)
-    away_ops = safe_float(away_hitting.get("ops"), 0.700)
+    # -------------------------------------------------
+    # 1. OFENSIVA
+    # -------------------------------------------------
 
-    offensive_difference = home_ops - away_ops
-    home_score += offensive_difference * 0.35
+    home_ops = safe_float(
+        home_hitting.get("ops"),
+        0.700
+    )
 
-    # Team pitching comparison.
-    # Lower ERA is better.
-    home_era = safe_float(home_pitching.get("era"), 4.50)
-    away_era = safe_float(away_pitching.get("era"), 4.50)
+    away_ops = safe_float(
+        away_hitting.get("ops"),
+        0.700
+    )
 
-    pitching_difference = away_era - home_era
-    home_score += pitching_difference * 0.035
+    offensive_difference = (
+        home_ops - away_ops
+    )
 
-    # Starting pitcher comparison.
-    home_sp_era = safe_float(home_pitcher.get("era"))
-    away_sp_era = safe_float(away_pitcher.get("era"))
+    home_score += (
+        offensive_difference * 0.35
+    )
 
-    if home_sp_era is not None and away_sp_era is not None:
-        home_score += (away_sp_era - home_sp_era) * 0.025
+    # -------------------------------------------------
+    # 2. PITCHEO DEL EQUIPO
+    # -------------------------------------------------
 
-    # Home field advantage.
+    home_era = safe_float(
+        home_pitching.get("era"),
+        4.50
+    )
+
+    away_era = safe_float(
+        away_pitching.get("era"),
+        4.50
+    )
+
+    pitching_difference = (
+        away_era - home_era
+    )
+
+    home_score += (
+        pitching_difference * 0.035
+    )
+
+    # -------------------------------------------------
+    # 3. PITCHERS PROBABLES
+    # -------------------------------------------------
+
+    home_sp_era = safe_float(
+        home_pitcher.get("era")
+    )
+
+    away_sp_era = safe_float(
+        away_pitcher.get("era")
+    )
+
+    if (
+        home_sp_era is not None
+        and away_sp_era is not None
+    ):
+
+        home_score += (
+            away_sp_era - home_sp_era
+        ) * 0.025
+
+    # -------------------------------------------------
+    # 4. VENTAJA DE LOCAL
+    # -------------------------------------------------
+
     home_score += 0.025
 
-    probability = clamp(home_score)
+    # -------------------------------------------------
+    # 5. FORMA RECIENTE
+    # -------------------------------------------------
+
+    home_win_form = (
+        calculate_recent_form_score(
+            home_form
+        )
+    )
+
+    away_win_form = (
+        calculate_recent_form_score(
+            away_form
+        )
+    )
+
+    form_difference = (
+        home_win_form - away_win_form
+    )
+
+    # Peso moderado para evitar
+    # sobreajuste inicial.
+    home_score += (
+        form_difference * 0.12
+    )
+
+    # -------------------------------------------------
+    # 6. DIFERENCIAL DE CARRERAS
+    # -------------------------------------------------
+
+    home_run_form = (
+        calculate_run_form_score(
+            home_form
+        )
+    )
+
+    away_run_form = (
+        calculate_run_form_score(
+            away_form
+        )
+    )
+
+    run_form_difference = (
+        home_run_form - away_run_form
+    )
+
+    # Limitamos la influencia del diferencial
+    # para evitar que un resultado extremo
+    # domine el modelo.
+    run_component = (
+        math.tanh(
+            run_form_difference / 3.0
+        ) * 0.04
+    )
+
+    home_score += run_component
+
+    # -------------------------------------------------
+    # PROBABILIDAD FINAL
+    # -------------------------------------------------
+
+    probability = clamp(
+        home_score
+    )
 
     return {
-        "home": round(probability, 4),
-        "away": round(1 - probability, 4)
+        "home": round(
+            probability,
+            4
+        ),
+        "away": round(
+            1 - probability,
+            4
+        )
     }
 
 
 def analyze_mlb_game(game_id):
-    game = get_game(game_id)
+    """
+    Analiza un partido MLB utilizando únicamente
+    información disponible antes del comienzo.
+    """
 
-    game_data = game.get("gameData", {})
-    live_data = game.get("liveData", {})
+    # -------------------------------------------------
+    # DATOS DEL PARTIDO
+    # -------------------------------------------------
 
-    status = game_data.get("status", {}).get("abstractGameState")
-
-    teams = game_data.get("teams", {})
-
-    home_team = teams.get("home", {})
-    away_team = teams.get("away", {})
-
-    home_id = home_team.get("id")
-    away_id = away_team.get("id")
-
-    home_name = home_team.get("name")
-    away_name = away_team.get("name")
-
-    venue = game_data.get("venue", {}).get("name")
-
-    datetime_value = game_data.get("datetime", {}).get(
-        "dateTime"
+    game = get_game(
+        game_id
     )
 
-    # We only want pregame analysis.
-    if status in {"Final", "Live"}:
+    game_data = game.get(
+        "gameData",
+        {}
+    )
+
+    status = (
+        game_data
+        .get("status", {})
+        .get("abstractGameState")
+    )
+
+    teams = game_data.get(
+        "teams",
+        {}
+    )
+
+    home_team = teams.get(
+        "home",
+        {}
+    )
+
+    away_team = teams.get(
+        "away",
+        {}
+    )
+
+    home_id = home_team.get(
+        "id"
+    )
+
+    away_id = away_team.get(
+        "id"
+    )
+
+    home_name = home_team.get(
+        "name"
+    )
+
+    away_name = away_team.get(
+        "name"
+    )
+
+    venue = (
+        game_data
+        .get("venue", {})
+        .get("name")
+    )
+
+    datetime_value = (
+        game_data
+        .get("datetime", {})
+        .get("dateTime")
+    )
+
+    # -------------------------------------------------
+    # EVITAR ANALIZAR PARTIDOS YA INICIADOS
+    # -------------------------------------------------
+
+    if status in {
+        "Final",
+        "Live"
+    }:
+
         return {
             "success": False,
             "message": (
                 "Este partido ya comenzó o terminó. "
-                "El motor pregame no utilizará información "
-                "posterior al inicio del partido."
+                "El motor pregame no utilizará "
+                "información posterior al inicio "
+                "del partido."
             ),
-            "game_id": str(game_id),
+            "game_id": str(
+                game_id
+            ),
             "status": status
         }
 
-    home_stats = get_team_season_stats(home_id)
-    away_stats = get_team_season_stats(away_id)
+    # -------------------------------------------------
+    # ESTADÍSTICAS DE TEMPORADA
+    # -------------------------------------------------
+
+    home_stats = get_team_season_stats(
+        home_id
+    )
+
+    away_stats = get_team_season_stats(
+        away_id
+    )
+
+    # -------------------------------------------------
+    # PITCHERS PROBABLES
+    # -------------------------------------------------
 
     probable_pitchers = (
         game_data
         .get("probablePitchers", {})
     )
 
-    home_pitcher_info = probable_pitchers.get("home", {})
-    away_pitcher_info = probable_pitchers.get("away", {})
-
-    home_pitcher_id = home_pitcher_info.get("id")
-    away_pitcher_id = away_pitcher_info.get("id")
-
-    home_pitcher_stats = get_player_pitching_stats(
-        home_pitcher_id
+    home_pitcher_info = (
+        probable_pitchers
+        .get("home", {})
     )
 
-    away_pitcher_stats = get_player_pitching_stats(
-        away_pitcher_id
+    away_pitcher_info = (
+        probable_pitchers
+        .get("away", {})
     )
+
+    home_pitcher_id = (
+        home_pitcher_info
+        .get("id")
+    )
+
+    away_pitcher_id = (
+        away_pitcher_info
+        .get("id")
+    )
+
+    home_pitcher_stats = (
+        get_player_pitching_stats(
+            home_pitcher_id
+        )
+    )
+
+    away_pitcher_stats = (
+        get_player_pitching_stats(
+            away_pitcher_id
+        )
+    )
+
+    # -------------------------------------------------
+    # FORMA HISTÓRICA
+    # -------------------------------------------------
+
+    form_error = None
+
+    try:
+
+        matchup_form = get_matchup_form(
+            home_team_id=home_id,
+            away_team_id=away_id,
+            before_date=datetime_value
+        )
+
+        home_form = matchup_form.get(
+            "home",
+            {}
+        )
+
+        away_form = matchup_form.get(
+            "away",
+            {}
+        )
+
+    except Exception as exc:
+
+        # Si el historial falla, no detenemos
+        # completamente el predictor.
+        #
+        # El modelo continúa con los datos MLB
+        # actuales y registra el error.
+
+        form_error = str(exc)
+
+        home_form = {
+            "last_5": {},
+            "last_10": {},
+            "last_15": {}
+        }
+
+        away_form = {
+            "last_5": {},
+            "last_10": {},
+            "last_15": {}
+        }
+
+    # -------------------------------------------------
+    # PROBABILIDADES
+    # -------------------------------------------------
 
     probabilities = calculate_probability(
         home_stats["hitting"],
@@ -198,58 +611,221 @@ def analyze_mlb_game(game_id):
         home_stats["pitching"],
         away_stats["pitching"],
         home_pitcher_stats,
-        away_pitcher_stats
+        away_pitcher_stats,
+        home_form,
+        away_form
     )
 
+    # -------------------------------------------------
+    # FACTORES
+    # -------------------------------------------------
+
     factors = {
+
         "home_advantage": 0.025,
-        "home_team_ops": home_stats["hitting"].get("ops"),
-        "away_team_ops": away_stats["hitting"].get("ops"),
-        "home_team_era": home_stats["pitching"].get("era"),
-        "away_team_era": away_stats["pitching"].get("era"),
-        "home_pitcher_era": home_pitcher_stats.get("era"),
-        "away_pitcher_era": away_pitcher_stats.get("era")
+
+        "home_team_ops":
+            home_stats["hitting"].get(
+                "ops"
+            ),
+
+        "away_team_ops":
+            away_stats["hitting"].get(
+                "ops"
+            ),
+
+        "home_team_era":
+            home_stats["pitching"].get(
+                "era"
+            ),
+
+        "away_team_era":
+            away_stats["pitching"].get(
+                "era"
+            ),
+
+        "home_pitcher_era":
+            home_pitcher_stats.get(
+                "era"
+            ),
+
+        "away_pitcher_era":
+            away_pitcher_stats.get(
+                "era"
+            ),
+
+        "recent_form": {
+            "home": home_form,
+            "away": away_form
+        },
+
+        "recent_form_score": {
+            "home":
+                calculate_recent_form_score(
+                    home_form
+                ),
+            "away":
+                calculate_recent_form_score(
+                    away_form
+                )
+        },
+
+        "recent_run_differential_per_game": {
+            "home":
+                calculate_run_form_score(
+                    home_form
+                ),
+            "away":
+                calculate_run_form_score(
+                    away_form
+                )
+        }
     }
 
-    confidence = abs(
-        probabilities["home"] -
-        probabilities["away"]
+    if form_error:
+
+        factors["form_engine_error"] = (
+            form_error
+        )
+
+    # -------------------------------------------------
+    # CONFIANZA
+    # -------------------------------------------------
+
+    probability_difference = abs(
+        probabilities["home"]
+        - probabilities["away"]
     )
 
     confidence = clamp(
-        0.50 + confidence * 0.75,
+        0.50
+        + probability_difference * 0.75,
         0.50,
         0.90
     )
 
+    # -------------------------------------------------
+    # EQUIPO PREDICHO
+    # -------------------------------------------------
+
     predicted_team = (
         home_name
-        if probabilities["home"] >= probabilities["away"]
+        if (
+            probabilities["home"]
+            >= probabilities["away"]
+        )
         else away_name
     )
 
+    # -------------------------------------------------
+    # CALIDAD DE DATOS
+    # -------------------------------------------------
+
+    home_form_games = (
+        home_form
+        .get("last_15", {})
+        .get("games", 0)
+    )
+
+    away_form_games = (
+        away_form
+        .get("last_15", {})
+        .get("games", 0)
+    )
+
+    if (
+        home_form_games >= 15
+        and away_form_games >= 15
+    ):
+        data_quality = 100
+
+    elif (
+        home_form_games >= 10
+        and away_form_games >= 10
+    ):
+        data_quality = 90
+
+    elif (
+        home_form_games >= 5
+        and away_form_games >= 5
+    ):
+        data_quality = 80
+
+    else:
+        data_quality = 65
+
+    # Si hubo un error consultando el historial,
+    # reducimos la calidad de datos.
+    if form_error:
+        data_quality = min(
+            data_quality,
+            70
+        )
+
+    # -------------------------------------------------
+    # RESPUESTA
+    # -------------------------------------------------
+
     return {
+
         "success": True,
-        "model_version": "1.1.0-baseline",
-        "generated_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
+
+        "model_version":
+            "1.2.0-form",
+
+        "generated_at":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
 
         "game": {
-            "game_id": str(game_id),
-            "date": datetime_value,
-            "status": status,
-            "venue": venue,
-            "home": home_name,
-            "away": away_name
+
+            "game_id":
+                str(game_id),
+
+            "date":
+                datetime_value,
+
+            "status":
+                status,
+
+            "venue":
+                venue,
+
+            "home":
+                home_name,
+
+            "away":
+                away_name,
+
+            "home_team_id":
+                home_id,
+
+            "away_team_id":
+                away_id
         },
 
         "prediction": {
-            "winner": predicted_team,
-            "home_probability": probabilities["home"],
-            "away_probability": probabilities["away"],
-            "confidence": round(confidence, 4)
+
+            "winner":
+                predicted_team,
+
+            "home_probability":
+                probabilities["home"],
+
+            "away_probability":
+                probabilities["away"],
+
+            "confidence":
+                round(
+                    confidence,
+                    4
+                ),
+
+            "data_quality":
+                data_quality
         },
 
-        "factors": factors
+        "factors":
+            factors
     }
