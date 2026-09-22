@@ -1,17 +1,13 @@
 from historical_data import sync_historical_games
 
 
-def main():
-    result = sync_historical_games(
-        days=30
-    )
-
-    print(
-        "Resultado de sincronización:"
-    )
-
-    print(result)
-
-
 if __name__ == "__main__":
-    main()
+    result = sync_historical_games(
+        start_date="2026-03-25",
+        end_date="2026-09-22",
+        chunk_days=7,
+    )
+
+    print()
+    print("RESULTADO:")
+    print(result)
