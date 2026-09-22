@@ -10,15 +10,16 @@ from repository import (
     settle_prediction,
     get_performance,
     get_predictions,
+    get_supabase_client,
 )
 
 
 app = FastAPI(
     title="Sports Predictor API",
-    version="1.2.0",
+    version="1.3.0",
     description=(
         "API de proyecciones deportivas con análisis MLB, "
-        "forma histórica y liquidación automática."
+        "forma histórica, análisis diario y liquidación automática."
     ),
 )
 
@@ -28,6 +29,8 @@ MLB_API = "https://statsapi.mlb.com/api/v1"
 MLB_HEADERS = {
     "User-Agent": "Sports-Predictor/1.0"
 }
+
+CURRENT_MODEL_VERSION = "1.2.0-form"
 
 
 # =========================================================
@@ -39,7 +42,8 @@ def health():
     return {
         "status": "ok",
         "service": "sports-predictor",
-        "version": "1.2.0",
+        "version": "1.3.0",
+        "model_version": CURRENT_MODEL_VERSION,
     }
 
 
@@ -63,6 +67,7 @@ def get_mlb_games(
     """
 
     try:
+
         # -------------------------------------------------
         # 1. Determinar fecha
         # -------------------------------------------------
@@ -77,12 +82,14 @@ def get_mlb_games(
         # -------------------------------------------------
 
         try:
+
             datetime.strptime(
                 date,
                 "%Y-%m-%d"
             )
 
         except ValueError:
+
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -168,8 +175,7 @@ def get_mlb_games(
                 # -------------------------------------------------
 
                 home_pitcher = (
-                    home
-                    .get(
+                    home.get(
                         "probablePitcher",
                         {}
                     )
@@ -180,8 +186,7 @@ def get_mlb_games(
                 # -------------------------------------------------
 
                 away_pitcher = (
-                    away
-                    .get(
+                    away.get(
                         "probablePitcher",
                         {}
                     )
@@ -282,6 +287,7 @@ def get_mlb_games(
         raise
 
     except requests.exceptions.HTTPError as exc:
+
         raise HTTPException(
             status_code=502,
             detail={
@@ -294,6 +300,7 @@ def get_mlb_games(
         )
 
     except requests.exceptions.RequestException as exc:
+
         raise HTTPException(
             status_code=502,
             detail={
@@ -307,12 +314,503 @@ def get_mlb_games(
         )
 
     except Exception as exc:
+
         raise HTTPException(
             status_code=500,
             detail={
                 "error": "MLB_GAMES_ERROR",
                 "message": (
                     "Error obteniendo los partidos MLB."
+                ),
+                "details": str(exc),
+            },
+        )
+
+
+# =========================================================
+# ANALYZE DAY
+# =========================================================
+
+@app.get("/api/v1/mlb/analyze-day")
+def analyze_mlb_day(
+    date: str = None
+):
+    """
+    Analiza automáticamente todos los partidos MLB
+    de una fecha determinada.
+
+    Ejemplo:
+
+    /api/v1/mlb/analyze-day?date=2026-09-22
+
+    El endpoint:
+
+    1. Obtiene los partidos MLB.
+    2. Analiza cada partido.
+    3. Guarda las predicciones en Supabase.
+    4. Evita duplicar una predicción PENDING
+       de la misma versión del modelo.
+    5. Continúa aunque un partido individual falle.
+    """
+
+    try:
+
+        # -------------------------------------------------
+        # 1. Determinar fecha
+        # -------------------------------------------------
+
+        if not date:
+
+            date = datetime.now(
+                timezone.utc
+            ).strftime("%Y-%m-%d")
+
+        # -------------------------------------------------
+        # 2. Validar fecha
+        # -------------------------------------------------
+
+        try:
+
+            datetime.strptime(
+                date,
+                "%Y-%m-%d"
+            )
+
+        except ValueError:
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "La fecha debe utilizar el formato "
+                    "YYYY-MM-DD. Ejemplo: 2026-09-22"
+                ),
+            )
+
+        # -------------------------------------------------
+        # 3. Obtener partidos
+        # -------------------------------------------------
+
+        games_response = get_mlb_games(
+            date=date
+        )
+
+        games = games_response.get(
+            "games",
+            []
+        )
+
+        total_games = len(
+            games
+        )
+
+        # -------------------------------------------------
+        # 4. Preparar respuesta
+        # -------------------------------------------------
+
+        predictions = []
+        skipped = []
+        failed = []
+
+        analyzed_count = 0
+        skipped_count = 0
+        failed_count = 0
+
+        # -------------------------------------------------
+        # 5. Cliente Supabase
+        # -------------------------------------------------
+
+        supabase = get_supabase_client()
+
+        # -------------------------------------------------
+        # 6. Analizar cada partido
+        # -------------------------------------------------
+
+        for game in games:
+
+            event_id = game.get(
+                "game_id"
+            )
+
+            home_name = (
+                game
+                .get("home", {})
+                .get("name")
+            )
+
+            away_name = (
+                game
+                .get("away", {})
+                .get("name")
+            )
+
+            game_status = game.get(
+                "status"
+            )
+
+            detailed_status = game.get(
+                "detailed_status"
+            )
+
+            # -------------------------------------------------
+            # Validar game_id
+            # -------------------------------------------------
+
+            if not event_id:
+
+                failed_count += 1
+
+                failed.append(
+                    {
+                        "event_id": None,
+                        "home": home_name,
+                        "away": away_name,
+                        "error": (
+                            "El partido no tiene game_id."
+                        ),
+                    }
+                )
+
+                continue
+
+            # -------------------------------------------------
+            # No analizar partidos ya finalizados
+            # -------------------------------------------------
+
+            if game_status == "Final":
+
+                skipped_count += 1
+
+                skipped.append(
+                    {
+                        "event_id": event_id,
+                        "home": home_name,
+                        "away": away_name,
+                        "status": game_status,
+                        "detailed_status": detailed_status,
+                        "reason": (
+                            "El partido ya está Final."
+                        ),
+                    }
+                )
+
+                continue
+
+            # -------------------------------------------------
+            # Buscar predicción PENDING existente
+            # -------------------------------------------------
+
+            try:
+
+                existing_response = (
+                    supabase
+                    .table(
+                        "prediction_snapshots"
+                    )
+                    .select(
+                        "*"
+                    )
+                    .eq(
+                        "event_id",
+                        str(event_id)
+                    )
+                    .eq(
+                        "model_version",
+                        CURRENT_MODEL_VERSION
+                    )
+                    .eq(
+                        "result_status",
+                        "PENDING"
+                    )
+                    .order(
+                        "created_at",
+                        desc=True
+                    )
+                    .limit(1)
+                    .execute()
+                )
+
+                existing_rows = (
+                    existing_response.data
+                    or []
+                )
+
+            except Exception as exc:
+
+                # Si falla la consulta de duplicados,
+                # dejamos constancia pero continuamos
+                # con el análisis.
+
+                existing_rows = []
+
+            # -------------------------------------------------
+            # Si ya existe una predicción PENDING,
+            # no crear otra
+            # -------------------------------------------------
+
+            if existing_rows:
+
+                existing = (
+                    existing_rows[0]
+                )
+
+                features = (
+                    existing.get(
+                        "features"
+                    )
+                    or {}
+                )
+
+                existing_game = (
+                    features.get(
+                        "game"
+                    )
+                    or {}
+                )
+
+                predicted_winner = (
+                    features.get(
+                        "predicted_winner"
+                    )
+                )
+
+                skipped_count += 1
+
+                skipped.append(
+                    {
+                        "event_id": event_id,
+                        "home": (
+                            existing_game.get(
+                                "home"
+                            )
+                            or home_name
+                        ),
+                        "away": (
+                            existing_game.get(
+                                "away"
+                            )
+                            or away_name
+                        ),
+                        "reason": (
+                            "Ya existe una predicción "
+                            "PENDING para este partido "
+                            "y esta versión del modelo."
+                        ),
+                        "prediction_id": existing.get(
+                            "id"
+                        ),
+                        "predicted_winner": (
+                            predicted_winner
+                        ),
+                        "home_probability": (
+                            existing.get(
+                                "home_probability"
+                            )
+                        ),
+                        "away_probability": (
+                            existing.get(
+                                "away_probability"
+                            )
+                        ),
+                        "confidence": (
+                            existing.get(
+                                "confidence"
+                            )
+                        ),
+                    }
+                )
+
+                continue
+
+            # -------------------------------------------------
+            # Analizar partido
+            # -------------------------------------------------
+
+            try:
+
+                analysis = analyze_mlb_game(
+                    str(event_id)
+                )
+
+                # ---------------------------------------------
+                # Análisis fallido
+                # ---------------------------------------------
+
+                if not analysis.get(
+                    "success"
+                ):
+
+                    failed_count += 1
+
+                    failed.append(
+                        {
+                            "event_id": event_id,
+                            "home": home_name,
+                            "away": away_name,
+                            "error": (
+                                analysis.get(
+                                    "message"
+                                )
+                                or analysis.get(
+                                    "error"
+                                )
+                                or "El análisis falló."
+                            ),
+                            "analysis": analysis,
+                        }
+                    )
+
+                    continue
+
+                # ---------------------------------------------
+                # Guardar análisis
+                # ---------------------------------------------
+
+                persistence = save_analysis(
+                    analysis
+                )
+
+                # ---------------------------------------------
+                # Obtener predicción
+                # ---------------------------------------------
+
+                prediction = (
+                    analysis.get(
+                        "prediction",
+                        {}
+                    )
+                )
+
+                analyzed_count += 1
+
+                predictions.append(
+                    {
+                        "event_id": str(
+                            event_id
+                        ),
+                        "home": home_name,
+                        "away": away_name,
+                        "status": game_status,
+                        "detailed_status": (
+                            detailed_status
+                        ),
+                        "game_date": game.get(
+                            "date"
+                        ),
+                        "venue": game.get(
+                            "venue"
+                        ),
+                        "predicted_winner": (
+                            prediction.get(
+                                "winner"
+                            )
+                        ),
+                        "home_probability": (
+                            prediction.get(
+                                "home_probability"
+                            )
+                        ),
+                        "away_probability": (
+                            prediction.get(
+                                "away_probability"
+                            )
+                        ),
+                        "confidence": (
+                            prediction.get(
+                                                        "confidence": (
+                            prediction.get(
+                                "confidence"
+                            )
+                        ),
+                        "data_quality": (
+                            prediction.get(
+                                "data_quality"
+                            )
+                        ),
+                        "model_version": (
+                            analysis.get(
+                                "model_version",
+                                CURRENT_MODEL_VERSION
+                            )
+                        ),
+                        "saved": (
+                            persistence.get(
+                                "saved",
+                                False
+                            )
+                            if isinstance(
+                                persistence,
+                                dict
+                            )
+                            else False
+                        ),
+                        "prediction_id": (
+                            (
+                                persistence
+                                .get("data", [{}])[0]
+                                .get("id")
+                            )
+                            if isinstance(
+                                persistence,
+                                dict
+                            )
+                            and persistence.get(
+                                "data"
+                            )
+                            else None
+                        ),
+                    }
+                )
+
+            except Exception as exc:
+
+                failed_count += 1
+
+                failed.append(
+                    {
+                        "event_id": event_id,
+                        "home": home_name,
+                        "away": away_name,
+                        "error": str(exc),
+                    }
+                )
+
+                # ---------------------------------------------
+                # Continuar con el siguiente partido
+                # ---------------------------------------------
+
+                continue
+
+        # -------------------------------------------------
+        # 7. Resumen
+        # -------------------------------------------------
+
+        return {
+            "success": True,
+            "date": date,
+            "model_version": CURRENT_MODEL_VERSION,
+            "summary": {
+                "total_games": total_games,
+                "analyzed": analyzed_count,
+                "skipped": skipped_count,
+                "failed": failed_count,
+            },
+            "predictions": predictions,
+            "skipped": skipped,
+            "failed": failed,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "MLB_ANALYZE_DAY_ERROR",
+                "message": (
+                    "Error ejecutando el análisis "
+                    "automático de la jornada MLB."
                 ),
                 "details": str(exc),
             },
@@ -352,6 +850,7 @@ def create_experimental_prediction(
         }
 
     except Exception as exc:
+
         raise HTTPException(
             status_code=500,
             detail=str(exc),
@@ -394,6 +893,7 @@ def analyze_game(
         return analysis
 
     except Exception as exc:
+
         raise HTTPException(
             status_code=500,
             detail=str(exc),
@@ -788,3 +1288,4 @@ def predictions():
                 "details": str(exc),
             },
         )
+              
