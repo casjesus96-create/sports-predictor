@@ -105,14 +105,26 @@ try:
 
     home_split = (
         result["batting_splits"]
-        ["home"]
+        ["home_team"]
         ["batting_split"]
     )
 
     away_split = (
         result["batting_splits"]
-        ["away"]
+        ["away_team"]
         ["batting_split"]
+    )
+
+    home_pitcher_faced = (
+        result["batting_splits"]
+        ["home_team"]
+        ["pitcher_faced"]
+    )
+
+    away_pitcher_faced = (
+        result["batting_splits"]
+        ["away_team"]
+        ["pitcher_faced"]
     )
 
     print()
@@ -120,9 +132,12 @@ try:
 
     print(
         "Mano enfrentada:",
-        result["batting_splits"]
-        ["home"]
-        ["pitcher_faced"],
+        home_pitcher_faced,
+    )
+
+    print(
+        "Disponible:",
+        home_split.get("available"),
     )
 
     print(
@@ -150,9 +165,12 @@ try:
 
     print(
         "Mano enfrentada:",
-        result["batting_splits"]
-        ["away"]
-        ["pitcher_faced"],
+        away_pitcher_faced,
+    )
+
+    print(
+        "Disponible:",
+        away_split.get("available"),
     )
 
     print(
@@ -177,7 +195,86 @@ try:
 
     print()
     print("=" * 70)
-    print("PRUEBA FINALIZADA")
+    print("VALIDACION DE LA LOGICA")
+    print("=" * 70)
+
+    expected_home_hand = (
+        result["pitcher_hands"]["away"]
+    )
+
+    expected_away_hand = (
+        result["pitcher_hands"]["home"]
+    )
+
+    actual_home_hand = (
+        result["batting_splits"]
+        ["home_team"]
+        ["pitcher_faced"]
+    )
+
+    actual_away_hand = (
+        result["batting_splits"]
+        ["away_team"]
+        ["pitcher_faced"]
+    )
+
+    print()
+    print(
+        "Yankees debe enfrentar mano:",
+        expected_home_hand,
+    )
+
+    print(
+        "Yankees realmente enfrenta:",
+        actual_home_hand,
+    )
+
+    print(
+        "Rays debe enfrentar mano:",
+        expected_away_hand,
+    )
+
+    print(
+        "Rays realmente enfrenta:",
+        actual_away_hand,
+    )
+
+    if actual_home_hand != expected_home_hand:
+        raise RuntimeError(
+            "ERROR: El split de Yankees "
+            "no corresponde a la mano "
+            "del pitcher visitante."
+        )
+
+    if actual_away_hand != expected_away_hand:
+        raise RuntimeError(
+            "ERROR: El split de Rays "
+            "no corresponde a la mano "
+            "del pitcher local."
+        )
+
+    if not home_split.get("available"):
+        raise RuntimeError(
+            "ERROR: No está disponible "
+            "el split de Yankees."
+        )
+
+    if not away_split.get("available"):
+        raise RuntimeError(
+            "ERROR: No está disponible "
+            "el split de Rays."
+        )
+
+    print()
+    print(
+        "OK: Los splits corresponden "
+        "correctamente a la mano "
+        "de cada pitcher."
+    )
+
+    print()
+    print("=" * 70)
+    print("PRUEBA FINALIZADA CORRECTAMENTE")
     print("=" * 70)
 
     print()
