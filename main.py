@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import FastAPI, HTTPException
 import requests
 
@@ -13,7 +15,11 @@ from repository import (
 
 app = FastAPI(
     title="Sports Predictor API",
-    version="1.1.0",
+    version="1.2.0",
+    description=(
+        "API de proyecciones deportivas con análisis MLB, "
+        "forma histórica y liquidación automática."
+    ),
 )
 
 
@@ -24,24 +30,81 @@ MLB_HEADERS = {
 }
 
 
+# =========================================================
+# HEALTH
+# =========================================================
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "service": "sports-predictor",
-        "version": "1.1.0",
+        "version": "1.2.0",
     }
 
 
+# =========================================================
+# MLB GAMES
+# =========================================================
+
 @app.get("/api/v1/mlb/games")
-def get_mlb_games():
+def get_mlb_games(
+    date: str = None
+):
+    """
+    Obtiene los partidos MLB de una fecha determinada.
+
+    Ejemplo:
+
+    /api/v1/mlb/games?date=2026-09-22
+
+    Si no se proporciona una fecha, utiliza la fecha
+    actual en UTC.
+    """
+
     try:
+        # -------------------------------------------------
+        # 1. Determinar fecha
+        # -------------------------------------------------
+
+        if not date:
+            date = datetime.now(
+                timezone.utc
+            ).strftime("%Y-%m-%d")
+
+        # -------------------------------------------------
+        # 2. Validar formato de fecha
+        # -------------------------------------------------
+
+        try:
+            datetime.strptime(
+                date,
+                "%Y-%m-%d"
+            )
+
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "La fecha debe utilizar el formato "
+                    "YYYY-MM-DD. Ejemplo: 2026-09-22"
+                ),
+            )
+
+        # -------------------------------------------------
+        # 3. Consultar MLB
+        # -------------------------------------------------
+
         url = f"{MLB_API}/schedule"
 
         params = {
             "sportId": 1,
-            "date": "2026-09-20",
-            "hydrate": "probablePitcher,team,venue",
+            "date": date,
+            "hydrate": (
+                "probablePitcher,"
+                "team,"
+                "venue"
+            ),
         }
 
         response = requests.get(
@@ -55,54 +118,210 @@ def get_mlb_games():
 
         data = response.json()
 
+        # -------------------------------------------------
+        # 4. Procesar partidos
+        # -------------------------------------------------
+
         games = []
 
-        for date_block in data.get("dates", []):
-            for game in date_block.get("games", []):
-                game_pk = game.get("gamePk")
+        for date_block in data.get(
+            "dates",
+            []
+        ):
 
-                teams = game.get("teams", {})
+            for game in date_block.get(
+                "games",
+                []
+            ):
 
-                home = teams.get("home", {})
-                away = teams.get("away", {})
+                game_pk = game.get(
+                    "gamePk"
+                )
+
+                teams = game.get(
+                    "teams",
+                    {}
+                )
+
+                home = teams.get(
+                    "home",
+                    {}
+                )
+
+                away = teams.get(
+                    "away",
+                    {}
+                )
+
+                home_team = home.get(
+                    "team",
+                    {}
+                )
+
+                away_team = away.get(
+                    "team",
+                    {}
+                )
+
+                # -------------------------------------------------
+                # Pitcher probable local
+                # -------------------------------------------------
+
+                home_pitcher = (
+                    home
+                    .get(
+                        "probablePitcher",
+                        {}
+                    )
+                )
+
+                # -------------------------------------------------
+                # Pitcher probable visitante
+                # -------------------------------------------------
+
+                away_pitcher = (
+                    away
+                    .get(
+                        "probablePitcher",
+                        {}
+                    )
+                )
+
+                # -------------------------------------------------
+                # Estado
+                # -------------------------------------------------
+
+                status = game.get(
+                    "status",
+                    {}
+                )
+
+                # -------------------------------------------------
+                # Partido
+                # -------------------------------------------------
 
                 games.append(
                     {
-                        "game_id": game_pk,
-                        "date": game.get("gameDate"),
-                        "status": game.get(
-                            "status",
-                            {}
-                        ).get(
+                        "game_id": (
+                            str(game_pk)
+                            if game_pk is not None
+                            else None
+                        ),
+
+                        "date": game.get(
+                            "gameDate"
+                        ),
+
+                        "status": status.get(
                             "abstractGameState"
                         ),
-                        "home": home.get(
-                            "team",
-                            {}
-                        ).get("name"),
-                        "away": away.get(
-                            "team",
-                            {}
-                        ).get("name"),
-                        "venue": game.get(
-                            "venue",
-                            {}
-                        ).get("name"),
+
+                        "detailed_status": status.get(
+                            "detailedState"
+                        ),
+
+                        "venue": (
+                            game
+                            .get(
+                                "venue",
+                                {}
+                            )
+                            .get(
+                                "name"
+                            )
+                        ),
+
+                        "home": {
+                            "id": home_team.get(
+                                "id"
+                            ),
+                            "name": home_team.get(
+                                "name"
+                            ),
+                            "probable_pitcher": {
+                                "id": home_pitcher.get(
+                                    "id"
+                                ),
+                                "name": home_pitcher.get(
+                                    "fullName"
+                                ),
+                            },
+                        },
+
+                        "away": {
+                            "id": away_team.get(
+                                "id"
+                            ),
+                            "name": away_team.get(
+                                "name"
+                            ),
+                            "probable_pitcher": {
+                                "id": away_pitcher.get(
+                                    "id"
+                                ),
+                                "name": away_pitcher.get(
+                                    "fullName"
+                                ),
+                            },
+                        },
                     }
                 )
 
+        # -------------------------------------------------
+        # 5. Respuesta
+        # -------------------------------------------------
+
         return {
             "success": True,
+            "date": date,
             "total": len(games),
             "games": games,
         }
 
+    except HTTPException:
+        raise
+
+    except requests.exceptions.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "MLB_API_HTTP_ERROR",
+                "message": (
+                    "MLB respondió con un error HTTP."
+                ),
+                "details": str(exc),
+            },
+        )
+
+    except requests.exceptions.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "MLB_API_CONNECTION_ERROR",
+                "message": (
+                    "No fue posible comunicarse "
+                    "con la API de MLB."
+                ),
+                "details": str(exc),
+            },
+        )
+
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=str(exc),
+            detail={
+                "error": "MLB_GAMES_ERROR",
+                "message": (
+                    "Error obteniendo los partidos MLB."
+                ),
+                "details": str(exc),
+            },
         )
 
+
+# =========================================================
+# EXPERIMENTAL PREDICTION
+# =========================================================
 
 @app.post("/api/v1/predictions/experimental")
 def create_experimental_prediction(
@@ -111,6 +330,7 @@ def create_experimental_prediction(
     league: str = "MLB",
 ):
     try:
+
         result = save_prediction(
             event_id=event_id,
             sport=sport,
@@ -138,17 +358,38 @@ def create_experimental_prediction(
         )
 
 
-@app.post("/api/v1/analyze")
-def analyze_game(event_id: str):
-    try:
-        analysis = analyze_mlb_game(event_id)
+# =========================================================
+# ANALYZE GAME
+# =========================================================
 
-        if not analysis.get("success"):
+@app.post("/api/v1/analyze")
+def analyze_game(
+    event_id: str
+):
+    """
+    Analiza un partido MLB utilizando el modelo actual.
+
+    El modelo actual es 1.2.0-form.
+    """
+
+    try:
+
+        analysis = analyze_mlb_game(
+            event_id
+        )
+
+        if not analysis.get(
+            "success"
+        ):
             return analysis
 
-        persistence = save_analysis(analysis)
+        persistence = save_analysis(
+            analysis
+        )
 
-        analysis["persistence"] = persistence
+        analysis["persistence"] = (
+            persistence
+        )
 
         return analysis
 
@@ -159,21 +400,36 @@ def analyze_game(event_id: str):
         )
 
 
+# =========================================================
+# SETTLE GAME
+# =========================================================
+
 @app.post("/api/v1/settle/{event_id}")
-def settle_game(event_id: str):
+def settle_game(
+    event_id: str
+):
     try:
-        event_id = str(event_id)
 
-        # ---------------------------------------------------------
-        # 1. Consultar primero el calendario de MLB
-        # ---------------------------------------------------------
+        event_id = str(
+            event_id
+        )
 
-        schedule_url = f"{MLB_API}/schedule"
+        # -------------------------------------------------
+        # 1. Consultar calendario MLB
+        # -------------------------------------------------
+
+        schedule_url = (
+            f"{MLB_API}/schedule"
+        )
 
         schedule_params = {
             "sportId": 1,
             "gamePk": event_id,
-            "hydrate": "probablePitcher,team,venue",
+            "hydrate": (
+                "probablePitcher,"
+                "team,"
+                "venue"
+            ),
         }
 
         schedule_response = requests.get(
@@ -183,105 +439,164 @@ def settle_game(event_id: str):
             headers=MLB_HEADERS,
         )
 
-        # ---------------------------------------------------------
-        # 2. Si MLB no encuentra el partido
-        # ---------------------------------------------------------
+        # -------------------------------------------------
+        # 2. Partido no encontrado
+        # -------------------------------------------------
 
         if schedule_response.status_code == 404:
+
             return {
                 "success": False,
                 "event_id": event_id,
                 "status": "NOT_FOUND",
                 "message": (
-                    "MLB no encontró un partido con este "
-                    "event_id. Verifica que el gamePk sea correcto."
+                    "MLB no encontró un partido "
+                    "con este event_id. "
+                    "Verifica que el gamePk sea correcto."
                 ),
             }
 
         schedule_response.raise_for_status()
 
-        schedule_data = schedule_response.json()
+        schedule_data = (
+            schedule_response.json()
+        )
 
         scheduled_games = []
 
-        for date_block in schedule_data.get("dates", []):
+        for date_block in schedule_data.get(
+            "dates",
+            []
+        ):
+
             scheduled_games.extend(
-                date_block.get("games", [])
+                date_block.get(
+                    "games",
+                    []
+                )
             )
 
-        # ---------------------------------------------------------
-        # 3. Si el calendario no contiene el game_id
-        # ---------------------------------------------------------
+        # -------------------------------------------------
+        # 3. Buscar partido
+        # -------------------------------------------------
 
         target_game = None
 
         for game in scheduled_games:
-            if str(game.get("gamePk")) == event_id:
+
+            if (
+                str(game.get("gamePk"))
+                == event_id
+            ):
+
                 target_game = game
+
                 break
 
         if target_game is None:
+
             return {
                 "success": False,
                 "event_id": event_id,
                 "status": "NOT_FOUND",
                 "message": (
-                    "El event_id no aparece en el calendario "
-                    "actual de MLB. Puede tratarse de un gamePk "
-                    "incorrecto o de un partido que MLB ya no "
-                    "expone mediante este endpoint."
+                    "El event_id no aparece "
+                    "en el calendario actual de MLB. "
+                    "Puede tratarse de un gamePk "
+                    "incorrecto o de un partido que MLB "
+                    "ya no expone mediante este endpoint."
                 ),
             }
 
-        # ---------------------------------------------------------
-        # 4. Obtener información básica del partido
-        # ---------------------------------------------------------
+        # -------------------------------------------------
+        # 4. Información del partido
+        # -------------------------------------------------
 
         game_status = (
             target_game
-            .get("status", {})
-            .get("abstractGameState")
+            .get(
+                "status",
+                {}
+            )
+            .get(
+                "abstractGameState"
+            )
         )
 
         detailed_state = (
             target_game
-            .get("status", {})
-            .get("detailedState")
+            .get(
+                "status",
+                {}
+            )
+            .get(
+                "detailedState"
+            )
         )
 
-        teams = target_game.get("teams", {})
+        teams = target_game.get(
+            "teams",
+            {}
+        )
 
         home_team = (
             teams
-            .get("home", {})
-            .get("team", {})
-            .get("name")
+            .get(
+                "home",
+                {}
+            )
+            .get(
+                "team",
+                {}
+            )
+            .get(
+                "name"
+            )
         )
 
         away_team = (
             teams
-            .get("away", {})
-            .get("team", {})
-            .get("name")
+            .get(
+                "away",
+                {}
+            )
+            .get(
+                "team",
+                {}
+            )
+            .get(
+                "name"
+            )
         )
 
         home_score = (
             teams
-            .get("home", {})
-            .get("score")
+            .get(
+                "home",
+                {}
+            )
+            .get(
+                "score"
+            )
         )
 
         away_score = (
             teams
-            .get("away", {})
-            .get("score")
+            .get(
+                "away",
+                {}
+            )
+            .get(
+                "score"
+            )
         )
 
-        # ---------------------------------------------------------
-        # 5. Si todavía no terminó
-        # ---------------------------------------------------------
+        # -------------------------------------------------
+        # 5. Partido todavía no terminado
+        # -------------------------------------------------
 
         if game_status != "Final":
+
             return {
                 "success": False,
                 "event_id": event_id,
@@ -297,11 +612,15 @@ def settle_game(event_id: str):
                 ),
             }
 
-        # ---------------------------------------------------------
-        # 6. Si MLB no entregó marcador final
-        # ---------------------------------------------------------
+        # -------------------------------------------------
+        # 6. Verificar marcador
+        # -------------------------------------------------
 
-        if home_score is None or away_score is None:
+        if (
+            home_score is None
+            or away_score is None
+        ):
+
             return {
                 "success": False,
                 "event_id": event_id,
@@ -309,25 +628,34 @@ def settle_game(event_id: str):
                 "home": home_team,
                 "away": away_team,
                 "message": (
-                    "MLB marca el partido como Final, pero "
-                    "todavía no proporcionó el marcador completo."
+                    "MLB marca el partido como Final, "
+                    "pero todavía no proporcionó "
+                    "el marcador completo."
                 ),
             }
 
-        home_score = int(home_score)
-        away_score = int(away_score)
+        home_score = int(
+            home_score
+        )
 
-        # ---------------------------------------------------------
+        away_score = int(
+            away_score
+        )
+
+        # -------------------------------------------------
         # 7. Determinar ganador
-        # ---------------------------------------------------------
+        # -------------------------------------------------
 
         if home_score > away_score:
+
             actual_winner = home_team
 
         elif away_score > home_score:
+
             actual_winner = away_team
 
         else:
+
             return {
                 "success": False,
                 "event_id": event_id,
@@ -337,14 +665,14 @@ def settle_game(event_id: str):
                 "home_score": home_score,
                 "away_score": away_score,
                 "message": (
-                    "El marcador recibido no permite determinar "
-                    "un ganador."
+                    "El marcador recibido no permite "
+                    "determinar un ganador."
                 ),
             }
 
-        # ---------------------------------------------------------
-        # 8. Actualizar la predicción en Supabase
-        # ---------------------------------------------------------
+        # -------------------------------------------------
+        # 8. Actualizar Supabase
+        # -------------------------------------------------
 
         settlement = settle_prediction(
             event_id=event_id,
@@ -353,9 +681,9 @@ def settle_game(event_id: str):
             actual_away_score=away_score,
         )
 
-        # ---------------------------------------------------------
-        # 9. Respuesta final
-        # ---------------------------------------------------------
+        # -------------------------------------------------
+        # 9. Respuesta
+        # -------------------------------------------------
 
         return {
             "success": True,
@@ -376,9 +704,12 @@ def settle_game(event_id: str):
         }
 
     except requests.exceptions.HTTPError as exc:
+
         return {
             "success": False,
-            "event_id": str(event_id),
+            "event_id": str(
+                event_id
+            ),
             "status": "MLB_API_ERROR",
             "message": (
                 "MLB respondió con un error HTTP."
@@ -387,48 +718,73 @@ def settle_game(event_id: str):
         }
 
     except requests.exceptions.RequestException as exc:
+
         return {
             "success": False,
-            "event_id": str(event_id),
+            "event_id": str(
+                event_id
+            ),
             "status": "MLB_CONNECTION_ERROR",
             "message": (
-                "No fue posible comunicarse con MLB."
+                "No fue posible comunicarse "
+                "con MLB."
             ),
             "details": str(exc),
         }
 
     except Exception as exc:
+
         raise HTTPException(
             status_code=500,
             detail=str(exc),
         )
 
 
+# =========================================================
+# PERFORMANCE
+# =========================================================
+
 @app.get("/api/v1/performance")
 def performance():
+
     try:
+
         return get_performance()
 
     except Exception as exc:
+
         raise HTTPException(
             status_code=500,
             detail={
-                "error": "Error obteniendo rendimiento del modelo",
+                "error": (
+                    "Error obteniendo "
+                    "rendimiento del modelo"
+                ),
                 "details": str(exc),
             },
         )
 
 
+# =========================================================
+# PREDICTIONS
+# =========================================================
+
 @app.get("/api/v1/predictions")
 def predictions():
+
     try:
+
         return get_predictions()
 
     except Exception as exc:
+
         raise HTTPException(
             status_code=500,
             detail={
-                "error": "Error obteniendo predicciones",
+                "error": (
+                    "Error obteniendo "
+                    "predicciones"
+                ),
                 "details": str(exc),
             },
         )
