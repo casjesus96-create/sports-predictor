@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from analyzer import analyze_mlb_game
+
 from repository import (
     save_prediction,
     save_analysis,
@@ -24,10 +25,11 @@ from repository import (
 
 app = FastAPI(
     title="Sports Predictor API",
-    version="1.3.0",
+    version="1.4.0",
     description=(
         "API de proyecciones deportivas con análisis MLB, "
-        "forma histórica, análisis diario y liquidación automática."
+        "forma histórica, análisis diario, marcadores, "
+        "liquidación y reparación de resultados."
     ),
 )
 
@@ -59,15 +61,189 @@ FRONTEND_ASSETS = FRONTEND_DIST / "assets"
 
 
 # =========================================================
+# HELPERS
+# =========================================================
+
+def validate_date(date: str):
+    try:
+        datetime.strptime(
+            date,
+            "%Y-%m-%d"
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "La fecha debe utilizar el formato "
+                "YYYY-MM-DD. Ejemplo: 2026-09-22"
+            ),
+        )
+
+
+def get_mlb_schedule_game(event_id: str):
+    """
+    Obtiene un partido específico desde MLB.
+    """
+
+    event_id = str(event_id)
+
+    url = f"{MLB_API}/schedule"
+
+    params = {
+        "sportId": 1,
+        "gamePk": event_id,
+        "hydrate": (
+            "probablePitcher,"
+            "team,"
+            "venue"
+        ),
+    }
+
+    response = requests.get(
+        url,
+        params=params,
+        timeout=20,
+        headers=MLB_HEADERS,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    for date_block in data.get(
+        "dates",
+        []
+    ):
+
+        for game in date_block.get(
+            "games",
+            []
+        ):
+
+            if str(
+                game.get("gamePk")
+            ) == event_id:
+
+                return game
+
+    return None
+
+
+def extract_game_result(game):
+    """
+    Extrae estado, equipos y marcador de un
+    partido MLB.
+    """
+
+    if not game:
+        return None
+
+    status = game.get(
+        "status",
+        {}
+    )
+
+    teams = game.get(
+        "teams",
+        {}
+    )
+
+    home = teams.get(
+        "home",
+        {}
+    )
+
+    away = teams.get(
+        "away",
+        {}
+    )
+
+    home_team = (
+        home
+        .get("team", {})
+        .get("name")
+    )
+
+    away_team = (
+        away
+        .get("team", {})
+        .get("name")
+    )
+
+    home_score = home.get(
+        "score"
+    )
+
+    away_score = away.get(
+        "score"
+    )
+
+    game_status = status.get(
+        "abstractGameState"
+    )
+
+    detailed_status = status.get(
+        "detailedState"
+    )
+
+    actual_winner = None
+
+    if (
+        game_status == "Final"
+        and home_score is not None
+        and away_score is not None
+    ):
+
+        try:
+
+            home_score_int = int(
+                home_score
+            )
+
+            away_score_int = int(
+                away_score
+            )
+
+            if home_score_int > away_score_int:
+
+                actual_winner = home_team
+
+            elif away_score_int > home_score_int:
+
+                actual_winner = away_team
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            pass
+
+    return {
+        "event_id": str(
+            game.get("gamePk")
+        ),
+        "status": game_status,
+        "detailed_status": detailed_status,
+        "home": home_team,
+        "away": away_team,
+        "home_score": home_score,
+        "away_score": away_score,
+        "actual_winner": actual_winner,
+    }
+
+
+# =========================================================
 # HEALTH
 # =========================================================
 
 @app.get("/health")
 def health():
+
     return {
         "status": "ok",
         "service": "sports-predictor",
-        "version": "1.3.0",
+        "version": "1.4.0",
         "model_version": CURRENT_MODEL_VERSION,
     }
 
@@ -81,14 +257,7 @@ def get_mlb_games(
     date: str = None
 ):
     """
-    Obtiene los partidos MLB de una fecha determinada.
-
-    Ejemplo:
-
-    /api/v1/mlb/games?date=2026-09-22
-
-    Si no se proporciona una fecha, utiliza la fecha
-    actual en UTC.
+    Obtiene los partidos MLB de una fecha.
 
     También devuelve los marcadores cuando MLB
     ya los tiene disponibles.
@@ -97,37 +266,21 @@ def get_mlb_games(
     try:
 
         # -------------------------------------------------
-        # 1. Determinar fecha
+        # Fecha
         # -------------------------------------------------
 
         if not date:
+
             date = datetime.now(
                 timezone.utc
             ).strftime("%Y-%m-%d")
 
-        # -------------------------------------------------
-        # 2. Validar formato de fecha
-        # -------------------------------------------------
-
-        try:
-
-            datetime.strptime(
-                date,
-                "%Y-%m-%d"
-            )
-
-        except ValueError:
-
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "La fecha debe utilizar el formato "
-                    "YYYY-MM-DD. Ejemplo: 2026-09-22"
-                ),
-            )
+        validate_date(
+            date
+        )
 
         # -------------------------------------------------
-        # 3. Consultar MLB
+        # MLB
         # -------------------------------------------------
 
         url = f"{MLB_API}/schedule"
@@ -152,10 +305,6 @@ def get_mlb_games(
         response.raise_for_status()
 
         data = response.json()
-
-        # -------------------------------------------------
-        # 4. Procesar partidos
-        # -------------------------------------------------
 
         games = []
 
@@ -217,18 +366,6 @@ def get_mlb_games(
                     {}
                 )
 
-                # -------------------------------------------------
-                # MARCADORES
-                # -------------------------------------------------
-                #
-                # MLB solamente proporciona score cuando
-                # existe información de marcador.
-                #
-                # Para partidos futuros normalmente será None.
-                # Para partidos en vivo o finalizados tendrá
-                # el valor correspondiente.
-                # -------------------------------------------------
-
                 home_score = home.get(
                     "score"
                 )
@@ -236,10 +373,6 @@ def get_mlb_games(
                 away_score = away.get(
                     "score"
                 )
-
-                # -------------------------------------------------
-                # Agregar partido
-                # -------------------------------------------------
 
                 games.append(
                     {
@@ -272,10 +405,6 @@ def get_mlb_games(
                             )
                         ),
 
-                        # -------------------------------------------------
-                        # EQUIPO LOCAL
-                        # -------------------------------------------------
-
                         "home": {
                             "id": home_team.get(
                                 "id"
@@ -297,10 +426,6 @@ def get_mlb_games(
                                 ),
                             },
                         },
-
-                        # -------------------------------------------------
-                        # EQUIPO VISITANTE
-                        # -------------------------------------------------
 
                         "away": {
                             "id": away_team.get(
@@ -325,10 +450,6 @@ def get_mlb_games(
                         },
                     }
                 )
-
-        # -------------------------------------------------
-        # 5. Respuesta
-        # -------------------------------------------------
 
         return {
             "success": True,
@@ -389,60 +510,18 @@ def get_mlb_games(
 def analyze_mlb_day(
     date: str = None
 ):
-    """
-    Analiza automáticamente todos los partidos MLB
-    de una fecha determinada.
-
-    Ejemplo:
-
-    /api/v1/mlb/analyze-day?date=2026-09-22
-
-    El endpoint:
-
-    1. Obtiene los partidos MLB.
-    2. Analiza cada partido.
-    3. Guarda las predicciones en Supabase.
-    4. Evita duplicar una predicción PENDING
-       de la misma versión del modelo.
-    5. No analiza partidos Final.
-    6. Continúa aunque un partido individual falle.
-    """
 
     try:
 
-        # -------------------------------------------------
-        # 1. Fecha
-        # -------------------------------------------------
-
         if not date:
+
             date = datetime.now(
                 timezone.utc
             ).strftime("%Y-%m-%d")
 
-        # -------------------------------------------------
-        # 2. Validar fecha
-        # -------------------------------------------------
-
-        try:
-
-            datetime.strptime(
-                date,
-                "%Y-%m-%d"
-            )
-
-        except ValueError:
-
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "La fecha debe utilizar el formato "
-                    "YYYY-MM-DD. Ejemplo: 2026-09-22"
-                ),
-            )
-
-        # -------------------------------------------------
-        # 3. Obtener partidos
-        # -------------------------------------------------
+        validate_date(
+            date
+        )
 
         games_response = get_mlb_games(
             date=date
@@ -453,7 +532,9 @@ def analyze_mlb_day(
             []
         )
 
-        total_games = len(games)
+        total_games = len(
+            games
+        )
 
         predictions = []
         skipped = []
@@ -464,10 +545,6 @@ def analyze_mlb_day(
         failed_count = 0
 
         supabase = get_supabase_client()
-
-        # -------------------------------------------------
-        # 4. Procesar partidos
-        # -------------------------------------------------
 
         for game in games:
 
@@ -495,10 +572,6 @@ def analyze_mlb_day(
                 "detailed_status"
             )
 
-            # -------------------------------------------------
-            # Validar game_id
-            # -------------------------------------------------
-
             if not event_id:
 
                 failed_count += 1
@@ -517,7 +590,7 @@ def analyze_mlb_day(
                 continue
 
             # -------------------------------------------------
-            # No analizar partidos Final
+            # No crear predicciones para Final
             # -------------------------------------------------
 
             if game_status == "Final":
@@ -540,7 +613,7 @@ def analyze_mlb_day(
                 continue
 
             # -------------------------------------------------
-            # Buscar predicción PENDING existente
+            # Buscar PENDING
             # -------------------------------------------------
 
             try:
@@ -580,10 +653,6 @@ def analyze_mlb_day(
 
                 existing_rows = []
 
-            # -------------------------------------------------
-            # Si ya existe, no duplicar
-            # -------------------------------------------------
-
             if existing_rows:
 
                 existing = existing_rows[0]
@@ -600,12 +669,6 @@ def analyze_mlb_day(
                         "game"
                     )
                     or {}
-                )
-
-                predicted_winner = (
-                    features.get(
-                        "predicted_winner"
-                    )
                 )
 
                 skipped_count += 1
@@ -627,21 +690,10 @@ def analyze_mlb_day(
                         ),
                         "reason": (
                             "Ya existe una predicción "
-                            "PENDING para este partido "
-                            "y esta versión del modelo."
+                            "PENDING para este partido."
                         ),
                         "prediction_id": existing.get(
                             "id"
-                        ),
-                        "predicted_winner": predicted_winner,
-                        "home_probability": existing.get(
-                            "home_probability"
-                        ),
-                        "away_probability": existing.get(
-                            "away_probability"
-                        ),
-                        "confidence": existing.get(
-                            "confidence"
                         ),
                     }
                 )
@@ -649,7 +701,7 @@ def analyze_mlb_day(
                 continue
 
             # -------------------------------------------------
-            # Analizar partido
+            # Analizar
             # -------------------------------------------------
 
             try:
@@ -678,15 +730,10 @@ def analyze_mlb_day(
                                 )
                                 or "El análisis falló."
                             ),
-                            "analysis": analysis,
                         }
                     )
 
                     continue
-
-                # -------------------------------------------------
-                # Guardar análisis
-                # -------------------------------------------------
 
                 persistence = save_analysis(
                     analysis
@@ -746,21 +793,6 @@ def analyze_mlb_day(
                             )
                             else False
                         ),
-                        "prediction_id": (
-                            (
-                                persistence
-                                .get("data", [{}])[0]
-                                .get("id")
-                            )
-                            if isinstance(
-                                persistence,
-                                dict
-                            )
-                            and persistence.get(
-                                "data"
-                            )
-                            else None
-                        ),
                     }
                 )
 
@@ -778,10 +810,6 @@ def analyze_mlb_day(
                 )
 
                 continue
-
-        # -------------------------------------------------
-        # 5. Resultado
-        # -------------------------------------------------
 
         return {
             "success": True,
@@ -826,6 +854,7 @@ def create_experimental_prediction(
     sport: str = "baseball",
     league: str = "MLB",
 ):
+
     try:
 
         result = save_prediction(
@@ -864,9 +893,6 @@ def create_experimental_prediction(
 def analyze_game(
     event_id: str
 ):
-    """
-    Analiza un partido MLB utilizando el modelo actual.
-    """
 
     try:
 
@@ -906,17 +932,6 @@ def analyze_game(
 def settle_game(
     event_id: str
 ):
-    """
-    Obtiene el resultado oficial del partido
-    desde MLB y liquida la predicción.
-
-    Devuelve:
-
-    - marcador final
-    - ganador real
-    - resultado de la predicción
-    - fecha de liquidación
-    """
 
     try:
 
@@ -924,87 +939,9 @@ def settle_game(
             event_id
         )
 
-        # -------------------------------------------------
-        # 1. Consultar calendario MLB
-        # -------------------------------------------------
-
-        schedule_url = (
-            f"{MLB_API}/schedule"
+        target_game = get_mlb_schedule_game(
+            event_id
         )
-
-        schedule_params = {
-            "sportId": 1,
-            "gamePk": event_id,
-            "hydrate": (
-                "probablePitcher,"
-                "team,"
-                "venue"
-            ),
-        }
-
-        schedule_response = requests.get(
-            schedule_url,
-            params=schedule_params,
-            timeout=20,
-            headers=MLB_HEADERS,
-        )
-
-        if (
-            schedule_response.status_code
-            == 404
-        ):
-
-            return {
-                "success": False,
-                "event_id": event_id,
-                "status": "NOT_FOUND",
-                "message": (
-                    "MLB no encontró un partido "
-                    "con este event_id. "
-                    "Verifica que el gamePk sea correcto."
-                ),
-            }
-
-        schedule_response.raise_for_status()
-
-        schedule_data = (
-            schedule_response.json()
-        )
-
-        # -------------------------------------------------
-        # 2. Obtener juegos
-        # -------------------------------------------------
-
-        scheduled_games = []
-
-        for date_block in schedule_data.get(
-            "dates",
-            []
-        ):
-
-            scheduled_games.extend(
-                date_block.get(
-                    "games",
-                    []
-                )
-            )
-
-        # -------------------------------------------------
-        # 3. Buscar partido
-        # -------------------------------------------------
-
-        target_game = None
-
-        for game in scheduled_games:
-
-            if (
-                str(game.get("gamePk"))
-                == event_id
-            ):
-
-                target_game = game
-
-                break
 
         if target_game is None:
 
@@ -1013,190 +950,101 @@ def settle_game(
                 "event_id": event_id,
                 "status": "NOT_FOUND",
                 "message": (
-                    "El event_id no aparece "
-                    "en el calendario actual de MLB. "
-                    "Puede tratarse de un gamePk "
-                    "incorrecto o de un partido que MLB "
-                    "ya no expone mediante este endpoint."
+                    "MLB no encontró el partido."
                 ),
             }
 
-        # -------------------------------------------------
-        # 4. Estado
-        # -------------------------------------------------
-
-        game_status = (
+        result = extract_game_result(
             target_game
-            .get(
-                "status",
-                {}
-            )
-            .get(
-                "abstractGameState"
-            )
         )
 
-        detailed_state = (
-            target_game
-            .get(
-                "status",
-                {}
-            )
-            .get(
-                "detailedState"
-            )
-        )
-
-        teams = target_game.get(
-            "teams",
-            {}
-        )
-
-        # -------------------------------------------------
-        # 5. Equipo local
-        # -------------------------------------------------
-
-        home_team = (
-            teams
-            .get(
-                "home",
-                {}
-            )
-            .get(
-                "team",
-                {}
-            )
-            .get(
-                "name"
-            )
-        )
-
-        # -------------------------------------------------
-        # 6. Equipo visitante
-        # -------------------------------------------------
-
-        away_team = (
-            teams
-            .get(
-                "away",
-                {}
-            )
-            .get(
-                "team",
-                {}
-            )
-            .get(
-                "name"
-            )
-        )
-
-        # -------------------------------------------------
-        # 7. Marcadores
-        # -------------------------------------------------
-
-        home_score = (
-            teams
-            .get(
-                "home",
-                {}
-            )
-            .get(
-                "score"
-            )
-        )
-
-        away_score = (
-            teams
-            .get(
-                "away",
-                {}
-            )
-            .get(
-                "score"
-            )
-        )
-
-        # -------------------------------------------------
-        # 8. Partido todavía no terminado
-        # -------------------------------------------------
-
-        if game_status != "Final":
+        if not result:
 
             return {
                 "success": False,
                 "event_id": event_id,
-                "status": game_status,
-                "detailed_status": detailed_state,
-                "home": home_team,
-                "away": away_team,
-                "home_score": home_score,
-                "away_score": away_score,
+                "status": "NOT_FOUND",
+            }
+
+        # -------------------------------------------------
+        # Partido todavía no final
+        # -------------------------------------------------
+
+        if result["status"] != "Final":
+
+            return {
+                "success": False,
+                "event_id": event_id,
+                "status": result["status"],
+                "detailed_status": result[
+                    "detailed_status"
+                ],
+                "home": result["home"],
+                "away": result["away"],
+                "home_score": result[
+                    "home_score"
+                ],
+                "away_score": result[
+                    "away_score"
+                ],
                 "message": (
-                    "El partido todavía no ha terminado. "
-                    "La predicción permanece PENDING."
+                    "El partido todavía no ha "
+                    "terminado."
                 ),
             }
 
         # -------------------------------------------------
-        # 9. Verificar marcador
+        # Verificar marcador
         # -------------------------------------------------
 
         if (
-            home_score is None
-            or away_score is None
+            result["home_score"] is None
+            or result["away_score"] is None
         ):
 
             return {
                 "success": False,
                 "event_id": event_id,
                 "status": "Final",
-                "home": home_team,
-                "away": away_team,
+                "home": result["home"],
+                "away": result["away"],
                 "message": (
                     "MLB marca el partido como Final, "
-                    "pero todavía no proporcionó "
-                    "el marcador completo."
+                    "pero todavía no existe un marcador "
+                    "completo."
                 ),
             }
 
         home_score = int(
-            home_score
+            result["home_score"]
         )
 
         away_score = int(
-            away_score
+            result["away_score"]
         )
 
-        # -------------------------------------------------
-        # 10. Determinar ganador
-        # -------------------------------------------------
+        actual_winner = (
+            result["actual_winner"]
+        )
 
-        if home_score > away_score:
-
-            actual_winner = home_team
-
-        elif away_score > home_score:
-
-            actual_winner = away_team
-
-        else:
+        if not actual_winner:
 
             return {
                 "success": False,
                 "event_id": event_id,
                 "status": "Final",
-                "home": home_team,
-                "away": away_team,
+                "home": result["home"],
+                "away": result["away"],
                 "home_score": home_score,
                 "away_score": away_score,
                 "message": (
-                    "El marcador recibido no permite "
-                    "determinar un ganador."
+                    "No fue posible determinar "
+                    "el ganador."
                 ),
             }
 
         # -------------------------------------------------
-        # 11. Liquidar predicción
+        # Liquidar
         # -------------------------------------------------
 
         settlement = settle_prediction(
@@ -1206,22 +1054,23 @@ def settle_game(
             actual_away_score=away_score,
         )
 
-        # -------------------------------------------------
-        # 12. Respuesta
-        # -------------------------------------------------
-
         return {
             "success": True,
             "event_id": event_id,
             "status": "Final",
-            "detailed_status": detailed_state,
-            "home": home_team,
-            "away": away_team,
+            "detailed_status": result[
+                "detailed_status"
+            ],
+            "home": result["home"],
+            "away": result["away"],
             "home_score": home_score,
             "away_score": away_score,
             "actual_winner": actual_winner,
             "prediction_result": settlement.get(
                 "prediction_result"
+            ),
+            "predicted_winner": settlement.get(
+                "predicted_winner"
             ),
             "settled_at": settlement.get(
                 "settled_at"
@@ -1263,6 +1112,193 @@ def settle_game(
         raise HTTPException(
             status_code=500,
             detail=str(exc),
+        )
+
+
+# =========================================================
+# REPARAR PARTIDO PENDING
+# =========================================================
+
+@app.post("/api/v1/repair-settled/{event_id}")
+def repair_settled_game(
+    event_id: str
+):
+    """
+    Busca el resultado oficial de MLB para un partido
+    y liquida una predicción PENDING.
+
+    Sirve especialmente para partidos que terminaron
+    mientras la aplicación estaba abierta o sin que
+    se hubiera pulsado Liquidar.
+    """
+
+    return settle_game(
+        event_id=str(event_id)
+    )
+
+
+# =========================================================
+# REPARAR TODAS LAS PREDICCIONES PENDING FINALIZADAS
+# =========================================================
+
+@app.post("/api/v1/repair-settled")
+def repair_all_settled():
+
+    try:
+
+        supabase = get_supabase_client()
+
+        response = (
+            supabase
+            .table(
+                "prediction_snapshots"
+            )
+            .select(
+                "id,event_id,model_version,"
+                "result_status,created_at,"
+                "features"
+            )
+            .eq(
+                "result_status",
+                "PENDING"
+            )
+            .order(
+                "created_at",
+                desc=False
+            )
+            .execute()
+        )
+
+        rows = (
+            response.data
+            or []
+        )
+
+        repaired = []
+        skipped = []
+        failed = []
+
+        for row in rows:
+
+            event_id = row.get(
+                "event_id"
+            )
+
+            if not event_id:
+
+                failed.append(
+                    {
+                        "prediction_id": row.get(
+                            "id"
+                        ),
+                        "reason": (
+                            "La predicción no tiene "
+                            "event_id."
+                        ),
+                    }
+                )
+
+                continue
+
+            try:
+
+                result = settle_game(
+                    event_id=str(
+                        event_id
+                    )
+                )
+
+                if result.get(
+                    "success"
+                ):
+
+                    repaired.append(
+                        {
+                            "event_id": str(
+                                event_id
+                            ),
+                            "prediction_result": result.get(
+                                "prediction_result"
+                            ),
+                            "predicted_winner": result.get(
+                                "predicted_winner"
+                            ),
+                            "actual_winner": result.get(
+                                "actual_winner"
+                            ),
+                            "home_score": result.get(
+                                "home_score"
+                            ),
+                            "away_score": result.get(
+                                "away_score"
+                            ),
+                        }
+                    )
+
+                else:
+
+                    skipped.append(
+                        {
+                            "event_id": str(
+                                event_id
+                            ),
+                            "status": result.get(
+                                "status"
+                            ),
+                            "message": result.get(
+                                "message"
+                            ),
+                        }
+                    )
+
+            except Exception as exc:
+
+                failed.append(
+                    {
+                        "event_id": str(
+                            event_id
+                        ),
+                        "error": str(
+                            exc
+                        ),
+                    }
+                )
+
+        return {
+            "success": True,
+            "total_pending": len(
+                rows
+            ),
+            "repaired": len(
+                repaired
+            ),
+            "skipped": len(
+                skipped
+            ),
+            "failed": len(
+                failed
+            ),
+            "details": {
+                "repaired": repaired,
+                "skipped": skipped,
+                "failed": failed,
+            },
+        }
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": (
+                    "REPAIR_SETTLED_ERROR"
+                ),
+                "message": (
+                    "No fue posible ejecutar "
+                    "la reparación automática."
+                ),
+                "details": str(exc),
+            },
         )
 
 
@@ -1319,22 +1355,6 @@ def predictions():
 # =========================================================
 # FRONTEND REACT
 # =========================================================
-#
-# El frontend se compila durante el Docker build:
-#
-# /frontend/dist
-#
-# y luego se copia al backend:
-#
-# /app/dist
-#
-# FastAPI entrega el frontend al navegador.
-# =========================================================
-
-
-# ---------------------------------------------------------
-# Servir assets de Vite
-# ---------------------------------------------------------
 
 if FRONTEND_ASSETS.exists():
 
@@ -1349,9 +1369,9 @@ if FRONTEND_ASSETS.exists():
     )
 
 
-# ---------------------------------------------------------
-# Página principal
-# ---------------------------------------------------------
+# =========================================================
+# FRONTEND HOME
+# =========================================================
 
 @app.get(
     "/",
