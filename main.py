@@ -83,16 +83,15 @@ def get_mlb_games(
     """
     Obtiene los partidos MLB de una fecha determinada.
 
-    Ahora incluye también:
-
-    - marcador visitante
-    - marcador local
-    - ganador real cuando el partido terminó
-    - estado detallado
-
     Ejemplo:
 
     /api/v1/mlb/games?date=2026-09-22
+
+    Si no se proporciona una fecha, utiliza la fecha
+    actual en UTC.
+
+    También devuelve los marcadores cuando MLB
+    ya los tiene disponibles.
     """
 
     try:
@@ -218,16 +217,16 @@ def get_mlb_games(
                     {}
                 )
 
-                abstract_status = status.get(
-                    "abstractGameState"
-                )
-
-                detailed_status = status.get(
-                    "detailedState"
-                )
-
                 # -------------------------------------------------
                 # MARCADORES
+                # -------------------------------------------------
+                #
+                # MLB solamente proporciona score cuando
+                # existe información de marcador.
+                #
+                # Para partidos futuros normalmente será None.
+                # Para partidos en vivo o finalizados tendrá
+                # el valor correspondiente.
                 # -------------------------------------------------
 
                 home_score = home.get(
@@ -238,49 +237,8 @@ def get_mlb_games(
                     "score"
                 )
 
-                actual_winner = None
-
-                if (
-                    abstract_status == "Final"
-                    and home_score is not None
-                    and away_score is not None
-                ):
-
-                    try:
-
-                        home_score_number = int(
-                            home_score
-                        )
-
-                        away_score_number = int(
-                            away_score
-                        )
-
-                        if home_score_number > away_score_number:
-
-                            actual_winner = (
-                                home_team.get(
-                                    "name"
-                                )
-                            )
-
-                        elif away_score_number > home_score_number:
-
-                            actual_winner = (
-                                away_team.get(
-                                    "name"
-                                )
-                            )
-
-                    except (
-                        TypeError,
-                        ValueError
-                    ):
-
-                        actual_winner = None
-
                 # -------------------------------------------------
-                # CONSTRUIR PARTIDO
+                # Agregar partido
                 # -------------------------------------------------
 
                 games.append(
@@ -295,9 +253,13 @@ def get_mlb_games(
                             "gameDate"
                         ),
 
-                        "status": abstract_status,
+                        "status": status.get(
+                            "abstractGameState"
+                        ),
 
-                        "detailed_status": detailed_status,
+                        "detailed_status": status.get(
+                            "detailedState"
+                        ),
 
                         "venue": (
                             game
@@ -310,27 +272,9 @@ def get_mlb_games(
                             )
                         ),
 
-                        # -----------------------------
-                        # RESULTADO
-                        # -----------------------------
-
-                        "score": {
-                            "home": home_score,
-                            "away": away_score,
-                            "home_score": home_score,
-                            "away_score": away_score,
-                            "winner": actual_winner,
-                        },
-
-                        "home_score": home_score,
-
-                        "away_score": away_score,
-
-                        "actual_winner": actual_winner,
-
-                        # -----------------------------
-                        # LOCAL
-                        # -----------------------------
+                        # -------------------------------------------------
+                        # EQUIPO LOCAL
+                        # -------------------------------------------------
 
                         "home": {
                             "id": home_team.get(
@@ -354,9 +298,9 @@ def get_mlb_games(
                             },
                         },
 
-                        # -----------------------------
-                        # VISITANTE
-                        # -----------------------------
+                        # -------------------------------------------------
+                        # EQUIPO VISITANTE
+                        # -------------------------------------------------
 
                         "away": {
                             "id": away_team.get(
@@ -381,6 +325,10 @@ def get_mlb_games(
                         },
                     }
                 )
+
+        # -------------------------------------------------
+        # 5. Respuesta
+        # -------------------------------------------------
 
         return {
             "success": True,
@@ -444,14 +392,36 @@ def analyze_mlb_day(
     """
     Analiza automáticamente todos los partidos MLB
     de una fecha determinada.
+
+    Ejemplo:
+
+    /api/v1/mlb/analyze-day?date=2026-09-22
+
+    El endpoint:
+
+    1. Obtiene los partidos MLB.
+    2. Analiza cada partido.
+    3. Guarda las predicciones en Supabase.
+    4. Evita duplicar una predicción PENDING
+       de la misma versión del modelo.
+    5. No analiza partidos Final.
+    6. Continúa aunque un partido individual falle.
     """
 
     try:
+
+        # -------------------------------------------------
+        # 1. Fecha
+        # -------------------------------------------------
 
         if not date:
             date = datetime.now(
                 timezone.utc
             ).strftime("%Y-%m-%d")
+
+        # -------------------------------------------------
+        # 2. Validar fecha
+        # -------------------------------------------------
 
         try:
 
@@ -469,6 +439,10 @@ def analyze_mlb_day(
                     "YYYY-MM-DD. Ejemplo: 2026-09-22"
                 ),
             )
+
+        # -------------------------------------------------
+        # 3. Obtener partidos
+        # -------------------------------------------------
 
         games_response = get_mlb_games(
             date=date
@@ -490,6 +464,10 @@ def analyze_mlb_day(
         failed_count = 0
 
         supabase = get_supabase_client()
+
+        # -------------------------------------------------
+        # 4. Procesar partidos
+        # -------------------------------------------------
 
         for game in games:
 
@@ -518,7 +496,7 @@ def analyze_mlb_day(
             )
 
             # -------------------------------------------------
-            # VALIDAR GAME ID
+            # Validar game_id
             # -------------------------------------------------
 
             if not event_id:
@@ -539,7 +517,7 @@ def analyze_mlb_day(
                 continue
 
             # -------------------------------------------------
-            # NO ANALIZAR PARTIDOS FINALIZADOS
+            # No analizar partidos Final
             # -------------------------------------------------
 
             if game_status == "Final":
@@ -562,7 +540,7 @@ def analyze_mlb_day(
                 continue
 
             # -------------------------------------------------
-            # BUSCAR PREDICCIÓN PENDING EXISTENTE
+            # Buscar predicción PENDING existente
             # -------------------------------------------------
 
             try:
@@ -603,7 +581,7 @@ def analyze_mlb_day(
                 existing_rows = []
 
             # -------------------------------------------------
-            # YA EXISTE
+            # Si ya existe, no duplicar
             # -------------------------------------------------
 
             if existing_rows:
@@ -671,7 +649,7 @@ def analyze_mlb_day(
                 continue
 
             # -------------------------------------------------
-            # ANALIZAR PARTIDO
+            # Analizar partido
             # -------------------------------------------------
 
             try:
@@ -706,6 +684,10 @@ def analyze_mlb_day(
 
                     continue
 
+                # -------------------------------------------------
+                # Guardar análisis
+                # -------------------------------------------------
+
                 persistence = save_analysis(
                     analysis
                 )
@@ -724,48 +706,35 @@ def analyze_mlb_day(
                         "event_id": str(
                             event_id
                         ),
-
                         "home": home_name,
-
                         "away": away_name,
-
                         "status": game_status,
-
                         "detailed_status": detailed_status,
-
                         "game_date": game.get(
                             "date"
                         ),
-
                         "venue": game.get(
                             "venue"
                         ),
-
                         "predicted_winner": prediction.get(
                             "winner"
                         ),
-
                         "home_probability": prediction.get(
                             "home_probability"
                         ),
-
                         "away_probability": prediction.get(
                             "away_probability"
                         ),
-
                         "confidence": prediction.get(
                             "confidence"
                         ),
-
                         "data_quality": prediction.get(
                             "data_quality"
                         ),
-
                         "model_version": analysis.get(
                             "model_version",
                             CURRENT_MODEL_VERSION
                         ),
-
                         "saved": (
                             persistence.get(
                                 "saved",
@@ -777,17 +746,11 @@ def analyze_mlb_day(
                             )
                             else False
                         ),
-
                         "prediction_id": (
                             (
                                 persistence
-                                .get(
-                                    "data",
-                                    [{}]
-                                )[0]
-                                .get(
-                                    "id"
-                                )
+                                .get("data", [{}])[0]
+                                .get("id")
                             )
                             if isinstance(
                                 persistence,
@@ -815,6 +778,10 @@ def analyze_mlb_day(
                 )
 
                 continue
+
+        # -------------------------------------------------
+        # 5. Resultado
+        # -------------------------------------------------
 
         return {
             "success": True,
@@ -940,15 +907,14 @@ def settle_game(
     event_id: str
 ):
     """
-    Liquida una predicción utilizando el resultado
-    oficial disponible en MLB.
+    Obtiene el resultado oficial del partido
+    desde MLB y liquida la predicción.
 
     Devuelve:
 
-    - marcador visitante
-    - marcador local
+    - marcador final
     - ganador real
-    - CORRECT / INCORRECT
+    - resultado de la predicción
     - fecha de liquidación
     """
 
@@ -959,7 +925,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # CONSULTAR CALENDARIO MLB
+        # 1. Consultar calendario MLB
         # -------------------------------------------------
 
         schedule_url = (
@@ -983,7 +949,10 @@ def settle_game(
             headers=MLB_HEADERS,
         )
 
-        if schedule_response.status_code == 404:
+        if (
+            schedule_response.status_code
+            == 404
+        ):
 
             return {
                 "success": False,
@@ -1002,6 +971,10 @@ def settle_game(
             schedule_response.json()
         )
 
+        # -------------------------------------------------
+        # 2. Obtener juegos
+        # -------------------------------------------------
+
         scheduled_games = []
 
         for date_block in schedule_data.get(
@@ -1017,7 +990,7 @@ def settle_game(
             )
 
         # -------------------------------------------------
-        # BUSCAR PARTIDO
+        # 3. Buscar partido
         # -------------------------------------------------
 
         target_game = None
@@ -1049,7 +1022,7 @@ def settle_game(
             }
 
         # -------------------------------------------------
-        # ESTADO
+        # 4. Estado
         # -------------------------------------------------
 
         game_status = (
@@ -1080,7 +1053,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # EQUIPO LOCAL
+        # 5. Equipo local
         # -------------------------------------------------
 
         home_team = (
@@ -1099,7 +1072,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # EQUIPO VISITANTE
+        # 6. Equipo visitante
         # -------------------------------------------------
 
         away_team = (
@@ -1118,7 +1091,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # MARCADORES
+        # 7. Marcadores
         # -------------------------------------------------
 
         home_score = (
@@ -1144,7 +1117,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # PARTIDO TODAVÍA NO TERMINADO
+        # 8. Partido todavía no terminado
         # -------------------------------------------------
 
         if game_status != "Final":
@@ -1165,7 +1138,7 @@ def settle_game(
             }
 
         # -------------------------------------------------
-        # VERIFICAR MARCADOR
+        # 9. Verificar marcador
         # -------------------------------------------------
 
         if (
@@ -1195,7 +1168,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # DETERMINAR GANADOR
+        # 10. Determinar ganador
         # -------------------------------------------------
 
         if home_score > away_score:
@@ -1223,7 +1196,7 @@ def settle_game(
             }
 
         # -------------------------------------------------
-        # LIQUIDAR PREDICCIÓN
+        # 11. Liquidar predicción
         # -------------------------------------------------
 
         settlement = settle_prediction(
@@ -1234,36 +1207,25 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # RESPUESTA
+        # 12. Respuesta
         # -------------------------------------------------
 
         return {
             "success": True,
-
             "event_id": event_id,
-
             "status": "Final",
-
             "detailed_status": detailed_state,
-
             "home": home_team,
-
             "away": away_team,
-
             "home_score": home_score,
-
             "away_score": away_score,
-
             "actual_winner": actual_winner,
-
             "prediction_result": settlement.get(
                 "prediction_result"
             ),
-
             "settled_at": settlement.get(
                 "settled_at"
             ),
-
             "settlement": settlement,
         }
 
@@ -1357,6 +1319,22 @@ def predictions():
 # =========================================================
 # FRONTEND REACT
 # =========================================================
+#
+# El frontend se compila durante el Docker build:
+#
+# /frontend/dist
+#
+# y luego se copia al backend:
+#
+# /app/dist
+#
+# FastAPI entrega el frontend al navegador.
+# =========================================================
+
+
+# ---------------------------------------------------------
+# Servir assets de Vite
+# ---------------------------------------------------------
 
 if FRONTEND_ASSETS.exists():
 
@@ -1371,9 +1349,9 @@ if FRONTEND_ASSETS.exists():
     )
 
 
-# =========================================================
-# FRONTEND HOME
-# =========================================================
+# ---------------------------------------------------------
+# Página principal
+# ---------------------------------------------------------
 
 @app.get(
     "/",
