@@ -97,6 +97,7 @@ def save_analysis(analysis):
     Guarda un análisis generado por analyzer.py.
 
     Conserva:
+
     - probabilidades
     - ganador proyectado
     - confianza
@@ -267,15 +268,40 @@ def settle_prediction(
     actual_away_score,
 ):
     """
-    Liquida la predicción PENDING correspondiente
-    al partido.
+    Liquida únicamente la predicción PENDING
+    correspondiente al modelo actual.
 
-    Resultado:
-    - CORRECT
-    - INCORRECT
+    Modelo utilizado:
+
+        1.2.0-form
+
+    Resultado posible:
+
+        CORRECT
+        INCORRECT
+
+    La función además guarda:
+
+        - ganador real
+        - marcador local
+        - marcador visitante
+        - fecha de liquidación
+        - resultado de la predicción
+
+    IMPORTANTE:
+
+    Se filtra explícitamente por model_version para evitar
+    que una predicción experimental o de una versión anterior
+    sea liquidada por error.
     """
 
     supabase = get_supabase_client()
+
+    event_id = str(event_id)
+
+    # -----------------------------------------------------
+    # Buscar predicción del modelo ACTUAL
+    # -----------------------------------------------------
 
     existing = (
         supabase
@@ -283,7 +309,11 @@ def settle_prediction(
         .select("*")
         .eq(
             "event_id",
-            str(event_id)
+            event_id
+        )
+        .eq(
+            "model_version",
+            CURRENT_MODEL_VERSION
         )
         .eq(
             "result_status",
@@ -298,16 +328,23 @@ def settle_prediction(
     )
 
     if not existing.data:
+
         return {
             "updated": False,
             "reason": (
                 "No existe una predicción PENDING "
-                "para este event_id"
+                f"del modelo {CURRENT_MODEL_VERSION} "
+                "para este event_id."
             ),
-            "event_id": str(event_id),
+            "event_id": event_id,
+            "model_version": CURRENT_MODEL_VERSION,
         }
 
     prediction = existing.data[0]
+
+    # -----------------------------------------------------
+    # Recuperar features
+    # -----------------------------------------------------
 
     features = (
         prediction.get("features")
@@ -323,98 +360,138 @@ def settle_prediction(
     )
 
     # -----------------------------------------------------
-    # Si no existe, reconstruirlo utilizando
-    # nombres de los equipos y probabilidades
+    # Recuperar información del partido
+    # -----------------------------------------------------
+
+    game = (
+        features.get("game")
+        or {}
+    )
+
+    home_name = game.get(
+        "home"
+    )
+
+    away_name = game.get(
+        "away"
+    )
+
+    # -----------------------------------------------------
+    # Si no existe ganador guardado, reconstruirlo
+    # utilizando las probabilidades
     # -----------------------------------------------------
 
     if not predicted_winner:
 
-        game = (
-            features.get("game")
-            or {}
+        home_probability = prediction.get(
+            "home_probability"
         )
 
-        home_name = game.get(
-            "home"
+        away_probability = prediction.get(
+            "away_probability"
         )
 
-        away_name = game.get(
-            "away"
-        )
+        try:
 
-        if actual_winner == home_name:
+            home_probability = float(
+                home_probability
+            )
 
-            predicted_winner = home_name
+            away_probability = float(
+                away_probability
+            )
 
-        elif actual_winner == away_name:
-
-            predicted_winner = away_name
-
-        elif (
-            home_name
-            and away_name
-        ):
-
-            try:
-
-                home_probability = float(
-                    prediction.get(
-                        "home_probability"
-                    )
-                    or 0
-                )
-
-                away_probability = float(
-                    prediction.get(
-                        "away_probability"
-                    )
-                    or 0
-                )
-
-                predicted_winner = (
-                    home_name
-                    if (
-                        home_probability
-                        >= away_probability
-                    )
-                    else away_name
-                )
-
-            except (
-                TypeError,
-                ValueError
+            if (
+                home_name
+                and away_name
             ):
 
-                predicted_winner = None
+                if home_probability >= away_probability:
+
+                    predicted_winner = home_name
+
+                else:
+
+                    predicted_winner = away_name
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            predicted_winner = None
 
     # -----------------------------------------------------
     # Determinar resultado
     # -----------------------------------------------------
 
-    if predicted_winner is None:
+    if not predicted_winner:
 
         prediction_result = "INCORRECT"
 
     else:
 
-        prediction_result = (
-            "CORRECT"
-            if predicted_winner == actual_winner
-            else "INCORRECT"
+        # Comparación normalizada para evitar que
+        # diferencias de espacios/capitalización
+        # produzcan un falso INCORRECT.
+
+        predicted_normalized = (
+            str(predicted_winner)
+            .strip()
+            .casefold()
         )
+
+        actual_normalized = (
+            str(actual_winner)
+            .strip()
+            .casefold()
+        )
+
+        if predicted_normalized == actual_normalized:
+
+            prediction_result = "CORRECT"
+
+        else:
+
+            prediction_result = "INCORRECT"
+
+    # -----------------------------------------------------
+    # Fecha de liquidación
+    # -----------------------------------------------------
 
     now = datetime.now(
         timezone.utc
     ).isoformat()
 
+    # -----------------------------------------------------
+    # Datos a guardar
+    # -----------------------------------------------------
+
     update_data = {
         "result_status": "SETTLED",
-        "prediction_result": prediction_result,
-        "actual_winner": actual_winner,
-        "actual_home_score": actual_home_score,
-        "actual_away_score": actual_away_score,
+
+        "prediction_result": (
+            prediction_result
+        ),
+
+        "actual_winner": (
+            actual_winner
+        ),
+
+        "actual_home_score": (
+            actual_home_score
+        ),
+
+        "actual_away_score": (
+            actual_away_score
+        ),
+
         "settled_at": now,
     }
+
+    # -----------------------------------------------------
+    # Actualizar EXACTAMENTE la predicción encontrada
+    # -----------------------------------------------------
 
     response = (
         supabase
@@ -427,15 +504,47 @@ def settle_prediction(
         .execute()
     )
 
+    # -----------------------------------------------------
+    # Respuesta completa
+    # -----------------------------------------------------
+
     return {
         "updated": True,
-        "event_id": str(event_id),
-        "prediction_result": prediction_result,
-        "predicted_winner": predicted_winner,
-        "actual_winner": actual_winner,
-        "actual_home_score": actual_home_score,
-        "actual_away_score": actual_away_score,
+
+        "event_id": event_id,
+
+        "prediction_id": prediction.get(
+            "id"
+        ),
+
+        "model_version": prediction.get(
+            "model_version"
+        ),
+
+        "predicted_winner": (
+            predicted_winner
+        ),
+
+        "actual_winner": (
+            actual_winner
+        ),
+
+        "actual_home_score": (
+            actual_home_score
+        ),
+
+        "actual_away_score": (
+            actual_away_score
+        ),
+
+        "prediction_result": (
+            prediction_result
+        ),
+
+        "result_status": "SETTLED",
+
         "settled_at": now,
+
         "data": response.data,
     }
 
@@ -644,6 +753,7 @@ def get_performance():
 
         "model": {
             "versions": versions,
+
             "current": CURRENT_MODEL_VERSION,
         },
 
@@ -675,6 +785,17 @@ def get_predictions():
     """
     Devuelve las predicciones almacenadas
     en un formato limpio para la API/interfaz.
+
+    Incluye:
+
+    - ganador proyectado
+    - probabilidades
+    - confianza
+    - calidad
+    - resultado
+    - marcador final
+    - ganador real
+    - factores
     """
 
     supabase = get_supabase_client()
@@ -823,7 +944,9 @@ def get_predictions():
                 },
 
                 "prediction": {
-                    "predicted_winner": prediction,
+                    "predicted_winner": (
+                        prediction
+                    ),
 
                     "home_probability": (
                         home_probability
@@ -877,8 +1000,10 @@ def get_predictions():
 
     return {
         "success": True,
+
         "total": len(
             predictions
         ),
+
         "predictions": predictions,
     }
