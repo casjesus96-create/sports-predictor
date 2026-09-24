@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
+from pathlib import Path
+
+import requests
 
 from fastapi import FastAPI, HTTPException
-import requests
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 
 from analyzer import analyze_mlb_game
 from repository import (
@@ -17,6 +18,10 @@ from repository import (
 )
 
 
+# =========================================================
+# APPLICATION
+# =========================================================
+
 app = FastAPI(
     title="Sports Predictor API",
     version="1.3.0",
@@ -27,6 +32,10 @@ app = FastAPI(
 )
 
 
+# =========================================================
+# CONFIGURATION
+# =========================================================
+
 MLB_API = "https://statsapi.mlb.com/api/v1"
 
 MLB_HEADERS = {
@@ -34,6 +43,19 @@ MLB_HEADERS = {
 }
 
 CURRENT_MODEL_VERSION = "1.2.0-form"
+
+
+# =========================================================
+# FRONTEND PATHS
+# =========================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+
+FRONTEND_DIST = BASE_DIR / "dist"
+
+FRONTEND_INDEX = FRONTEND_DIST / "index.html"
+
+FRONTEND_ASSETS = FRONTEND_DIST / "assets"
 
 
 # =========================================================
@@ -325,15 +347,6 @@ def analyze_mlb_day(
     Ejemplo:
 
     /api/v1/mlb/analyze-day?date=2026-09-22
-
-    El endpoint:
-
-    1. Obtiene los partidos MLB.
-    2. Analiza cada partido.
-    3. Guarda las predicciones en Supabase.
-    4. Evita duplicar una predicción PENDING
-       de la misma versión del modelo.
-    5. Continúa aunque un partido individual falle.
     """
 
     try:
@@ -690,10 +703,6 @@ def analyze_mlb_day(
                 )
 
                 continue
-
-        # -------------------------------------------------
-        # Resultado final del análisis diario
-        # -------------------------------------------------
 
         return {
             "success": True,
@@ -1211,19 +1220,61 @@ def predictions():
 
 
 # =========================================================
-# FRONTEND WEB
+# FRONTEND REACT
+# =========================================================
+#
+# IMPORTANTE:
+# El frontend se compila durante el Docker build:
+#
+# /frontend/dist
+#
+# y luego se copia al backend:
+#
+# /app/dist
+#
+# Aquí FastAPI se encarga de entregarlo al navegador.
 # =========================================================
 
-FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 
-if FRONTEND_DIST.exists():
+# ---------------------------------------------------------
+# Servir assets de Vite
+# ---------------------------------------------------------
 
-    @app.get("/", include_in_schema=False)
-    def frontend_index():
-        return FileResponse(FRONTEND_DIST / "index.html")
+if FRONTEND_ASSETS.exists():
 
     app.mount(
-        "/",
-        StaticFiles(directory=str(FRONTEND_DIST), html=True),
-        name="frontend",
+        "/assets",
+        StaticFiles(
+            directory=str(
+                FRONTEND_ASSETS
+            )
+        ),
+        name="frontend-assets",
+    )
+
+
+# ---------------------------------------------------------
+# Página principal
+# ---------------------------------------------------------
+
+@app.get(
+    "/",
+    include_in_schema=False
+)
+def frontend_home():
+
+    if not FRONTEND_INDEX.exists():
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Frontend no encontrado. "
+                "No existe dist/index.html. "
+                "Verifica que el frontend haya sido "
+                "compilado correctamente durante el build."
+            ),
+        )
+
+    return FileResponse(
+        str(FRONTEND_INDEX)
     )
