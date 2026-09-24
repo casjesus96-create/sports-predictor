@@ -2,6 +2,9 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 import requests
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from analyzer import analyze_mlb_game
 from repository import (
@@ -1205,3 +1208,22 @@ def predictions():
                 "details": str(exc),
             },
         )
+
+
+# =========================================================
+# FRONTEND WEB
+# =========================================================
+
+FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+
+if FRONTEND_DIST.exists():
+
+    @app.get("/", include_in_schema=False)
+    def frontend_index():
+        return FileResponse(FRONTEND_DIST / "index.html")
+
+    app.mount(
+        "/",
+        StaticFiles(directory=str(FRONTEND_DIST), html=True),
+        name="frontend",
+    )
