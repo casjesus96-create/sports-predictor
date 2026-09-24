@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 type Game = any;
 type Prediction = any;
 
-const API = (import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
+const API = "/api/v1";
 
 function localDate() {
   const d = new Date();
