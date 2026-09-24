@@ -8,104 +8,273 @@ const API = "/api/v1";
 function localDate() {
   const d = new Date();
   const offset = d.getTimezoneOffset();
-  return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 10);
+  return new Date(d.getTime() - offset * 60000)
+    .toISOString()
+    .slice(0, 10);
 }
 
 function pct(value: any) {
   const n = Number(value);
-  return Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : "—";
+
+  return Number.isFinite(n)
+    ? `${(n * 100).toFixed(1)}%`
+    : "—";
 }
 
 function num(value: any, digits = 1) {
   const n = Number(value);
-  return Number.isFinite(n) ? n.toFixed(digits) : "—";
+
+  return Number.isFinite(n)
+    ? n.toFixed(digits)
+    : "—";
 }
 
 function statusLabel(status: string) {
   if (status === "Final") return "Finalizado";
   if (status === "Live") return "En vivo";
   if (status === "Preview") return "Próximo";
+
   return status || "Sin estado";
 }
 
 function resultClass(result: string) {
   if (result === "CORRECT") return "correct";
   if (result === "INCORRECT") return "incorrect";
+
   return "pending";
 }
 
-function findPrediction(predictions: Prediction[], eventId: string) {
-  return predictions.find((p) => String(p.event_id) === String(eventId));
+function findPrediction(
+  predictions: Prediction[],
+  eventId: string
+) {
+  return predictions.find(
+    (p) =>
+      String(p?.event_id) ===
+      String(eventId)
+  );
 }
 
 function probabilityWidth(value: any) {
   const n = Number(value);
-  return Number.isFinite(n) ? Math.max(0, Math.min(100, n * 100)) : 0;
+
+  return Number.isFinite(n)
+    ? Math.max(
+        0,
+        Math.min(100, n * 100)
+      )
+    : 0;
+}
+
+function getScore(
+  game: Game,
+  prediction: Prediction
+) {
+  const homeScore =
+    prediction?.result?.actual_home_score ??
+    prediction?.actual_home_score ??
+    game?.home?.score;
+
+  const awayScore =
+    prediction?.result?.actual_away_score ??
+    prediction?.actual_away_score ??
+    game?.away?.score;
+
+  return {
+    home: homeScore,
+    away: awayScore,
+  };
+}
+
+function hasScore(
+  game: Game,
+  prediction: Prediction
+) {
+  const score = getScore(
+    game,
+    prediction
+  );
+
+  return (
+    score.home !== undefined &&
+    score.home !== null &&
+    score.away !== undefined &&
+    score.away !== null
+  );
 }
 
 export default function App() {
-  const [date, setDate] = useState(localDate());
-  const [games, setGames] = useState<Game[]>([]);
-  const [predictions, setPredictions] = useState<Prediction[]>([]);
-  const [performance, setPerformance] = useState<any>(null);
-  const [selected, setSelected] = useState<Game | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [date, setDate] =
+    useState(localDate());
 
-  async function request(path: string, options?: RequestInit) {
-    const response = await fetch(`${API}${path}`, options);
-    const data = await response.json().catch(() => ({}));
+  const [games, setGames] =
+    useState<Game[]>([]);
+
+  const [predictions, setPredictions] =
+    useState<Prediction[]>([]);
+
+  const [performance, setPerformance] =
+    useState<any>(null);
+
+  const [selected, setSelected] =
+    useState<Game | null>(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [actionLoading, setActionLoading] =
+    useState<string | null>(null);
+
+  const [error, setError] =
+    useState("");
+
+  const [notice, setNotice] =
+    useState("");
+
+  async function request(
+    path: string,
+    options?: RequestInit
+  ) {
+    const response = await fetch(
+      `${API}${path}`,
+      options
+    );
+
+    const data =
+      await response
+        .json()
+        .catch(() => ({}));
+
     if (!response.ok) {
-      throw new Error(data?.detail?.message || data?.detail || data?.message || "La API devolvió un error.");
+      throw new Error(
+        data?.detail?.message ||
+          data?.detail ||
+          data?.message ||
+          "La API devolvió un error."
+      );
     }
+
     return data;
   }
 
-  async function loadAll(showSpinner = true) {
-    if (showSpinner) setLoading(true);
+  async function loadAll(
+    showSpinner = true
+  ) {
+    if (showSpinner) {
+      setLoading(true);
+    }
+
     setError("");
+
     try {
-      const [gamesData, predictionsData, performanceData] = await Promise.all([
-        request(`/mlb/games?date=${date}`),
-        request(`/predictions`),
-        request(`/performance`),
+      const [
+        gamesData,
+        predictionsData,
+        performanceData,
+      ] = await Promise.all([
+        request(
+          `/mlb/games?date=${date}`
+        ),
+
+        request(
+          `/predictions`
+        ),
+
+        request(
+          `/performance`
+        ),
       ]);
-      setGames(gamesData.games || []);
-      setPredictions(predictionsData.predictions || []);
-      setPerformance(performanceData);
+
+      setGames(
+        gamesData.games || []
+      );
+
+      setPredictions(
+        predictionsData.predictions || []
+      );
+
+      setPerformance(
+        performanceData
+      );
     } catch (e: any) {
-      setError(e.message || "No se pudo cargar la información.");
+      setError(
+        e.message ||
+          "No se pudo cargar la información."
+      );
     } finally {
-      if (showSpinner) setLoading(false);
+      if (showSpinner) {
+        setLoading(false);
+      }
     }
   }
 
-  useEffect(() => { loadAll(); }, [date]);
+  useEffect(() => {
+    loadAll();
+  }, [date]);
 
-  const datePredictions = useMemo(() => {
-    return predictions.filter((p) => String(p?.game?.date || "").slice(0, 10) === date);
-  }, [predictions, date]);
+  const datePredictions =
+    useMemo(() => {
+      return predictions.filter(
+        (p) =>
+          String(
+            p?.game?.date || ""
+          ).slice(0, 10) === date
+      );
+    }, [predictions, date]);
 
-  const predictedCount = datePredictions.length;
-  const finalCount = games.filter((g) => g.status === "Final").length;
-  const pendingCount = datePredictions.filter((p) => p?.result?.status === "PENDING").length;
+  const predictedCount =
+    datePredictions.length;
 
-  async function analyzeGame(eventId: string) {
+  const finalCount =
+    games.filter(
+      (g) =>
+        g.status === "Final"
+    ).length;
+
+  const pendingCount =
+    datePredictions.filter(
+      (p) =>
+        p?.result?.status ===
+        "PENDING"
+    ).length;
+
+  async function analyzeGame(
+    eventId: string
+  ) {
     setActionLoading(eventId);
     setError("");
     setNotice("");
+
     try {
-      const result = await request(`/analyze?event_id=${encodeURIComponent(eventId)}`, { method: "POST" });
-      if (result?.success === false) {
-        setNotice(result.message || "El análisis no generó una predicción.");
+      const result =
+        await request(
+          `/analyze?event_id=${encodeURIComponent(
+            eventId
+          )}`,
+          {
+            method: "POST",
+          }
+        );
+
+      if (
+        result?.success === false
+      ) {
+        setNotice(
+          result.message ||
+            "El análisis no generó una predicción."
+        );
       } else {
-        setNotice("Análisis guardado correctamente.");
+        setNotice(
+          "Análisis guardado correctamente."
+        );
       }
+
       await loadAll(false);
     } catch (e: any) {
-      setError(e.message || "No se pudo analizar el partido.");
+      setError(
+        e.message ||
+          "No se pudo analizar el partido."
+      );
     } finally {
       setActionLoading(null);
     }
@@ -115,140 +284,1156 @@ export default function App() {
     setActionLoading("day");
     setError("");
     setNotice("");
+
     try {
-      const result = await request(`/mlb/analyze-day?date=${date}`);
-      const s = result?.summary || {};
-      setNotice(`Jornada procesada: ${s.analyzed || 0} analizados, ${s.skipped || 0} existentes/omitidos, ${s.failed || 0} con error.`);
+      const result =
+        await request(
+          `/mlb/analyze-day?date=${date}`
+        );
+
+      const s =
+        result?.summary || {};
+
+      setNotice(
+        `Jornada procesada: ${
+          s.analyzed || 0
+        } analizados, ${
+          s.skipped || 0
+        } existentes/omitidos, ${
+          s.failed || 0
+        } con error.`
+      );
+
       await loadAll(false);
     } catch (e: any) {
-      setError(e.message || "No se pudo analizar la jornada.");
+      setError(
+        e.message ||
+          "No se pudo analizar la jornada."
+      );
     } finally {
       setActionLoading(null);
     }
   }
 
-  async function settle(eventId: string) {
-    setActionLoading(`settle-${eventId}`);
+  async function settle(
+    eventId: string
+  ) {
+    setActionLoading(
+      `settle-${eventId}`
+    );
+
     setError("");
     setNotice("");
+
     try {
-      const result = await request(`/settle/${encodeURIComponent(eventId)}`, { method: "POST" });
-      setNotice(result?.success ? `Partido liquidado: ${result.prediction_result || "resultado registrado"}.` : (result.message || result.settlement?.reason || "Todavía no se puede liquidar."));
+      const result =
+        await request(
+          `/settle/${encodeURIComponent(
+            eventId
+          )}`,
+          {
+            method: "POST",
+          }
+        );
+
+      if (
+        result?.success
+      ) {
+        const resultLabel =
+          result.prediction_result ===
+          "CORRECT"
+            ? "ACERTADA"
+            : result.prediction_result ===
+              "INCORRECT"
+            ? "INCORRECTA"
+            : result.prediction_result ||
+              "RESULTADO REGISTRADO";
+
+        setNotice(
+          `Partido liquidado: ${resultLabel}. Marcador final ${
+            result.away
+          } ${result.away_score} - ${
+            result.home_score
+          } ${result.home}.`
+        );
+      } else {
+        setNotice(
+          result.message ||
+            result.settlement?.reason ||
+            "Todavía no se puede liquidar."
+        );
+      }
+
       await loadAll(false);
     } catch (e: any) {
-      setError(e.message || "No se pudo liquidar el partido.");
+      setError(
+        e.message ||
+          "No se pudo liquidar el partido."
+      );
     } finally {
       setActionLoading(null);
     }
   }
 
-  function openGame(game: Game) {
+  function openGame(
+    game: Game
+  ) {
     setSelected(game);
   }
 
   return (
     <main className="app-shell">
+
       <header className="topbar">
         <div>
-          <div className="eyebrow">PROYECCIONES DEPORTIVAS</div>
-          <h1>Sports Predictor</h1>
-          <p>MLB · análisis, predicción y validación histórica</p>
+          <div className="eyebrow">
+            PROYECCIONES DEPORTIVAS
+          </div>
+
+          <h1>
+            Sports Predictor
+          </h1>
+
+          <p>
+            MLB · análisis, predicción y
+            validación histórica
+          </p>
         </div>
-        <div className="model-pill">Modelo <b>1.2.0-form</b></div>
+
+        <div className="model-pill">
+          Modelo{" "}
+          <b>
+            1.2.0-form
+          </b>
+        </div>
       </header>
 
       <section className="toolbar panel">
-        <label>Fecha <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+
+        <label>
+          Fecha
+
+          <input
+            type="date"
+            value={date}
+            onChange={(e) =>
+              setDate(
+                e.target.value
+              )
+            }
+          />
+        </label>
+
         <div className="toolbar-actions">
-          <button className="secondary" onClick={() => loadAll()} disabled={loading}>↻ Actualizar</button>
-          <button className="primary" onClick={analyzeDay} disabled={actionLoading === "day"}>
-            {actionLoading === "day" ? "Analizando…" : "⚡ Analizar jornada"}
+
+          <button
+            className="secondary"
+            onClick={() =>
+              loadAll()
+            }
+            disabled={loading}
+          >
+            ↻ Actualizar
           </button>
+
+          <button
+            className="primary"
+            onClick={analyzeDay}
+            disabled={
+              actionLoading ===
+              "day"
+            }
+          >
+            {actionLoading ===
+            "day"
+              ? "Analizando…"
+              : "⚡ Analizar jornada"}
+          </button>
+
         </div>
       </section>
 
-      {error && <div className="message error">{error}</div>}
-      {notice && <div className="message notice">{notice}</div>}
+      {error && (
+        <div className="message error">
+          {error}
+        </div>
+      )}
+
+      {notice && (
+        <div className="message notice">
+          {notice}
+        </div>
+      )}
 
       <section className="metrics-grid">
-        <Metric title="Partidos" value={games.length} detail={`${finalCount} finalizados`} />
-        <Metric title="Predicciones" value={predictedCount} detail={`${pendingCount} pendientes`} />
-        <Metric title="Precisión histórica" value={pct((performance?.summary?.accuracy_percentage || 0) / 100)} detail={`${performance?.summary?.settled_predictions || 0} liquidadas`} />
-        <Metric title="Confianza media" value={pct(performance?.summary?.average_confidence)} detail={`Calidad ${num(performance?.summary?.average_data_quality, 1)}%`} />
+
+        <Metric
+          title="Partidos"
+          value={games.length}
+          detail={`${finalCount} finalizados`}
+        />
+
+        <Metric
+          title="Predicciones"
+          value={predictedCount}
+          detail={`${pendingCount} pendientes`}
+        />
+
+        <Metric
+          title="Precisión histórica"
+          value={pct(
+            (
+              performance
+                ?.summary
+                ?.accuracy_percentage ||
+              0
+            ) / 100
+          )}
+          detail={`${
+            performance
+              ?.summary
+              ?.settled_predictions ||
+            0
+          } liquidadas`}
+        />
+
+        <Metric
+          title="Confianza media"
+          value={pct(
+            performance
+              ?.summary
+              ?.average_confidence
+          )}
+          detail={`Calidad ${num(
+            performance
+              ?.summary
+              ?.average_data_quality,
+            1
+          )}%`}
+        />
+
       </section>
 
       <section className="content-grid">
+
         <div>
+
           <div className="section-heading">
-            <div><span className="section-kicker">JORNADA MLB</span><h2>Partidos del {date}</h2></div>
-            <span className="muted">{games.length} juegos</span>
+
+            <div>
+              <span className="section-kicker">
+                JORNADA MLB
+              </span>
+
+              <h2>
+                Partidos del {date}
+              </h2>
+            </div>
+
+            <span className="muted">
+              {games.length} juegos
+            </span>
+
           </div>
 
-          {loading ? <div className="empty panel">Cargando datos…</div> : games.length === 0 ? <div className="empty panel">No hay partidos MLB para esta fecha.</div> : (
+          {loading ? (
+
+            <div className="empty panel">
+              Cargando datos…
+            </div>
+
+          ) : games.length === 0 ? (
+
+            <div className="empty panel">
+              No hay partidos MLB
+              para esta fecha.
+            </div>
+
+          ) : (
+
             <div className="games-list">
-              {games.map((game) => {
-                const p = findPrediction(predictions, game.game_id);
-                const prediction = p?.prediction;
-                const result = p?.result?.status || "PENDING";
-                const selectedWinner = prediction?.predicted_winner;
-                return (
-                  <article className={`game-card ${selected?.game_id === game.game_id ? "selected" : ""}`} key={game.game_id} onClick={() => openGame(game)}>
-                    <div className="game-head">
-                      <span className={`status status-${String(game.status || "").toLowerCase()}`}>{statusLabel(game.status)}</span>
-                      <span className="muted">#{game.game_id}</span>
-                    </div>
-                    <div className="matchup">
-                      <div><strong>{game.away?.name}</strong><span>Visitante</span></div>
-                      <div className="vs">VS</div>
-                      <div className="home-team"><strong>{game.home?.name}</strong><span>Local</span></div>
-                    </div>
-                    <div className="game-meta">🏟️ {game.venue || "Estadio pendiente"} · {game.detailed_status || "Estado pendiente"}</div>
-                    {p ? (
-                      <div className="prediction-strip">
-                        <div><span>Proyección</span><b>{selectedWinner || "—"}</b></div>
-                        <div><span>Probabilidad</span><b>{pct(prediction.home_probability)} / {pct(prediction.away_probability)}</b></div>
-                        <div><span>Confianza</span><b>{pct(prediction.confidence)}</b></div>
-                        <span className={`result ${resultClass(result)}`}>{result === "PENDING" ? "Pendiente" : result === "CORRECT" ? "Acertada" : "Incorrecta"}</span>
+
+              {games.map(
+                (game) => {
+
+                  const p =
+                    findPrediction(
+                      predictions,
+                      game.game_id
+                    );
+
+                  const prediction =
+                    p?.prediction;
+
+                  const result =
+                    p?.result?.status ||
+                    "PENDING";
+
+                  const selectedWinner =
+                    prediction?.predicted_winner;
+
+                  const score =
+                    getScore(
+                      game,
+                      p
+                    );
+
+                  const scoreAvailable =
+                    hasScore(
+                      game,
+                      p
+                    );
+
+                  return (
+
+                    <article
+                      className={`game-card ${
+                        selected?.game_id ===
+                        game.game_id
+                          ? "selected"
+                          : ""
+                      }`}
+                      key={
+                        game.game_id
+                      }
+                      onClick={() =>
+                        openGame(
+                          game
+                        )
+                      }
+                    >
+
+                      <div className="game-head">
+
+                        <span
+                          className={`status status-${String(
+                            game.status ||
+                              ""
+                          ).toLowerCase()}`}
+                        >
+                          {statusLabel(
+                            game.status
+                          )}
+                        </span>
+
+                        <span className="muted">
+                          #
+                          {
+                            game.game_id
+                          }
+                        </span>
+
                       </div>
-                    ) : <div className="no-prediction">Sin predicción guardada</div>}
-                    <div className="card-actions">
-                      <button className="secondary small" onClick={(e) => { e.stopPropagation(); analyzeGame(game.game_id); }} disabled={actionLoading === game.game_id}>
-                        {actionLoading === game.game_id ? "Analizando…" : "🧪 Analizar"}
-                      </button>
-                      {game.status === "Final" && p && p.result?.status === "PENDING" && <button className="secondary small" onClick={(e) => { e.stopPropagation(); settle(game.game_id); }} disabled={actionLoading === `settle-${game.game_id}`}>{actionLoading === `settle-${game.game_id}` ? "Liquidando…" : "✓ Liquidar"}</button>}
-                    </div>
-                  </article>
-                );
-              })}
+
+                      <div className="matchup">
+
+                        <div>
+                          <strong>
+                            {
+                              game.away
+                                ?.name
+                            }
+                          </strong>
+
+                          <span>
+                            Visitante
+                          </span>
+                        </div>
+
+                        <div className="vs">
+                          VS
+                        </div>
+
+                        <div className="home-team">
+
+                          <strong>
+                            {
+                              game.home
+                                ?.name
+                            }
+                          </strong>
+
+                          <span>
+                            Local
+                          </span>
+
+                        </div>
+
+                      </div>
+
+                      <div className="game-meta">
+                        🏟️{" "}
+                        {
+                          game.venue ||
+                          "Estadio pendiente"
+                        }{" "}
+                        ·{" "}
+                        {
+                          game.detailed_status ||
+                          "Estado pendiente"
+                        }
+                      </div>
+
+                      {game.status ===
+                        "Final" &&
+                        scoreAvailable && (
+
+                          <div className="final-score">
+
+                            <div className="final-score-label">
+                              MARCADOR FINAL
+                            </div>
+
+                            <div className="final-score-main">
+
+                              <div>
+                                <span>
+                                  {
+                                    game.away
+                                      ?.name
+                                  }
+                                </span>
+
+                                <strong>
+                                  {
+                                    score.away
+                                  }
+                                </strong>
+                              </div>
+
+                              <b>
+                                -
+                              </b>
+
+                              <div>
+                                <span>
+                                  {
+                                    game.home
+                                      ?.name
+                                  }
+                                </span>
+
+                                <strong>
+                                  {
+                                    score.home
+                                  }
+                                </strong>
+                              </div>
+
+                            </div>
+
+                          </div>
+                        )}
+
+                      {p ? (
+
+                        <div className="prediction-strip">
+
+                          <div>
+                            <span>
+                              Proyección
+                            </span>
+
+                            <b>
+                              {
+                                selectedWinner ||
+                                "—"
+                              }
+                            </b>
+                          </div>
+
+                          <div>
+                            <span>
+                              Probabilidad
+                            </span>
+
+                            <b>
+                              {pct(
+                                prediction.home_probability
+                              )}{" "}
+                              /{" "}
+                              {pct(
+                                prediction.away_probability
+                              )}
+                            </b>
+                          </div>
+
+                          <div>
+                            <span>
+                              Confianza
+                            </span>
+
+                            <b>
+                              {pct(
+                                prediction.confidence
+                              )}
+                            </b>
+                          </div>
+
+                          <span
+                            className={`result ${resultClass(
+                              result
+                            )}`}
+                          >
+                            {result ===
+                            "PENDING"
+                              ? "Pendiente"
+                              : result ===
+                                "CORRECT"
+                              ? "Acertada"
+                              : "Incorrecta"}
+                          </span>
+
+                        </div>
+
+                      ) : (
+
+                        <div className="no-prediction">
+                          Sin predicción
+                          guardada
+                        </div>
+
+                      )}
+
+                      <div className="card-actions">
+
+                        <button
+                          className="secondary small"
+                          onClick={(
+                            e
+                          ) => {
+                            e.stopPropagation();
+
+                            analyzeGame(
+                              game.game_id
+                            );
+                          }}
+                          disabled={
+                            actionLoading ===
+                            game.game_id
+                          }
+                        >
+                          {actionLoading ===
+                          game.game_id
+                            ? "Analizando…"
+                            : "🧪 Analizar"}
+                        </button>
+
+                        {game.status ===
+                          "Final" &&
+                          p &&
+                          p.result?.status ===
+                            "PENDING" && (
+
+                            <button
+                              className="secondary small"
+                              onClick={(
+                                e
+                              ) => {
+                                e.stopPropagation();
+
+                                settle(
+                                  game.game_id
+                                );
+                              }}
+                              disabled={
+                                actionLoading ===
+                                `settle-${game.game_id}`
+                              }
+                            >
+                              {actionLoading ===
+                              `settle-${game.game_id}`
+                                ? "Liquidando…"
+                                : "✓ Liquidar"}
+                            </button>
+
+                          )}
+
+                      </div>
+
+                    </article>
+
+                  );
+                }
+              )}
+
             </div>
           )}
+
         </div>
 
         <aside className="side-column">
-          {selected ? <GameDetail game={selected} prediction={findPrediction(predictions, selected.game_id)} onClose={() => setSelected(null)} /> : <Performance performance={performance} />}
+
+          {selected ? (
+
+            <GameDetail
+              game={selected}
+              prediction={findPrediction(
+                predictions,
+                selected.game_id
+              )}
+              onClose={() =>
+                setSelected(null)
+              }
+            />
+
+          ) : (
+
+            <Performance
+              performance={
+                performance
+              }
+            />
+
+          )}
+
         </aside>
+
       </section>
+
     </main>
   );
 }
 
-function Metric({ title, value, detail }: { title: string; value: any; detail: string }) {
-  return <div className="metric panel"><span>{title}</span><strong>{value}</strong><small>{detail}</small></div>;
+
+function Metric({
+  title,
+  value,
+  detail,
+}: {
+  title: string;
+  value: any;
+  detail: string;
+}) {
+  return (
+
+    <div className="metric panel">
+
+      <span>
+        {title}
+      </span>
+
+      <strong>
+        {value}
+      </strong>
+
+      <small>
+        {detail}
+      </small>
+
+    </div>
+  );
 }
 
-function Performance({ performance }: { performance: any }) {
-  const s = performance?.summary;
-  const m = performance?.models?.["1.2.0-form"];
-  return <div className="panel side-panel"><div className="section-kicker">RENDIMIENTO</div><h2>Salud del modelo</h2><p className="side-copy">Los partidos terminados sirven como evidencia histórica para medir cómo se comporta cada versión.</p><div className="score-row"><span>Acertadas</span><b>{s?.correct_predictions ?? 0}</b></div><div className="score-row"><span>Incorrectas</span><b>{s?.incorrect_predictions ?? 0}</b></div><div className="score-row"><span>Pendientes</span><b>{s?.pending_predictions ?? 0}</b></div><div className="bar-label"><span>Precisión total</span><b>{num(s?.accuracy_percentage, 1)}%</b></div><div className="bar-track"><i style={{ width: `${Math.max(0, Math.min(100, Number(s?.accuracy_percentage) || 0))}%` }} /></div><div className="bar-label"><span>Precisión 1.2.0-form</span><b>{num(m?.accuracy_percentage, 1)}%</b></div><div className="bar-track"><i style={{ width: `${Math.max(0, Math.min(100, Number(m?.accuracy_percentage) || 0))}%` }} /></div><div className="model-note"><b>1.2.0-form</b><span>{m?.settled_predictions ?? 0} liquidadas · {m?.pending_predictions ?? 0} pendientes</span></div></div>;
+
+function Performance({
+  performance,
+}: {
+  performance: any;
+}) {
+
+  const s =
+    performance?.summary;
+
+  const m =
+    performance?.models?.[
+      "1.2.0-form"
+    ];
+
+  return (
+
+    <div className="panel side-panel">
+
+      <div className="section-kicker">
+        RENDIMIENTO
+      </div>
+
+      <h2>
+        Salud del modelo
+      </h2>
+
+      <p className="side-copy">
+        Los partidos terminados
+        sirven como evidencia
+        histórica para medir cómo
+        se comporta cada versión.
+      </p>
+
+      <div className="score-row">
+        <span>
+          Acertadas
+        </span>
+
+        <b>
+          {s?.correct_predictions ??
+            0}
+        </b>
+      </div>
+
+      <div className="score-row">
+        <span>
+          Incorrectas
+        </span>
+
+        <b>
+          {s?.incorrect_predictions ??
+            0}
+        </b>
+      </div>
+
+      <div className="score-row">
+        <span>
+          Pendientes
+        </span>
+
+        <b>
+          {s?.pending_predictions ??
+            0}
+        </b>
+      </div>
+
+      <div className="bar-label">
+
+        <span>
+          Precisión total
+        </span>
+
+        <b>
+          {num(
+            s?.accuracy_percentage,
+            1
+          )}
+          %
+        </b>
+
+      </div>
+
+      <div className="bar-track">
+
+        <i
+          style={{
+            width: `${Math.max(
+              0,
+              Math.min(
+                100,
+                Number(
+                  s?.accuracy_percentage
+                ) || 0
+              )
+            )}%`,
+          }}
+        />
+
+      </div>
+
+      <div className="bar-label">
+
+        <span>
+          Precisión 1.2.0-form
+        </span>
+
+        <b>
+          {num(
+            m?.accuracy_percentage,
+            1
+          )}
+          %
+        </b>
+
+      </div>
+
+      <div className="bar-track">
+
+        <i
+          style={{
+            width: `${Math.max(
+              0,
+              Math.min(
+                100,
+                Number(
+                  m?.accuracy_percentage
+                ) || 0
+              )
+            )}%`,
+          }}
+        />
+
+      </div>
+
+      <div className="model-note">
+
+        <b>
+          1.2.0-form
+        </b>
+
+        <span>
+          {m?.settled_predictions ??
+            0}{" "}
+          liquidadas ·{" "}
+          {m?.pending_predictions ??
+            0}{" "}
+          pendientes
+        </span>
+
+      </div>
+
+    </div>
+  );
 }
 
-function GameDetail({ game, prediction: p, onClose }: { game: Game; prediction: Prediction; onClose: () => void }) {
-  const f = p?.factors || {};
-  const home = f?.recent_form?.home;
-  const away = f?.recent_form?.away;
-  const prediction = p?.prediction;
-  return <div className="panel detail-panel"><button className="close" onClick={onClose}>×</button><div className="section-kicker">DETALLE DEL PARTIDO</div><h2>{game.away?.name} <span>vs</span> {game.home?.name}</h2><p className="muted">{game.venue || "Estadio pendiente"}</p>{prediction ? <><div className="winner-box"><span>Proyección actual</span><strong>{prediction.predicted_winner}</strong><b>{pct(prediction.confidence)} confianza</b></div><div className="prob-grid"><Probability name={game.home?.name} value={prediction.home_probability}/><Probability name={game.away?.name} value={prediction.away_probability}/></div><div className="factor-grid"><Factor label="OPS local" value={f.home_team_ops || f.home_team_ops === 0 ? f.home_team_ops : "—"}/><Factor label="OPS visitante" value={f.away_team_ops || f.away_team_ops === 0 ? f.away_team_ops : "—"}/><Factor label="ERA local" value={f.home_team_era}/><Factor label="ERA visitante" value={f.away_team_era}/><Factor label="Forma local L5" value={home ? `${home.wins}-${home.losses}` : "—"}/><Factor label="Forma visitante L5" value={away ? `${away.wins}-${away.losses}` : "—"}/><Factor label="Dif. carreras local" value={home ? num(home.run_differential_per_game ?? home.run_differential / Math.max(home.games,1), 2) : "—"}/><Factor label="Dif. carreras visitante" value={away ? num(away.run_differential_per_game ?? away.run_differential / Math.max(away.games,1), 2) : "—"}/></div><div className="quality"><span>Calidad de datos</span><b>{prediction.data_quality ?? 0}%</b></div></> : <div className="empty">Todavía no existe una predicción para este partido.</div>}</div>;
+
+function GameDetail({
+  game,
+  prediction: p,
+  onClose,
+}: {
+  game: Game;
+  prediction: Prediction;
+  onClose: () => void;
+}) {
+
+  const f =
+    p?.factors || {};
+
+  const home =
+    f?.recent_form?.home;
+
+  const away =
+    f?.recent_form?.away;
+
+  const prediction =
+    p?.prediction;
+
+  const score =
+    getScore(
+      game,
+      p
+    );
+
+  const scoreAvailable =
+    hasScore(
+      game,
+      p
+    );
+
+  const result =
+    p?.result?.status ||
+    "PENDING";
+
+  return (
+
+    <div className="panel detail-panel">
+
+      <button
+        className="close"
+        onClick={onClose}
+      >
+        ×
+      </button>
+
+      <div className="section-kicker">
+        DETALLE DEL PARTIDO
+      </div>
+
+      <h2>
+        {game.away?.name}{" "}
+        <span>
+          vs
+        </span>{" "}
+        {game.home?.name}
+      </h2>
+
+      <p className="muted">
+        {game.venue ||
+          "Estadio pendiente"}
+      </p>
+
+      {game.status ===
+        "Final" &&
+        scoreAvailable && (
+
+          <div className="detail-final-score">
+
+            <span>
+              MARCADOR FINAL
+            </span>
+
+            <div>
+
+              <strong>
+                {
+                  game.away
+                    ?.name
+                }{" "}
+                {score.away}
+              </strong>
+
+              <b>
+                -
+              </b>
+
+              <strong>
+                {score.home}{" "}
+                {
+                  game.home
+                    ?.name
+                }
+              </strong>
+
+            </div>
+
+          </div>
+        )}
+
+      {prediction ? (
+
+        <>
+
+          <div className="winner-box">
+
+            <span>
+              Proyección actual
+            </span>
+
+            <strong>
+              {
+                prediction.predicted_winner
+              }
+            </strong>
+
+            <b>
+              {pct(
+                prediction.confidence
+              )}{" "}
+              confianza
+            </b>
+
+          </div>
+
+          <div className="prob-grid">
+
+            <Probability
+              name={
+                game.home?.name
+              }
+              value={
+                prediction.home_probability
+              }
+            />
+
+            <Probability
+              name={
+                game.away?.name
+              }
+              value={
+                prediction.away_probability
+              }
+            />
+
+          </div>
+
+          {game.status ===
+            "Final" && (
+
+            <div
+              className={`detail-result ${resultClass(
+                result
+              )}`}
+            >
+              {result ===
+              "CORRECT"
+                ? "✓ PROYECCIÓN ACERTADA"
+                : result ===
+                  "INCORRECT"
+                ? "✕ PROYECCIÓN INCORRECTA"
+                : "⏳ RESULTADO PENDIENTE"}
+            </div>
+
+          )}
+
+          <div className="factor-grid">
+
+            <Factor
+              label="OPS local"
+              value={
+                f.home_team_ops ||
+                f.home_team_ops === 0
+                  ? f.home_team_ops
+                  : "—"
+              }
+            />
+
+            <Factor
+              label="OPS visitante"
+              value={
+                f.away_team_ops ||
+                f.away_team_ops === 0
+                  ? f.away_team_ops
+                  : "—"
+              }
+            />
+
+            <Factor
+              label="ERA local"
+              value={
+                f.home_team_era
+              }
+            />
+
+            <Factor
+              label="ERA visitante"
+              value={
+                f.away_team_era
+              }
+            />
+
+            <Factor
+              label="Forma local L5"
+              value={
+                home
+                  ? `${home.wins}-${home.losses}`
+                  : "—"
+              }
+            />
+
+            <Factor
+              label="Forma visitante L5"
+              value={
+                away
+                  ? `${away.wins}-${away.losses}`
+                  : "—"
+              }
+            />
+
+            <Factor
+              label="Dif. carreras local"
+              value={
+                home
+                  ? num(
+                      home.run_differential_per_game ??
+                        home.run_differential /
+                          Math.max(
+                            home.games,
+                            1
+                          ),
+                      2
+                    )
+                  : "—"
+              }
+            />
+
+            <Factor
+              label="Dif. carreras visitante"
+              value={
+                away
+                  ? num(
+                      away.run_differential_per_game ??
+                        away.run_differential /
+                          Math.max(
+                            away.games,
+                            1
+                          ),
+                      2
+                    )
+                  : "—"
+              }
+            />
+
+          </div>
+
+          <div className="quality">
+
+            <span>
+              Calidad de datos
+            </span>
+
+            <b>
+              {
+                prediction.data_quality ??
+                0
+              }%
+            </b>
+
+          </div>
+
+        </>
+
+      ) : (
+
+        <div className="empty">
+          Todavía no existe una
+          predicción para este
+          partido.
+        </div>
+
+      )}
+
+    </div>
+  );
 }
 
-function Probability({ name, value }: { name: string; value: any }) { return <div className="prob-card"><div><span>{name}</span><b>{pct(value)}</b></div><div className="bar-track"><i style={{ width: `${probabilityWidth(value)}%` }} /></div></div>; }
-function Factor({ label, value }: { label: string; value: any }) { return <div className="factor"><span>{label}</span><b>{value ?? "—"}</b></div>; }
+
+function Probability({
+  name,
+  value,
+}: {
+  name: string;
+  value: any;
+}) {
+
+  return (
+
+    <div className="prob-card">
+
+      <div>
+
+        <span>
+          {name}
+        </span>
+
+        <b>
+          {pct(value)}
+        </b>
+
+      </div>
+
+      <div className="bar-track">
+
+        <i
+          style={{
+            width: `${probabilityWidth(
+              value
+            )}%`,
+          }}
+        />
+
+      </div>
+
+    </div>
+  );
+}
+
+
+function Factor({
+  label,
+  value,
+}: {
+  label: string;
+  value: any;
+}) {
+
+  return (
+
+    <div className="factor">
+
+      <span>
+        {label}
+      </span>
+
+      <b>
+        {value ?? "—"}
+      </b>
+
+    </div>
+  );
+}
