@@ -265,6 +265,8 @@ def settle_prediction(
     actual_winner,
     actual_home_score,
     actual_away_score,
+    prediction_id=None,
+    model_version=CURRENT_MODEL_VERSION,
 ):
     """
     Liquida la predicción PENDING correspondiente
@@ -277,7 +279,7 @@ def settle_prediction(
 
     supabase = get_supabase_client()
 
-    existing = (
+    query = (
         supabase
         .table("prediction_snapshots")
         .select("*")
@@ -289,6 +291,20 @@ def settle_prediction(
             "result_status",
             "PENDING"
         )
+    )
+
+    # Si la interfaz conoce el id exacto, liquidamos exactamente
+    # esa predicción. Esto evita mezclar versiones/modelos del mismo juego.
+    if prediction_id:
+        query = query.eq("id", prediction_id)
+    else:
+        # Para liquidaciones automáticas sin id explícito, usar la
+        # versión vigente del modelo y solo después el registro más reciente.
+        if model_version:
+            query = query.eq("model_version", model_version)
+
+    existing = (
+        query
         .order(
             "created_at",
             desc=True
@@ -441,6 +457,74 @@ def settle_prediction(
 
 
 # =========================================================
+# RESULTADO EFECTIVO
+# =========================================================
+
+def _effective_prediction_result(row):
+    """
+    Recalcula el resultado de una predicción liquidada a partir
+    del ganador realmente proyectado y el ganador real.
+
+    Esto protege el dashboard frente a registros históricos que
+    tengan prediction_result inconsistente.
+    """
+    stored = row.get("prediction_result")
+
+    if row.get("result_status") != "SETTLED":
+        return stored
+
+    features = row.get("features") or {}
+    predicted = features.get("predicted_winner")
+    actual = row.get("actual_winner")
+
+    if predicted and actual:
+        return "CORRECT" if str(predicted).strip() == str(actual).strip() else "INCORRECT"
+
+    return stored
+
+
+def reconcile_settled_prediction(event_id):
+    """
+    Corrige registros SETTLED cuyo prediction_result no coincide
+    con el ganador proyectado almacenado y el ganador real.
+    """
+    supabase = get_supabase_client()
+    response = (
+        supabase
+        .table("prediction_snapshots")
+        .select("*")
+        .eq("event_id", str(event_id))
+        .eq("result_status", "SETTLED")
+        .execute()
+    )
+    rows = response.data or []
+    updates = []
+    for row in rows:
+        effective = _effective_prediction_result(row)
+        if effective and effective != row.get("prediction_result"):
+            updated = (
+                supabase
+                .table("prediction_snapshots")
+                .update({"prediction_result": effective})
+                .eq("id", row.get("id"))
+                .execute()
+            )
+            updates.append({
+                "id": row.get("id"),
+                "old": row.get("prediction_result"),
+                "new": effective,
+                "data": updated.data,
+            })
+    return {
+        "success": True,
+        "event_id": str(event_id),
+        "checked": len(rows),
+        "updated": len(updates),
+        "updates": updates,
+    }
+
+
+# =========================================================
 # ESTADÍSTICAS DE RENDIMIENTO
 # =========================================================
 
@@ -502,17 +586,13 @@ def get_performance():
         correct = sum(
             1
             for row in model_rows
-            if row.get(
-                "prediction_result"
-            ) == "CORRECT"
+            if _effective_prediction_result(row) == "CORRECT"
         )
 
         incorrect = sum(
             1
             for row in model_rows
-            if row.get(
-                "prediction_result"
-            ) == "INCORRECT"
+            if _effective_prediction_result(row) == "INCORRECT"
         )
 
         confidences = []
@@ -847,7 +927,9 @@ def get_predictions():
                         "result_status"
                     ),
 
-                    "prediction_result": row.get(
+                    "prediction_result": _effective_prediction_result(row),
+
+                    "stored_prediction_result": row.get(
                         "prediction_result"
                     ),
 
