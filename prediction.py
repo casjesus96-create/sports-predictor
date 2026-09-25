@@ -17,10 +17,11 @@ MODEL_VERSION = "2.0.0-matchup"
 # Posteriormente los calibraremos utilizando resultados reales.
 #
 WEIGHTS = {
-    "general_form": 0.22,
-    "batting_split": 0.22,
-    "h2h": 0.12,
-    "run_differential": 0.14,
+    "general_form": 0.20,
+    "batting_split": 0.18,
+    "offensive_volume": 0.10,
+    "h2h": 0.10,
+    "run_differential": 0.12,
     "pitcher": 0.20,
     "home_advantage": 0.10,
 }
@@ -277,6 +278,64 @@ def calculate_split_signal(
 
     return math.tanh(
         difference / 2.0
+    )
+
+
+# =========================================================
+# VOLUMEN OFENSIVO
+# =========================================================
+
+def calculate_offensive_volume_signal(
+    home_split,
+    away_split,
+):
+    """
+    Compara producción ofensiva de volumen dentro del split
+    que corresponde al pitcher rival.
+
+    Utiliza: hits, HR, carreras, BB y ponches.
+
+    Los valores se convierten a tasas por partido para evitar
+    favorecer automáticamente a equipos con más juegos en la
+    muestra. Los ponches tienen efecto negativo.
+    """
+
+    def score(split):
+
+        if not split.get("available"):
+            return 0.0
+
+        games = max(
+            safe_float(split.get("games"), 0.0),
+            1.0,
+        )
+
+        hits_pg = safe_float(split.get("hits"), 0.0) / games
+        hr_pg = safe_float(split.get("home_runs"), 0.0) / games
+        runs_pg = safe_float(split.get("runs"), 0.0) / games
+        walks_pg = safe_float(split.get("walks"), 0.0) / games
+        strikeouts_pg = safe_float(split.get("strikeouts"), 0.0) / games
+
+        # Escalas deliberadamente conservadoras.
+        hits_component = (hits_pg - 8.0) / 2.0
+        hr_component = (hr_pg - 1.0) / 0.60
+        runs_component = (runs_pg - 4.5) / 1.5
+        walks_component = (walks_pg - 3.2) / 1.0
+        strikeout_component = -(strikeouts_pg - 8.5) / 2.0
+
+        return (
+            hits_component * 0.30
+            + hr_component * 0.25
+            + runs_component * 0.20
+            + walks_component * 0.10
+            + strikeout_component * 0.15
+        )
+
+    home_score = score(home_split)
+    away_score = score(away_split)
+
+    return math.tanh(
+        (home_score - away_score) / 2.0
     )
 
 
@@ -613,6 +672,13 @@ def calculate_probability(
         away_pitcher,
     )
 
+    offensive_volume_signal = (
+        calculate_offensive_volume_signal(
+            home_split,
+            away_split,
+        )
+    )
+
     # -----------------------------------------------------
     # LOCALÍA
     # -----------------------------------------------------
@@ -630,6 +696,9 @@ def calculate_probability(
 
         + split_signal
         * WEIGHTS["batting_split"]
+
+        + offensive_volume_signal
+        * WEIGHTS["offensive_volume"]
 
         + h2h_signal
         * WEIGHTS["h2h"]
@@ -681,6 +750,11 @@ def calculate_probability(
 
             "batting_split": round(
                 split_signal,
+                4,
+            ),
+
+            "offensive_volume": round(
+                offensive_volume_signal,
                 4,
             ),
 
