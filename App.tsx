@@ -8,7 +8,10 @@ const API = "/api/v1";
 function localDate() {
   const d = new Date();
   const offset = d.getTimezoneOffset();
-  return new Date(d.getTime() - offset * 60000)
+
+  return new Date(
+    d.getTime() - offset * 60000
+  )
     .toISOString()
     .slice(0, 10);
 }
@@ -30,53 +33,239 @@ function num(value: any, digits = 1) {
 }
 
 function statusLabel(status: string) {
-  if (status === "Final") return "Finalizado";
-  if (status === "Live") return "En vivo";
-  if (status === "Preview") return "Próximo";
+  if (status === "Final") {
+    return "Finalizado";
+  }
+
+  if (status === "Live") {
+    return "En vivo";
+  }
+
+  if (status === "Preview") {
+    return "Próximo";
+  }
 
   return status || "Sin estado";
 }
 
 function resultClass(result: string) {
-  if (result === "CORRECT") return "correct";
-  if (result === "INCORRECT") return "incorrect";
+  if (result === "CORRECT") {
+    return "correct";
+  }
+
+  if (result === "INCORRECT") {
+    return "incorrect";
+  }
 
   return "pending";
 }
 
+
+/*
+ * =========================================================
+ * OBTENER EL RESULTADO REAL DE UNA PREDICCIÓN
+ * =========================================================
+ *
+ * IMPORTANTE:
+ *
+ * result.status:
+ *   PENDING
+ *   SETTLED
+ *
+ * result.prediction_result:
+ *   null
+ *   CORRECT
+ *   INCORRECT
+ *
+ * La interfaz debe utilizar prediction_result para
+ * determinar si la proyección acertó.
+ */
+function getPredictionResult(
+  prediction: Prediction
+) {
+  return (
+    prediction?.result?.prediction_result ||
+    null
+  );
+}
+
+
+/*
+ * =========================================================
+ * FECHA DE CREACIÓN
+ * =========================================================
+ */
+function getCreatedTimestamp(
+  prediction: Prediction
+) {
+  const value =
+    prediction?.created_at;
+
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp =
+    new Date(value).getTime();
+
+  return Number.isFinite(timestamp)
+    ? timestamp
+    : 0;
+}
+
+
+/*
+ * =========================================================
+ * BUSCAR PREDICCIÓN
+ * =========================================================
+ *
+ * Puede haber más de una predicción para el mismo
+ * event_id debido a ejecuciones anteriores.
+ *
+ * Prioridad:
+ *
+ * 1. SETTLED + CORRECT/INCORRECT
+ * 2. SETTLED
+ * 3. PENDING
+ * 4. Más reciente
+ *
+ * Esto evita que una predicción PENDING antigua
+ * o duplicada oculte una predicción ya liquidada.
+ */
 function findPrediction(
   predictions: Prediction[],
   eventId: string
 ) {
-  return predictions.find(
-    (p) =>
-      String(p?.event_id) ===
-      String(eventId)
-  );
+  const matches =
+    predictions.filter(
+      (p) =>
+        String(p?.event_id) ===
+        String(eventId)
+    );
+
+  if (!matches.length) {
+    return undefined;
+  }
+
+  const sorted =
+    [...matches].sort(
+      (a, b) => {
+
+        const aStatus =
+          a?.result?.status;
+
+        const bStatus =
+          b?.result?.status;
+
+        const aResult =
+          a?.result?.prediction_result;
+
+        const bResult =
+          b?.result?.prediction_result;
+
+        /*
+         * Primero las liquidadas.
+         */
+        const aSettled =
+          aStatus === "SETTLED"
+            ? 1
+            : 0;
+
+        const bSettled =
+          bStatus === "SETTLED"
+            ? 1
+            : 0;
+
+        if (
+          aSettled !==
+          bSettled
+        ) {
+          return (
+            bSettled -
+            aSettled
+          );
+        }
+
+        /*
+         * Entre liquidadas, preferir
+         * CORRECT/INCORRECT real.
+         */
+        const aHasResult =
+          aResult === "CORRECT" ||
+          aResult === "INCORRECT"
+            ? 1
+            : 0;
+
+        const bHasResult =
+          bResult === "CORRECT" ||
+          bResult === "INCORRECT"
+            ? 1
+            : 0;
+
+        if (
+          aHasResult !==
+          bHasResult
+        ) {
+          return (
+            bHasResult -
+            aHasResult
+          );
+        }
+
+        /*
+         * Finalmente, la más reciente.
+         */
+        return (
+          getCreatedTimestamp(b) -
+          getCreatedTimestamp(a)
+        );
+      }
+    );
+
+  return sorted[0];
 }
 
-function probabilityWidth(value: any) {
+
+/*
+ * =========================================================
+ * PROBABILIDAD
+ * =========================================================
+ */
+function probabilityWidth(
+  value: any
+) {
   const n = Number(value);
 
   return Number.isFinite(n)
     ? Math.max(
         0,
-        Math.min(100, n * 100)
+        Math.min(
+          100,
+          n * 100
+        )
       )
     : 0;
 }
 
+
+/*
+ * =========================================================
+ * MARCADOR
+ * =========================================================
+ */
 function getScore(
   game: Game,
   prediction: Prediction
 ) {
   const homeScore =
-    prediction?.result?.actual_home_score ??
+    prediction?.result
+      ?.actual_home_score ??
     prediction?.actual_home_score ??
     game?.home?.score;
 
   const awayScore =
-    prediction?.result?.actual_away_score ??
+    prediction?.result
+      ?.actual_away_score ??
     prediction?.actual_away_score ??
     game?.away?.score;
 
@@ -86,14 +275,21 @@ function getScore(
   };
 }
 
+
+/*
+ * =========================================================
+ * VERIFICAR SI EXISTE MARCADOR
+ * =========================================================
+ */
 function hasScore(
   game: Game,
   prediction: Prediction
 ) {
-  const score = getScore(
-    game,
-    prediction
-  );
+  const score =
+    getScore(
+      game,
+      prediction
+    );
 
   return (
     score.home !== undefined &&
@@ -103,7 +299,14 @@ function hasScore(
   );
 }
 
+
+/*
+ * =========================================================
+ * APPLICATION
+ * =========================================================
+ */
 export default function App() {
+
   const [date, setDate] =
     useState(localDate());
 
@@ -131,14 +334,22 @@ export default function App() {
   const [notice, setNotice] =
     useState("");
 
+
+  /*
+   * =======================================================
+   * REQUEST
+   * =======================================================
+   */
   async function request(
     path: string,
     options?: RequestInit
   ) {
-    const response = await fetch(
-      `${API}${path}`,
-      options
-    );
+
+    const response =
+      await fetch(
+        `${API}${path}`,
+        options
+      );
 
     const data =
       await response
@@ -146,20 +357,28 @@ export default function App() {
         .catch(() => ({}));
 
     if (!response.ok) {
+
       throw new Error(
         data?.detail?.message ||
-          data?.detail ||
-          data?.message ||
-          "La API devolvió un error."
+        data?.detail ||
+        data?.message ||
+        "La API devolvió un error."
       );
     }
 
     return data;
   }
 
+
+  /*
+   * =======================================================
+   * CARGAR INFORMACIÓN
+   * =======================================================
+   */
   async function loadAll(
     showSpinner = true
   ) {
+
     if (showSpinner) {
       setLoading(true);
     }
@@ -167,23 +386,27 @@ export default function App() {
     setError("");
 
     try {
+
       const [
         gamesData,
         predictionsData,
         performanceData,
-      ] = await Promise.all([
-        request(
-          `/mlb/games?date=${date}`
-        ),
+      ] =
+        await Promise.all([
 
-        request(
-          `/predictions`
-        ),
+          request(
+            `/mlb/games?date=${date}`
+          ),
 
-        request(
-          `/performance`
-        ),
-      ]);
+          request(
+            `/predictions`
+          ),
+
+          request(
+            `/performance`
+          ),
+
+        ]);
 
       setGames(
         gamesData.games || []
@@ -196,40 +419,67 @@ export default function App() {
       setPerformance(
         performanceData
       );
+
     } catch (e: any) {
+
       setError(
         e.message ||
-          "No se pudo cargar la información."
+        "No se pudo cargar la información."
       );
+
     } finally {
+
       if (showSpinner) {
         setLoading(false);
       }
     }
   }
 
+
+  /*
+   * =======================================================
+   * CARGAR AL CAMBIAR FECHA
+   * =======================================================
+   */
   useEffect(() => {
+
     loadAll();
+
   }, [date]);
 
+
+  /*
+   * =======================================================
+   * PREDICCIONES DE LA FECHA
+   * =======================================================
+   */
   const datePredictions =
     useMemo(() => {
+
       return predictions.filter(
         (p) =>
           String(
             p?.game?.date || ""
-          ).slice(0, 10) === date
+          ).slice(0, 10) ===
+          date
       );
-    }, [predictions, date]);
+
+    }, [
+      predictions,
+      date,
+    ]);
+
 
   const predictedCount =
     datePredictions.length;
+
 
   const finalCount =
     games.filter(
       (g) =>
         g.status === "Final"
     ).length;
+
 
   const pendingCount =
     datePredictions.filter(
@@ -238,14 +488,23 @@ export default function App() {
         "PENDING"
     ).length;
 
+
+  /*
+   * =======================================================
+   * ANALIZAR PARTIDO
+   * =======================================================
+   */
   async function analyzeGame(
     eventId: string
   ) {
+
     setActionLoading(eventId);
+
     setError("");
     setNotice("");
 
     try {
+
       const result =
         await request(
           `/analyze?event_id=${encodeURIComponent(
@@ -259,33 +518,49 @@ export default function App() {
       if (
         result?.success === false
       ) {
+
         setNotice(
           result.message ||
-            "El análisis no generó una predicción."
+          "El análisis no generó una predicción."
         );
+
       } else {
+
         setNotice(
           "Análisis guardado correctamente."
         );
       }
 
       await loadAll(false);
+
     } catch (e: any) {
+
       setError(
         e.message ||
-          "No se pudo analizar el partido."
+        "No se pudo analizar el partido."
       );
+
     } finally {
+
       setActionLoading(null);
     }
   }
 
+
+  /*
+   * =======================================================
+   * ANALIZAR JORNADA
+   * =======================================================
+   */
   async function analyzeDay() {
+
     setActionLoading("day");
+
     setError("");
     setNotice("");
 
     try {
+
       const result =
         await request(
           `/mlb/analyze-day?date=${date}`
@@ -305,19 +580,30 @@ export default function App() {
       );
 
       await loadAll(false);
+
     } catch (e: any) {
+
       setError(
         e.message ||
-          "No se pudo analizar la jornada."
+        "No se pudo analizar la jornada."
       );
+
     } finally {
+
       setActionLoading(null);
     }
   }
 
+
+  /*
+   * =======================================================
+   * LIQUIDAR PARTIDO
+   * =======================================================
+   */
   async function settle(
     eventId: string
   ) {
+
     setActionLoading(
       `settle-${eventId}`
     );
@@ -326,6 +612,7 @@ export default function App() {
     setNotice("");
 
     try {
+
       const result =
         await request(
           `/settle/${encodeURIComponent(
@@ -339,6 +626,7 @@ export default function App() {
       if (
         result?.success
       ) {
+
         const resultLabel =
           result.prediction_result ===
           "CORRECT"
@@ -356,36 +644,51 @@ export default function App() {
             result.home_score
           } ${result.home}.`
         );
+
       } else {
+
         setNotice(
           result.message ||
-            result.settlement?.reason ||
-            "Todavía no se puede liquidar."
+          result.settlement?.reason ||
+          "Todavía no se puede liquidar."
         );
       }
 
       await loadAll(false);
+
     } catch (e: any) {
+
       setError(
         e.message ||
-          "No se pudo liquidar el partido."
+        "No se pudo liquidar el partido."
       );
+
     } finally {
+
       setActionLoading(null);
     }
   }
 
+
+  /*
+   * =======================================================
+   * SELECCIONAR PARTIDO
+   * =======================================================
+   */
   function openGame(
     game: Game
   ) {
     setSelected(game);
   }
 
+
   return (
     <main className="app-shell">
 
       <header className="topbar">
+
         <div>
+
           <div className="eyebrow">
             PROYECCIONES DEPORTIVAS
           </div>
@@ -398,6 +701,7 @@ export default function App() {
             MLB · análisis, predicción y
             validación histórica
           </p>
+
         </div>
 
         <div className="model-pill">
@@ -406,11 +710,14 @@ export default function App() {
             1.2.0-form
           </b>
         </div>
+
       </header>
+
 
       <section className="toolbar panel">
 
         <label>
+
           Fecha
 
           <input
@@ -422,7 +729,9 @@ export default function App() {
               )
             }
           />
+
         </label>
+
 
         <div className="toolbar-actions">
 
@@ -436,6 +745,7 @@ export default function App() {
             ↻ Actualizar
           </button>
 
+
           <button
             className="primary"
             onClick={analyzeDay}
@@ -444,26 +754,36 @@ export default function App() {
               "day"
             }
           >
+
             {actionLoading ===
             "day"
               ? "Analizando…"
               : "⚡ Analizar jornada"}
+
           </button>
 
         </div>
+
       </section>
 
+
       {error && (
+
         <div className="message error">
           {error}
         </div>
+
       )}
 
+
       {notice && (
+
         <div className="message notice">
           {notice}
         </div>
+
       )}
+
 
       <section className="metrics-grid">
 
@@ -473,11 +793,13 @@ export default function App() {
           detail={`${finalCount} finalizados`}
         />
 
+
         <Metric
           title="Predicciones"
           value={predictedCount}
           detail={`${pendingCount} pendientes`}
         />
+
 
         <Metric
           title="Precisión histórica"
@@ -497,6 +819,7 @@ export default function App() {
           } liquidadas`}
         />
 
+
         <Metric
           title="Confianza media"
           value={pct(
@@ -514,6 +837,7 @@ export default function App() {
 
       </section>
 
+
       <section className="content-grid">
 
         <div>
@@ -521,6 +845,7 @@ export default function App() {
           <div className="section-heading">
 
             <div>
+
               <span className="section-kicker">
                 JORNADA MLB
               </span>
@@ -528,6 +853,7 @@ export default function App() {
               <h2>
                 Partidos del {date}
               </h2>
+
             </div>
 
             <span className="muted">
@@ -535,6 +861,7 @@ export default function App() {
             </span>
 
           </div>
+
 
           {loading ? (
 
@@ -565,9 +892,13 @@ export default function App() {
                   const prediction =
                     p?.prediction;
 
+                  /*
+                   * IMPORTANTE:
+                   * Aquí utilizamos prediction_result,
+                   * no result.status.
+                   */
                   const result =
-                    p?.result?.status ||
-                    "PENDING";
+                    getPredictionResult(p);
 
                   const selectedWinner =
                     prediction?.predicted_winner;
@@ -583,6 +914,7 @@ export default function App() {
                       game,
                       p
                     );
+
 
                   return (
 
@@ -625,9 +957,11 @@ export default function App() {
 
                       </div>
 
+
                       <div className="matchup">
 
                         <div>
+
                           <strong>
                             {
                               game.away
@@ -638,11 +972,14 @@ export default function App() {
                           <span>
                             Visitante
                           </span>
+
                         </div>
+
 
                         <div className="vs">
                           VS
                         </div>
+
 
                         <div className="home-team">
 
@@ -661,7 +998,9 @@ export default function App() {
 
                       </div>
 
+
                       <div className="game-meta">
+
                         🏟️{" "}
                         {
                           game.venue ||
@@ -672,7 +1011,9 @@ export default function App() {
                           game.detailed_status ||
                           "Estado pendiente"
                         }
+
                       </div>
+
 
                       {game.status ===
                         "Final" &&
@@ -687,6 +1028,7 @@ export default function App() {
                             <div className="final-score-main">
 
                               <div>
+
                                 <span>
                                   {
                                     game.away
@@ -699,13 +1041,17 @@ export default function App() {
                                     score.away
                                   }
                                 </strong>
+
                               </div>
+
 
                               <b>
                                 -
                               </b>
 
+
                               <div>
+
                                 <span>
                                   {
                                     game.home
@@ -718,18 +1064,22 @@ export default function App() {
                                     score.home
                                   }
                                 </strong>
+
                               </div>
 
                             </div>
 
                           </div>
+
                         )}
+
 
                       {p ? (
 
                         <div className="prediction-strip">
 
                           <div>
+
                             <span>
                               Proyección
                             </span>
@@ -740,9 +1090,12 @@ export default function App() {
                                 "—"
                               }
                             </b>
+
                           </div>
 
+
                           <div>
+
                             <span>
                               Probabilidad
                             </span>
@@ -756,9 +1109,12 @@ export default function App() {
                                 prediction.away_probability
                               )}
                             </b>
+
                           </div>
 
+
                           <div>
+
                             <span>
                               Confianza
                             </span>
@@ -768,20 +1124,27 @@ export default function App() {
                                 prediction.confidence
                               )}
                             </b>
+
                           </div>
+
 
                           <span
                             className={`result ${resultClass(
-                              result
+                              result ||
+                              "PENDING"
                             )}`}
                           >
-                            {result ===
-                            "PENDING"
+
+                            {!result
                               ? "Pendiente"
                               : result ===
                                 "CORRECT"
                               ? "Acertada"
-                              : "Incorrecta"}
+                              : result ===
+                                "INCORRECT"
+                              ? "Incorrecta"
+                              : "Pendiente"}
+
                           </span>
 
                         </div>
@@ -795,6 +1158,7 @@ export default function App() {
 
                       )}
 
+
                       <div className="card-actions">
 
                         <button
@@ -802,22 +1166,27 @@ export default function App() {
                           onClick={(
                             e
                           ) => {
+
                             e.stopPropagation();
 
                             analyzeGame(
                               game.game_id
                             );
+
                           }}
                           disabled={
                             actionLoading ===
                             game.game_id
                           }
                         >
+
                           {actionLoading ===
                           game.game_id
                             ? "Analizando…"
                             : "🧪 Analizar"}
+
                         </button>
+
 
                         {game.status ===
                           "Final" &&
@@ -830,21 +1199,25 @@ export default function App() {
                               onClick={(
                                 e
                               ) => {
+
                                 e.stopPropagation();
 
                                 settle(
                                   game.game_id
                                 );
+
                               }}
                               disabled={
                                 actionLoading ===
                                 `settle-${game.game_id}`
                               }
                             >
+
                               {actionLoading ===
-                              `settle-${game.game_id}`
+                              `settle-${game.game_id`
                                 ? "Liquidando…"
                                 : "✓ Liquidar"}
+
                             </button>
 
                           )}
@@ -854,13 +1227,16 @@ export default function App() {
                     </article>
 
                   );
+
                 }
               )}
 
             </div>
+
           )}
 
         </div>
+
 
         <aside className="side-column">
 
@@ -896,6 +1272,11 @@ export default function App() {
 }
 
 
+/*
+ * =========================================================
+ * MÉTRICA
+ * =========================================================
+ */
 function Metric({
   title,
   value,
@@ -905,6 +1286,7 @@ function Metric({
   value: any;
   detail: string;
 }) {
+
   return (
 
     <div className="metric panel">
@@ -926,6 +1308,11 @@ function Metric({
 }
 
 
+/*
+ * =========================================================
+ * PERFORMANCE
+ * =========================================================
+ */
 function Performance({
   performance,
 }: {
@@ -939,6 +1326,7 @@ function Performance({
     performance?.models?.[
       "1.2.0-form"
     ];
+
 
   return (
 
@@ -959,7 +1347,9 @@ function Performance({
         se comporta cada versión.
       </p>
 
+
       <div className="score-row">
+
         <span>
           Acertadas
         </span>
@@ -968,9 +1358,12 @@ function Performance({
           {s?.correct_predictions ??
             0}
         </b>
+
       </div>
 
+
       <div className="score-row">
+
         <span>
           Incorrectas
         </span>
@@ -979,9 +1372,12 @@ function Performance({
           {s?.incorrect_predictions ??
             0}
         </b>
+
       </div>
 
+
       <div className="score-row">
+
         <span>
           Pendientes
         </span>
@@ -990,7 +1386,9 @@ function Performance({
           {s?.pending_predictions ??
             0}
         </b>
+
       </div>
+
 
       <div className="bar-label">
 
@@ -1007,6 +1405,7 @@ function Performance({
         </b>
 
       </div>
+
 
       <div className="bar-track">
 
@@ -1026,6 +1425,7 @@ function Performance({
 
       </div>
 
+
       <div className="bar-label">
 
         <span>
@@ -1041,6 +1441,7 @@ function Performance({
         </b>
 
       </div>
+
 
       <div className="bar-track">
 
@@ -1059,6 +1460,7 @@ function Performance({
         />
 
       </div>
+
 
       <div className="model-note">
 
@@ -1082,6 +1484,11 @@ function Performance({
 }
 
 
+/*
+ * =========================================================
+ * DETALLE DEL PARTIDO
+ * =========================================================
+ */
 function GameDetail({
   game,
   prediction: p,
@@ -1116,9 +1523,13 @@ function GameDetail({
       p
     );
 
+  /*
+   * IMPORTANTE:
+   * Utilizar prediction_result.
+   */
   const result =
-    p?.result?.status ||
-    "PENDING";
+    getPredictionResult(p);
+
 
   return (
 
@@ -1131,9 +1542,11 @@ function GameDetail({
         ×
       </button>
 
+
       <div className="section-kicker">
         DETALLE DEL PARTIDO
       </div>
+
 
       <h2>
         {game.away?.name}{" "}
@@ -1143,10 +1556,12 @@ function GameDetail({
         {game.home?.name}
       </h2>
 
+
       <p className="muted">
         {game.venue ||
           "Estadio pendiente"}
       </p>
+
 
       {game.status ===
         "Final" &&
@@ -1183,7 +1598,9 @@ function GameDetail({
             </div>
 
           </div>
+
         )}
+
 
       {prediction ? (
 
@@ -1210,6 +1627,7 @@ function GameDetail({
 
           </div>
 
+
           <div className="prob-grid">
 
             <Probability
@@ -1220,6 +1638,7 @@ function GameDetail({
                 prediction.home_probability
               }
             />
+
 
             <Probability
               name={
@@ -1232,24 +1651,31 @@ function GameDetail({
 
           </div>
 
+
           {game.status ===
             "Final" && (
 
             <div
               className={`detail-result ${resultClass(
-                result
+                result ||
+                "PENDING"
               )}`}
             >
-              {result ===
-              "CORRECT"
+
+              {!result
+                ? "⏳ RESULTADO PENDIENTE"
+                : result ===
+                  "CORRECT"
                 ? "✓ PROYECCIÓN ACERTADA"
                 : result ===
                   "INCORRECT"
                 ? "✕ PROYECCIÓN INCORRECTA"
                 : "⏳ RESULTADO PENDIENTE"}
+
             </div>
 
           )}
+
 
           <div className="factor-grid">
 
@@ -1263,6 +1689,7 @@ function GameDetail({
               }
             />
 
+
             <Factor
               label="OPS visitante"
               value={
@@ -1273,6 +1700,7 @@ function GameDetail({
               }
             />
 
+
             <Factor
               label="ERA local"
               value={
@@ -1280,12 +1708,14 @@ function GameDetail({
               }
             />
 
+
             <Factor
               label="ERA visitante"
               value={
                 f.away_team_era
               }
             />
+
 
             <Factor
               label="Forma local L5"
@@ -1296,6 +1726,7 @@ function GameDetail({
               }
             />
 
+
             <Factor
               label="Forma visitante L5"
               value={
@@ -1304,6 +1735,7 @@ function GameDetail({
                   : "—"
               }
             />
+
 
             <Factor
               label="Dif. carreras local"
@@ -1321,6 +1753,7 @@ function GameDetail({
                   : "—"
               }
             />
+
 
             <Factor
               label="Dif. carreras visitante"
@@ -1340,6 +1773,7 @@ function GameDetail({
             />
 
           </div>
+
 
           <div className="quality">
 
@@ -1373,6 +1807,11 @@ function GameDetail({
 }
 
 
+/*
+ * =========================================================
+ * PROBABILIDAD
+ * =========================================================
+ */
 function Probability({
   name,
   value,
@@ -1397,6 +1836,7 @@ function Probability({
 
       </div>
 
+
       <div className="bar-track">
 
         <i
@@ -1414,6 +1854,11 @@ function Probability({
 }
 
 
+/*
+ * =========================================================
+ * FACTOR
+ * =========================================================
+ */
 function Factor({
   label,
   value,
