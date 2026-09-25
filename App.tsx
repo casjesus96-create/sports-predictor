@@ -4,14 +4,13 @@ type Game = any;
 type Prediction = any;
 
 const API = "/api/v1";
+const MODEL_VERSION = "1.2.0-form";
 
 function localDate() {
   const d = new Date();
   const offset = d.getTimezoneOffset();
 
-  return new Date(
-    d.getTime() - offset * 60000
-  )
+  return new Date(d.getTime() - offset * 60000)
     .toISOString()
     .slice(0, 10);
 }
@@ -19,17 +18,21 @@ function localDate() {
 function pct(value: any) {
   const n = Number(value);
 
-  return Number.isFinite(n)
-    ? `${(n * 100).toFixed(1)}%`
-    : "—";
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  return `${(n * 100).toFixed(1)}%`;
 }
 
 function num(value: any, digits = 1) {
   const n = Number(value);
 
-  return Number.isFinite(n)
-    ? n.toFixed(digits)
-    : "—";
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  return n.toFixed(digits);
 }
 
 function statusLabel(status: string) {
@@ -60,202 +63,106 @@ function resultClass(result: string) {
   return "pending";
 }
 
-
-/*
- * =========================================================
- * OBTENER EL RESULTADO REAL DE UNA PREDICCIÓN
- * =========================================================
+/**
+ * IMPORTANTE
  *
- * IMPORTANTE:
+ * Puede existir más de una predicción para el mismo partido.
  *
- * result.status:
- *   PENDING
- *   SETTLED
+ * Ejemplo:
  *
- * result.prediction_result:
- *   null
- *   CORRECT
- *   INCORRECT
+ * 824298
+ * ├── PENDING
+ * └── SETTLED / CORRECT
  *
- * La interfaz debe utilizar prediction_result para
- * determinar si la proyección acertó.
- */
-function getPredictionResult(
-  prediction: Prediction
-) {
-  return (
-    prediction?.result?.prediction_result ||
-    null
-  );
-}
-
-
-/*
- * =========================================================
- * FECHA DE CREACIÓN
- * =========================================================
- */
-function getCreatedTimestamp(
-  prediction: Prediction
-) {
-  const value =
-    prediction?.created_at;
-
-  if (!value) {
-    return 0;
-  }
-
-  const timestamp =
-    new Date(value).getTime();
-
-  return Number.isFinite(timestamp)
-    ? timestamp
-    : 0;
-}
-
-
-/*
- * =========================================================
- * BUSCAR PREDICCIÓN
- * =========================================================
- *
- * Puede haber más de una predicción para el mismo
- * event_id debido a ejecuciones anteriores.
+ * Nunca debemos utilizar simplemente predictions.find().
  *
  * Prioridad:
- *
- * 1. SETTLED + CORRECT/INCORRECT
- * 2. SETTLED
+ * 1. SETTLED
+ * 2. CORRECT / INCORRECT
  * 3. PENDING
- * 4. Más reciente
  *
- * Esto evita que una predicción PENDING antigua
- * o duplicada oculte una predicción ya liquidada.
+ * Dentro del mismo estado se utiliza created_at más reciente.
  */
 function findPrediction(
   predictions: Prediction[],
   eventId: string
 ) {
-  const matches =
-    predictions.filter(
-      (p) =>
-        String(p?.event_id) ===
-        String(eventId)
-    );
+  const matches = predictions.filter(
+    (p) =>
+      String(p?.event_id) ===
+      String(eventId)
+  );
 
-  if (!matches.length) {
-    return undefined;
+  if (matches.length === 0) {
+    return null;
   }
 
-  const sorted =
-    [...matches].sort(
-      (a, b) => {
+  const statusPriority: Record<string, number> = {
+    SETTLED: 3,
+    CORRECT: 3,
+    INCORRECT: 3,
+    PENDING: 1,
+  };
 
-        const aStatus =
-          a?.result?.status;
+  return [...matches].sort(
+    (a, b) => {
+      const aStatus =
+        String(
+          a?.result?.status ||
+            a?.result_status ||
+            ""
+        ).toUpperCase();
 
-        const bStatus =
-          b?.result?.status;
+      const bStatus =
+        String(
+          b?.result?.status ||
+            b?.result_status ||
+            ""
+        ).toUpperCase();
 
-        const aResult =
-          a?.result?.prediction_result;
+      const priorityA =
+        statusPriority[aStatus] || 0;
 
-        const bResult =
-          b?.result?.prediction_result;
+      const priorityB =
+        statusPriority[bStatus] || 0;
 
-        /*
-         * Primero las liquidadas.
-         */
-        const aSettled =
-          aStatus === "SETTLED"
-            ? 1
-            : 0;
-
-        const bSettled =
-          bStatus === "SETTLED"
-            ? 1
-            : 0;
-
-        if (
-          aSettled !==
-          bSettled
-        ) {
-          return (
-            bSettled -
-            aSettled
-          );
-        }
-
-        /*
-         * Entre liquidadas, preferir
-         * CORRECT/INCORRECT real.
-         */
-        const aHasResult =
-          aResult === "CORRECT" ||
-          aResult === "INCORRECT"
-            ? 1
-            : 0;
-
-        const bHasResult =
-          bResult === "CORRECT" ||
-          bResult === "INCORRECT"
-            ? 1
-            : 0;
-
-        if (
-          aHasResult !==
-          bHasResult
-        ) {
-          return (
-            bHasResult -
-            aHasResult
-          );
-        }
-
-        /*
-         * Finalmente, la más reciente.
-         */
-        return (
-          getCreatedTimestamp(b) -
-          getCreatedTimestamp(a)
-        );
+      if (priorityA !== priorityB) {
+        return priorityB - priorityA;
       }
-    );
 
-  return sorted[0];
+      const dateA = new Date(
+        a?.created_at ||
+          a?.result?.settled_at ||
+          0
+      ).getTime();
+
+      const dateB = new Date(
+        b?.created_at ||
+          b?.result?.settled_at ||
+          0
+      ).getTime();
+
+      return dateB - dateA;
+    }
+  )[0];
 }
 
-
-/*
- * =========================================================
- * PROBABILIDAD
- * =========================================================
- */
-function probabilityWidth(
-  value: any
-) {
+function probabilityWidth(value: any) {
   const n = Number(value);
 
-  return Number.isFinite(n)
-    ? Math.max(
-        0,
-        Math.min(
-          100,
-          n * 100
-        )
-      )
-    : 0;
+  if (!Number.isFinite(n)) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.min(100, n * 100)
+  );
 }
 
-
-/*
- * =========================================================
- * MARCADOR
- * =========================================================
- */
 function getScore(
   game: Game,
-  prediction: Prediction
+  prediction: Prediction | null
 ) {
   const homeScore =
     prediction?.result
@@ -275,21 +182,14 @@ function getScore(
   };
 }
 
-
-/*
- * =========================================================
- * VERIFICAR SI EXISTE MARCADOR
- * =========================================================
- */
 function hasScore(
   game: Game,
-  prediction: Prediction
+  prediction: Prediction | null
 ) {
-  const score =
-    getScore(
-      game,
-      prediction
-    );
+  const score = getScore(
+    game,
+    prediction
+  );
 
   return (
     score.home !== undefined &&
@@ -299,14 +199,61 @@ function hasScore(
   );
 }
 
+function getPredictionResult(
+  prediction: Prediction | null
+) {
+  return String(
+    prediction?.result?.prediction_result ||
+      prediction?.prediction_result ||
+      ""
+  ).toUpperCase();
+}
 
-/*
- * =========================================================
- * APPLICATION
- * =========================================================
- */
+function getPredictionStatus(
+  prediction: Prediction | null
+) {
+  const status = String(
+    prediction?.result?.status ||
+      prediction?.result_status ||
+      ""
+  ).toUpperCase();
+
+  const result =
+    getPredictionResult(prediction);
+
+  if (
+    status === "SETTLED" ||
+    result === "CORRECT" ||
+    result === "INCORRECT"
+  ) {
+    return result || "SETTLED";
+  }
+
+  return "PENDING";
+}
+
+function getPredictedWinner(
+  prediction: Prediction | null
+) {
+  return (
+    prediction?.prediction
+      ?.predicted_winner ??
+    prediction?.predicted_winner ??
+    null
+  );
+}
+
+function getPredictionData(
+  prediction: Prediction | null
+) {
+  return (
+    prediction?.prediction ??
+    prediction ??
+    {}
+  );
+}
+
 export default function App() {
-
   const [date, setDate] =
     useState(localDate());
 
@@ -334,22 +281,14 @@ export default function App() {
   const [notice, setNotice] =
     useState("");
 
-
-  /*
-   * =======================================================
-   * REQUEST
-   * =======================================================
-   */
   async function request(
     path: string,
     options?: RequestInit
   ) {
-
-    const response =
-      await fetch(
-        `${API}${path}`,
-        options
-      );
+    const response = await fetch(
+      `${API}${path}`,
+      options
+    );
 
     const data =
       await response
@@ -357,28 +296,20 @@ export default function App() {
         .catch(() => ({}));
 
     if (!response.ok) {
-
       throw new Error(
         data?.detail?.message ||
-        data?.detail ||
-        data?.message ||
-        "La API devolvió un error."
+          data?.detail ||
+          data?.message ||
+          "La API devolvió un error."
       );
     }
 
     return data;
   }
 
-
-  /*
-   * =======================================================
-   * CARGAR INFORMACIÓN
-   * =======================================================
-   */
   async function loadAll(
     showSpinner = true
   ) {
-
     if (showSpinner) {
       setLoading(true);
     }
@@ -386,125 +317,112 @@ export default function App() {
     setError("");
 
     try {
-
       const [
         gamesData,
         predictionsData,
         performanceData,
-      ] =
-        await Promise.all([
+      ] = await Promise.all([
+        request(
+          `/mlb/games?date=${encodeURIComponent(
+            date
+          )}`
+        ),
 
-          request(
-            `/mlb/games?date=${date}`
-          ),
+        request("/predictions"),
 
-          request(
-            `/predictions`
-          ),
-
-          request(
-            `/performance`
-          ),
-
-        ]);
+        request("/performance"),
+      ]);
 
       setGames(
-        gamesData.games || []
+        Array.isArray(
+          gamesData?.games
+        )
+          ? gamesData.games
+          : []
       );
 
       setPredictions(
-        predictionsData.predictions || []
+        Array.isArray(
+          predictionsData?.predictions
+        )
+          ? predictionsData.predictions
+          : []
       );
 
       setPerformance(
-        performanceData
+        performanceData || null
       );
-
     } catch (e: any) {
-
       setError(
-        e.message ||
-        "No se pudo cargar la información."
+        e?.message ||
+          "No se pudo cargar la información."
       );
-
     } finally {
-
       if (showSpinner) {
         setLoading(false);
       }
     }
   }
 
-
-  /*
-   * =======================================================
-   * CARGAR AL CAMBIAR FECHA
-   * =======================================================
-   */
   useEffect(() => {
-
     loadAll();
-
   }, [date]);
 
-
-  /*
-   * =======================================================
-   * PREDICCIONES DE LA FECHA
-   * =======================================================
-   */
   const datePredictions =
     useMemo(() => {
-
       return predictions.filter(
-        (p) =>
-          String(
-            p?.game?.date || ""
-          ).slice(0, 10) ===
-          date
+        (p) => {
+          const gameDate =
+            p?.game?.date ||
+            p?.created_at ||
+            "";
+
+          return (
+            String(gameDate).slice(0, 10) ===
+            date
+          );
+        }
       );
-
-    }, [
-      predictions,
-      date,
-    ]);
-
+    }, [predictions, date]);
 
   const predictedCount =
-    datePredictions.length;
+    useMemo(() => {
+      const uniqueEvents =
+        new Set(
+          datePredictions.map(
+            (p) =>
+              String(
+                p?.event_id || ""
+              )
+          )
+        );
 
+      uniqueEvents.delete("");
+
+      return uniqueEvents.size;
+    }, [datePredictions]);
 
   const finalCount =
     games.filter(
       (g) =>
-        g.status === "Final"
+        g?.status === "Final"
     ).length;
-
 
   const pendingCount =
     datePredictions.filter(
       (p) =>
-        p?.result?.status ===
+        getPredictionStatus(p) ===
         "PENDING"
     ).length;
 
-
-  /*
-   * =======================================================
-   * ANALIZAR PARTIDO
-   * =======================================================
-   */
   async function analyzeGame(
     eventId: string
   ) {
-
     setActionLoading(eventId);
-
     setError("");
     setNotice("");
 
     try {
-
       const result =
         await request(
           `/analyze?event_id=${encodeURIComponent(
@@ -518,92 +436,67 @@ export default function App() {
       if (
         result?.success === false
       ) {
-
         setNotice(
-          result.message ||
-          "El análisis no generó una predicción."
+          result?.message ||
+            "El análisis no generó una predicción."
         );
-
       } else {
-
         setNotice(
           "Análisis guardado correctamente."
         );
       }
 
       await loadAll(false);
-
     } catch (e: any) {
-
       setError(
-        e.message ||
-        "No se pudo analizar el partido."
+        e?.message ||
+          "No se pudo analizar el partido."
       );
-
     } finally {
-
       setActionLoading(null);
     }
   }
 
-
-  /*
-   * =======================================================
-   * ANALIZAR JORNADA
-   * =======================================================
-   */
   async function analyzeDay() {
-
     setActionLoading("day");
-
     setError("");
     setNotice("");
 
     try {
-
       const result =
         await request(
-          `/mlb/analyze-day?date=${date}`
+          `/mlb/analyze-day?date=${encodeURIComponent(
+            date
+          )}`
         );
 
-      const s =
+      const summary =
         result?.summary || {};
 
       setNotice(
         `Jornada procesada: ${
-          s.analyzed || 0
+          summary?.analyzed || 0
         } analizados, ${
-          s.skipped || 0
+          summary?.skipped || 0
         } existentes/omitidos, ${
-          s.failed || 0
+          summary?.failed || 0
         } con error.`
       );
 
       await loadAll(false);
-
     } catch (e: any) {
-
       setError(
-        e.message ||
-        "No se pudo analizar la jornada."
+        e?.message ||
+          "No se pudo analizar la jornada."
       );
-
     } finally {
-
       setActionLoading(null);
     }
   }
 
-
-  /*
-   * =======================================================
-   * LIQUIDAR PARTIDO
-   * =======================================================
-   */
   async function settle(
     eventId: string
   ) {
-
     setActionLoading(
       `settle-${eventId}`
     );
@@ -612,7 +505,6 @@ export default function App() {
     setNotice("");
 
     try {
-
       const result =
         await request(
           `/settle/${encodeURIComponent(
@@ -623,72 +515,67 @@ export default function App() {
           }
         );
 
-      if (
-        result?.success
-      ) {
+      if (result?.success) {
+        const predictionResult =
+          String(
+            result?.prediction_result ||
+              result?.settlement
+                ?.prediction_result ||
+              ""
+          ).toUpperCase();
 
         const resultLabel =
-          result.prediction_result ===
-          "CORRECT"
+          predictionResult === "CORRECT"
             ? "ACERTADA"
-            : result.prediction_result ===
-              "INCORRECT"
+            : predictionResult ===
+                "INCORRECT"
             ? "INCORRECTA"
-            : result.prediction_result ||
+            : predictionResult ||
               "RESULTADO REGISTRADO";
 
         setNotice(
-          `Partido liquidado: ${resultLabel}. Marcador final ${
-            result.away
-          } ${result.away_score} - ${
-            result.home_score
-          } ${result.home}.`
+          `Partido liquidado: ${resultLabel}. ` +
+            `Marcador final ${
+              result?.away || ""
+            } ${
+              result?.away_score ??
+              "?"
+            } - ${
+              result?.home_score ??
+              "?"
+            } ${
+              result?.home || ""
+            }.`
         );
-
       } else {
-
         setNotice(
-          result.message ||
-          result.settlement?.reason ||
-          "Todavía no se puede liquidar."
+          result?.message ||
+            result?.settlement?.reason ||
+            "Todavía no se puede liquidar."
         );
       }
 
       await loadAll(false);
-
     } catch (e: any) {
-
       setError(
-        e.message ||
-        "No se pudo liquidar el partido."
+        e?.message ||
+          "No se pudo liquidar el partido."
       );
-
     } finally {
-
       setActionLoading(null);
     }
   }
 
-
-  /*
-   * =======================================================
-   * SELECCIONAR PARTIDO
-   * =======================================================
-   */
   function openGame(
     game: Game
   ) {
     setSelected(game);
   }
 
-
   return (
     <main className="app-shell">
-
       <header className="topbar">
-
         <div>
-
           <div className="eyebrow">
             PROYECCIONES DEPORTIVAS
           </div>
@@ -701,23 +588,18 @@ export default function App() {
             MLB · análisis, predicción y
             validación histórica
           </p>
-
         </div>
 
         <div className="model-pill">
           Modelo{" "}
           <b>
-            1.2.0-form
+            {MODEL_VERSION}
           </b>
         </div>
-
       </header>
 
-
       <section className="toolbar panel">
-
         <label>
-
           Fecha
 
           <input
@@ -729,13 +611,11 @@ export default function App() {
               )
             }
           />
-
         </label>
 
-
         <div className="toolbar-actions">
-
           <button
+            type="button"
             className="secondary"
             onClick={() =>
               loadAll()
@@ -745,8 +625,8 @@ export default function App() {
             ↻ Actualizar
           </button>
 
-
           <button
+            type="button"
             className="primary"
             onClick={analyzeDay}
             disabled={
@@ -754,45 +634,32 @@ export default function App() {
               "day"
             }
           >
-
             {actionLoading ===
             "day"
               ? "Analizando…"
               : "⚡ Analizar jornada"}
-
           </button>
-
         </div>
-
       </section>
 
-
       {error && (
-
         <div className="message error">
           {error}
         </div>
-
       )}
 
-
       {notice && (
-
         <div className="message notice">
           {notice}
         </div>
-
       )}
 
-
       <section className="metrics-grid">
-
         <Metric
           title="Partidos"
           value={games.length}
           detail={`${finalCount} finalizados`}
         />
-
 
         <Metric
           title="Predicciones"
@@ -800,25 +667,17 @@ export default function App() {
           detail={`${pendingCount} pendientes`}
         />
 
-
         <Metric
           title="Precisión histórica"
           value={pct(
-            (
+            Number(
               performance
                 ?.summary
-                ?.accuracy_percentage ||
-              0
+                ?.accuracy_percentage || 0
             ) / 100
           )}
-          detail={`${
-            performance
-              ?.summary
-              ?.settled_predictions ||
-            0
-          } liquidadas`}
+          detail={`${performance?.summary?.settled_predictions || 0} liquidadas`}
         />
-
 
         <Metric
           title="Confianza media"
@@ -834,18 +693,12 @@ export default function App() {
             1
           )}%`}
         />
-
       </section>
 
-
       <section className="content-grid">
-
         <div>
-
           <div className="section-heading">
-
             <div>
-
               <span className="section-kicker">
                 JORNADA MLB
               </span>
@@ -853,80 +706,69 @@ export default function App() {
               <h2>
                 Partidos del {date}
               </h2>
-
             </div>
 
             <span className="muted">
               {games.length} juegos
             </span>
-
           </div>
 
-
           {loading ? (
-
             <div className="empty panel">
               Cargando datos…
             </div>
-
           ) : games.length === 0 ? (
-
             <div className="empty panel">
               No hay partidos MLB
               para esta fecha.
             </div>
-
           ) : (
-
             <div className="games-list">
-
               {games.map(
                 (game) => {
-
-                  const p =
+                  const prediction =
                     findPrediction(
                       predictions,
-                      game.game_id
+                      game?.game_id
                     );
 
-                  const prediction =
-                    p?.prediction;
+                  const predictionData =
+                    getPredictionData(
+                      prediction
+                    );
 
-                  /*
-                   * IMPORTANTE:
-                   * Aquí utilizamos prediction_result,
-                   * no result.status.
-                   */
                   const result =
-                    getPredictionResult(p);
+                    getPredictionStatus(
+                      prediction
+                    );
 
                   const selectedWinner =
-                    prediction?.predicted_winner;
+                    getPredictedWinner(
+                      prediction
+                    );
 
                   const score =
                     getScore(
                       game,
-                      p
+                      prediction
                     );
 
                   const scoreAvailable =
                     hasScore(
                       game,
-                      p
+                      prediction
                     );
 
-
                   return (
-
                     <article
                       className={`game-card ${
                         selected?.game_id ===
-                        game.game_id
+                        game?.game_id
                           ? "selected"
                           : ""
                       }`}
                       key={
-                        game.game_id
+                        game?.game_id
                       }
                       onClick={() =>
                         openGame(
@@ -934,37 +776,31 @@ export default function App() {
                         )
                       }
                     >
-
                       <div className="game-head">
-
                         <span
                           className={`status status-${String(
-                            game.status ||
+                            game?.status ||
                               ""
                           ).toLowerCase()}`}
                         >
                           {statusLabel(
-                            game.status
+                            game?.status
                           )}
                         </span>
 
                         <span className="muted">
                           #
                           {
-                            game.game_id
+                            game?.game_id
                           }
                         </span>
-
                       </div>
 
-
                       <div className="matchup">
-
                         <div>
-
                           <strong>
                             {
-                              game.away
+                              game?.away
                                 ?.name
                             }
                           </strong>
@@ -972,20 +808,16 @@ export default function App() {
                           <span>
                             Visitante
                           </span>
-
                         </div>
-
 
                         <div className="vs">
                           VS
                         </div>
 
-
                         <div className="home-team">
-
                           <strong>
                             {
-                              game.home
+                              game?.home
                                 ?.name
                             }
                           </strong>
@@ -993,45 +825,35 @@ export default function App() {
                           <span>
                             Local
                           </span>
-
                         </div>
-
                       </div>
 
-
                       <div className="game-meta">
-
                         🏟️{" "}
                         {
-                          game.venue ||
+                          game?.venue ||
                           "Estadio pendiente"
                         }{" "}
                         ·{" "}
                         {
-                          game.detailed_status ||
+                          game?.detailed_status ||
                           "Estado pendiente"
                         }
-
                       </div>
 
-
-                      {game.status ===
+                      {game?.status ===
                         "Final" &&
                         scoreAvailable && (
-
                           <div className="final-score">
-
                             <div className="final-score-label">
                               MARCADOR FINAL
                             </div>
 
                             <div className="final-score-main">
-
                               <div>
-
                                 <span>
                                   {
-                                    game.away
+                                    game?.away
                                       ?.name
                                   }
                                 </span>
@@ -1041,20 +863,16 @@ export default function App() {
                                     score.away
                                   }
                                 </strong>
-
                               </div>
-
 
                               <b>
                                 -
                               </b>
 
-
                               <div>
-
                                 <span>
                                   {
-                                    game.home
+                                    game?.home
                                       ?.name
                                   }
                                 </span>
@@ -1064,22 +882,14 @@ export default function App() {
                                     score.home
                                   }
                                 </strong>
-
                               </div>
-
                             </div>
-
                           </div>
-
                         )}
 
-
-                      {p ? (
-
+                      {prediction ? (
                         <div className="prediction-strip">
-
                           <div>
-
                             <span>
                               Proyección
                             </span>
@@ -1090,52 +900,43 @@ export default function App() {
                                 "—"
                               }
                             </b>
-
                           </div>
 
-
                           <div>
-
                             <span>
                               Probabilidad
                             </span>
 
                             <b>
                               {pct(
-                                prediction.home_probability
+                                predictionData?.home_probability
                               )}{" "}
                               /{" "}
                               {pct(
-                                prediction.away_probability
+                                predictionData?.away_probability
                               )}
                             </b>
-
                           </div>
 
-
                           <div>
-
                             <span>
                               Confianza
                             </span>
 
                             <b>
                               {pct(
-                                prediction.confidence
+                                predictionData?.confidence
                               )}
                             </b>
-
                           </div>
-
 
                           <span
                             className={`result ${resultClass(
-                              result ||
-                              "PENDING"
+                              result
                             )}`}
                           >
-
-                            {!result
+                            {result ===
+                            "PENDING"
                               ? "Pendiente"
                               : result ===
                                 "CORRECT"
@@ -1143,140 +944,106 @@ export default function App() {
                               : result ===
                                 "INCORRECT"
                               ? "Incorrecta"
-                              : "Pendiente"}
-
+                              : result}
                           </span>
-
                         </div>
-
                       ) : (
-
                         <div className="no-prediction">
                           Sin predicción
                           guardada
                         </div>
-
                       )}
 
-
                       <div className="card-actions">
-
                         <button
+                          type="button"
                           className="secondary small"
-                          onClick={(
-                            e
-                          ) => {
-
+                          onClick={(e) => {
                             e.stopPropagation();
 
                             analyzeGame(
-                              game.game_id
+                              String(
+                                game?.game_id
+                              )
                             );
-
                           }}
                           disabled={
                             actionLoading ===
-                            game.game_id
+                            String(
+                              game?.game_id
+                            )
                           }
                         >
-
                           {actionLoading ===
-                          game.game_id
+                          String(
+                            game?.game_id
+                          )
                             ? "Analizando…"
                             : "🧪 Analizar"}
-
                         </button>
 
-
-                        {game.status ===
+                        {game?.status ===
                           "Final" &&
-                          p &&
-                          p.result?.status ===
+                          prediction &&
+                          result ===
                             "PENDING" && (
-
                             <button
+                              type="button"
                               className="secondary small"
-                              onClick={(
-                                e
-                              ) => {
-
+                              onClick={(e) => {
                                 e.stopPropagation();
 
                                 settle(
-                                  game.game_id
+                                  String(
+                                    game?.game_id
+                                  )
                                 );
-
                               }}
                               disabled={
                                 actionLoading ===
-                                `settle-${game.game_id}`
+                                `settle-${game?.game_id}`
                               }
                             >
-
                               {actionLoading ===
-                              `settle-${game.game_id`
+                              `settle-${game?.game_id}`
                                 ? "Liquidando…"
                                 : "✓ Liquidar"}
-
                             </button>
-
                           )}
-
                       </div>
-
                     </article>
-
                   );
-
                 }
               )}
-
             </div>
-
           )}
-
         </div>
 
-
         <aside className="side-column">
-
           {selected ? (
-
             <GameDetail
               game={selected}
               prediction={findPrediction(
                 predictions,
-                selected.game_id
+                selected?.game_id
               )}
               onClose={() =>
                 setSelected(null)
               }
             />
-
           ) : (
-
             <Performance
               performance={
                 performance
               }
             />
-
           )}
-
         </aside>
-
       </section>
-
     </main>
   );
 }
 
-
-/*
- * =========================================================
- * MÉTRICA
- * =========================================================
- */
 function Metric({
   title,
   value,
@@ -1286,11 +1053,8 @@ function Metric({
   value: any;
   detail: string;
 }) {
-
   return (
-
     <div className="metric panel">
-
       <span>
         {title}
       </span>
@@ -1302,36 +1066,35 @@ function Metric({
       <small>
         {detail}
       </small>
-
     </div>
   );
 }
 
-
-/*
- * =========================================================
- * PERFORMANCE
- * =========================================================
- */
 function Performance({
   performance,
 }: {
   performance: any;
 }) {
-
-  const s =
+  const summary =
     performance?.summary;
 
-  const m =
+  const model =
     performance?.models?.[
-      "1.2.0-form"
+      MODEL_VERSION
     ];
 
+  const accuracy =
+    Number(
+      summary?.accuracy_percentage
+    ) || 0;
+
+  const modelAccuracy =
+    Number(
+      model?.accuracy_percentage
+    ) || 0;
 
   return (
-
     <div className="panel side-panel">
-
       <div className="section-kicker">
         RENDIMIENTO
       </div>
@@ -1347,169 +1110,138 @@ function Performance({
         se comporta cada versión.
       </p>
 
-
       <div className="score-row">
-
         <span>
           Acertadas
         </span>
 
         <b>
-          {s?.correct_predictions ??
+          {summary
+            ?.correct_predictions ??
             0}
         </b>
-
       </div>
 
-
       <div className="score-row">
-
         <span>
           Incorrectas
         </span>
 
         <b>
-          {s?.incorrect_predictions ??
+          {summary
+            ?.incorrect_predictions ??
             0}
         </b>
-
       </div>
 
-
       <div className="score-row">
-
         <span>
           Pendientes
         </span>
 
         <b>
-          {s?.pending_predictions ??
+          {summary
+            ?.pending_predictions ??
             0}
         </b>
-
       </div>
 
-
       <div className="bar-label">
-
         <span>
           Precisión total
         </span>
 
         <b>
           {num(
-            s?.accuracy_percentage,
+            accuracy,
             1
           )}
           %
         </b>
-
       </div>
 
-
       <div className="bar-track">
-
         <i
           style={{
             width: `${Math.max(
               0,
               Math.min(
                 100,
-                Number(
-                  s?.accuracy_percentage
-                ) || 0
+                accuracy
               )
             )}%`,
           }}
         />
-
       </div>
 
-
       <div className="bar-label">
-
         <span>
-          Precisión 1.2.0-form
+          Precisión {MODEL_VERSION}
         </span>
 
         <b>
           {num(
-            m?.accuracy_percentage,
+            modelAccuracy,
             1
           )}
           %
         </b>
-
       </div>
 
-
       <div className="bar-track">
-
         <i
           style={{
             width: `${Math.max(
               0,
               Math.min(
                 100,
-                Number(
-                  m?.accuracy_percentage
-                ) || 0
+                modelAccuracy
               )
             )}%`,
           }}
         />
-
       </div>
 
-
       <div className="model-note">
-
         <b>
-          1.2.0-form
+          {MODEL_VERSION}
         </b>
 
         <span>
-          {m?.settled_predictions ??
+          {model
+            ?.settled_predictions ??
             0}{" "}
           liquidadas ·{" "}
-          {m?.pending_predictions ??
+          {model
+            ?.pending_predictions ??
             0}{" "}
           pendientes
         </span>
-
       </div>
-
     </div>
   );
 }
 
-
-/*
- * =========================================================
- * DETALLE DEL PARTIDO
- * =========================================================
- */
 function GameDetail({
   game,
   prediction: p,
   onClose,
 }: {
   game: Game;
-  prediction: Prediction;
+  prediction: Prediction | null;
   onClose: () => void;
 }) {
-
-  const f =
+  const factors =
     p?.factors || {};
 
-  const home =
-    f?.recent_form?.home;
+  const homeForm =
+    factors?.recent_form?.home;
 
-  const away =
-    f?.recent_form?.away;
+  const awayForm =
+    factors?.recent_form?.away;
 
   const prediction =
-    p?.prediction;
+    getPredictionData(p);
 
   const score =
     getScore(
@@ -1523,61 +1255,51 @@ function GameDetail({
       p
     );
 
-  /*
-   * IMPORTANTE:
-   * Utilizar prediction_result.
-   */
   const result =
-    getPredictionResult(p);
+    getPredictionStatus(p);
 
+  const predictedWinner =
+    getPredictedWinner(p);
 
   return (
-
     <div className="panel detail-panel">
-
       <button
+        type="button"
         className="close"
         onClick={onClose}
       >
         ×
       </button>
 
-
       <div className="section-kicker">
         DETALLE DEL PARTIDO
       </div>
 
-
       <h2>
-        {game.away?.name}{" "}
+        {game?.away?.name}{" "}
         <span>
           vs
         </span>{" "}
-        {game.home?.name}
+        {game?.home?.name}
       </h2>
 
-
       <p className="muted">
-        {game.venue ||
+        {game?.venue ||
           "Estadio pendiente"}
       </p>
 
-
-      {game.status ===
+      {game?.status ===
         "Final" &&
         scoreAvailable && (
-
           <div className="detail-final-score">
-
             <span>
               MARCADOR FINAL
             </span>
 
             <div>
-
               <strong>
                 {
-                  game.away
+                  game?.away
                     ?.name
                 }{" "}
                 {score.away}
@@ -1590,162 +1312,137 @@ function GameDetail({
               <strong>
                 {score.home}{" "}
                 {
-                  game.home
+                  game?.home
                     ?.name
                 }
               </strong>
-
             </div>
-
           </div>
-
         )}
 
-
-      {prediction ? (
-
+      {p ? (
         <>
-
           <div className="winner-box">
-
             <span>
               Proyección actual
             </span>
 
             <strong>
-              {
-                prediction.predicted_winner
-              }
+              {predictedWinner ||
+                "—"}
             </strong>
 
             <b>
               {pct(
-                prediction.confidence
+                prediction?.confidence
               )}{" "}
               confianza
             </b>
-
           </div>
-
 
           <div className="prob-grid">
-
             <Probability
               name={
-                game.home?.name
+                game?.home?.name
               }
               value={
-                prediction.home_probability
+                prediction?.home_probability
               }
             />
 
-
             <Probability
               name={
-                game.away?.name
+                game?.away?.name
               }
               value={
-                prediction.away_probability
+                prediction?.away_probability
               }
             />
-
           </div>
 
-
-          {game.status ===
+          {game?.status ===
             "Final" && (
-
             <div
               className={`detail-result ${resultClass(
-                result ||
-                "PENDING"
+                result
               )}`}
             >
-
-              {!result
-                ? "⏳ RESULTADO PENDIENTE"
-                : result ===
-                  "CORRECT"
+              {result ===
+              "CORRECT"
                 ? "✓ PROYECCIÓN ACERTADA"
                 : result ===
                   "INCORRECT"
                 ? "✕ PROYECCIÓN INCORRECTA"
                 : "⏳ RESULTADO PENDIENTE"}
-
             </div>
-
           )}
 
-
           <div className="factor-grid">
-
             <Factor
               label="OPS local"
               value={
-                f.home_team_ops ||
-                f.home_team_ops === 0
-                  ? f.home_team_ops
-                  : "—"
+                factors?.home_team_ops ??
+                "—"
               }
             />
-
 
             <Factor
               label="OPS visitante"
               value={
-                f.away_team_ops ||
-                f.away_team_ops === 0
-                  ? f.away_team_ops
-                  : "—"
+                factors?.away_team_ops ??
+                "—"
               }
             />
-
 
             <Factor
               label="ERA local"
               value={
-                f.home_team_era
+                factors?.home_team_era ??
+                "—"
               }
             />
-
 
             <Factor
               label="ERA visitante"
               value={
-                f.away_team_era
+                factors?.away_team_era ??
+                "—"
               }
             />
-
 
             <Factor
               label="Forma local L5"
               value={
-                home
-                  ? `${home.wins}-${home.losses}`
+                homeForm
+                  ? `${homeForm.wins}-${homeForm.losses}`
                   : "—"
               }
             />
-
 
             <Factor
               label="Forma visitante L5"
               value={
-                away
-                  ? `${away.wins}-${away.losses}`
+                awayForm
+                  ? `${awayForm.wins}-${awayForm.losses}`
                   : "—"
               }
             />
-
 
             <Factor
               label="Dif. carreras local"
               value={
-                home
+                homeForm
                   ? num(
-                      home.run_differential_per_game ??
-                        home.run_differential /
+                      homeForm?.run_differential_per_game ??
+                        (
+                          Number(
+                            homeForm?.run_differential
+                          ) || 0
+                        ) /
                           Math.max(
-                            home.games,
+                            Number(
+                              homeForm?.games
+                            ) || 1,
                             1
                           ),
                       2
@@ -1753,17 +1450,22 @@ function GameDetail({
                   : "—"
               }
             />
-
 
             <Factor
               label="Dif. carreras visitante"
               value={
-                away
+                awayForm
                   ? num(
-                      away.run_differential_per_game ??
-                        away.run_differential /
+                      awayForm?.run_differential_per_game ??
+                        (
+                          Number(
+                            awayForm?.run_differential
+                          ) || 0
+                        ) /
                           Math.max(
-                            away.games,
+                            Number(
+                              awayForm?.games
+                            ) || 1,
                             1
                           ),
                       2
@@ -1771,47 +1473,50 @@ function GameDetail({
                   : "—"
               }
             />
-
           </div>
 
-
           <div className="quality">
-
             <span>
               Calidad de datos
             </span>
 
             <b>
-              {
-                prediction.data_quality ??
-                0
-              }%
+              {prediction
+                ?.data_quality ??
+                0}
+              %
             </b>
-
           </div>
 
+          {result ===
+            "CORRECT" && (
+            <div className="message notice">
+              ✓ Esta predicción está
+              liquidada como
+              CORRECTA.
+            </div>
+          )}
+
+          {result ===
+            "INCORRECT" && (
+            <div className="message error">
+              ✕ Esta predicción está
+              liquidada como
+              INCORRECTA.
+            </div>
+          )}
         </>
-
       ) : (
-
         <div className="empty">
           Todavía no existe una
           predicción para este
           partido.
         </div>
-
       )}
-
     </div>
   );
 }
 
-
-/*
- * =========================================================
- * PROBABILIDAD
- * =========================================================
- */
 function Probability({
   name,
   value,
@@ -1819,13 +1524,9 @@ function Probability({
   name: string;
   value: any;
 }) {
-
   return (
-
     <div className="prob-card">
-
       <div>
-
         <span>
           {name}
         </span>
@@ -1833,12 +1534,9 @@ function Probability({
         <b>
           {pct(value)}
         </b>
-
       </div>
 
-
       <div className="bar-track">
-
         <i
           style={{
             width: `${probabilityWidth(
@@ -1846,19 +1544,11 @@ function Probability({
             )}%`,
           }}
         />
-
       </div>
-
     </div>
   );
 }
 
-
-/*
- * =========================================================
- * FACTOR
- * =========================================================
- */
 function Factor({
   label,
   value,
@@ -1866,11 +1556,8 @@ function Factor({
   label: string;
   value: any;
 }) {
-
   return (
-
     <div className="factor">
-
       <span>
         {label}
       </span>
@@ -1878,7 +1565,6 @@ function Factor({
       <b>
         {value ?? "—"}
       </b>
-
     </div>
   );
 }
