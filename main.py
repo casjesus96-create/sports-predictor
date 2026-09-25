@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
-from pathlib import Path
 
-import requests
 from fastapi import FastAPI, HTTPException
+import requests
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from analyzer import analyze_mlb_game
 from repository import (
@@ -14,36 +14,27 @@ from repository import (
     get_performance,
     get_predictions,
     get_supabase_client,
+    reconcile_settled_prediction,
 )
 
 
-# =========================================================
-# APPLICATION
-# =========================================================
-
-APP_VERSION = "2.0.0"
-CURRENT_MODEL_VERSION = "2.0.0-matchup"
-
 app = FastAPI(
     title="Sports Predictor API",
-    version=APP_VERSION,
+    version="2.0.0",
     description=(
         "API de proyecciones deportivas con análisis MLB, "
-        "matchup, forma histórica, factores estadísticos, "
-        "análisis diario y liquidación automática."
+        "forma histórica, análisis diario y liquidación automática."
     ),
 )
 
 
-# =========================================================
-# MLB CONFIGURATION
-# =========================================================
-
 MLB_API = "https://statsapi.mlb.com/api/v1"
 
 MLB_HEADERS = {
-    "User-Agent": "Sports-Predictor/2.0"
+    "User-Agent": "Sports-Predictor/1.0"
 }
+
+CURRENT_MODEL_VERSION = "2.0.0-matchup"
 
 
 # =========================================================
@@ -55,60 +46,9 @@ def health():
     return {
         "status": "ok",
         "service": "sports-predictor",
-        "version": APP_VERSION,
+        "version": "2.0.0",
         "model_version": CURRENT_MODEL_VERSION,
     }
-
-
-# =========================================================
-# ROOT
-# =========================================================
-
-@app.get("/", include_in_schema=False)
-def frontend_index():
-    """
-    Sirve la aplicación React.
-
-    El Dockerfile copia:
-
-        /frontend/dist
-
-    hacia:
-
-        /app/dist
-
-    Por eso el frontend se busca directamente
-    dentro de /app/dist.
-    """
-
-    frontend_dist = (
-        Path(__file__).resolve().parent
-        / "dist"
-    )
-
-    index_file = (
-        frontend_dist
-        / "index.html"
-    )
-
-    if not index_file.exists():
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "FRONTEND_NOT_FOUND",
-                "message": (
-                    "El frontend fue construido, "
-                    "pero no se encontró dist/index.html."
-                ),
-                "expected_path": str(
-                    index_file
-                ),
-            },
-        )
-
-    return FileResponse(
-        index_file
-    )
 
 
 # =========================================================
@@ -126,8 +66,8 @@ def get_mlb_games(
 
     /api/v1/mlb/games?date=2026-09-22
 
-    Si no se proporciona una fecha, utiliza
-    la fecha actual en UTC.
+    Si no se proporciona una fecha, utiliza la fecha
+    actual en UTC.
     """
 
     try:
@@ -142,7 +82,7 @@ def get_mlb_games(
             ).strftime("%Y-%m-%d")
 
         # -------------------------------------------------
-        # 2. Validar fecha
+        # 2. Validar formato de fecha
         # -------------------------------------------------
 
         try:
@@ -239,7 +179,6 @@ def get_mlb_games(
                         "probablePitcher",
                         {}
                     )
-                    or {}
                 )
 
                 away_pitcher = (
@@ -247,7 +186,6 @@ def get_mlb_games(
                         "probablePitcher",
                         {}
                     )
-                    or {}
                 )
 
                 status = game.get(
@@ -385,8 +323,18 @@ def analyze_mlb_day(
     Analiza automáticamente todos los partidos MLB
     de una fecha determinada.
 
-    Evita duplicar una predicción PENDING
-    de la misma versión del modelo.
+    Ejemplo:
+
+    /api/v1/mlb/analyze-day?date=2026-09-22
+
+    El endpoint:
+
+    1. Obtiene los partidos MLB.
+    2. Analiza cada partido.
+    3. Guarda las predicciones en Supabase.
+    4. Evita duplicar una predicción PENDING
+       de la misma versión del modelo.
+    5. Continúa aunque un partido individual falle.
     """
 
     try:
@@ -505,7 +453,7 @@ def analyze_mlb_day(
                 continue
 
             # -------------------------------------------------
-            # Buscar PENDING existente
+            # Buscar predicción PENDING existente
             # -------------------------------------------------
 
             try:
@@ -546,7 +494,7 @@ def analyze_mlb_day(
                 existing_rows = []
 
             # -------------------------------------------------
-            # Ya existe
+            # Si ya existe, no duplicar
             # -------------------------------------------------
 
             if existing_rows:
@@ -744,6 +692,10 @@ def analyze_mlb_day(
 
                 continue
 
+        # -------------------------------------------------
+        # Resultado final del análisis diario
+        # -------------------------------------------------
+
         return {
             "success": True,
             "date": date,
@@ -826,8 +778,9 @@ def analyze_game(
     event_id: str
 ):
     """
-    Analiza un partido MLB utilizando el modelo
-    2.0.0-matchup.
+    Analiza un partido MLB utilizando el modelo actual.
+
+    El modelo actual es 2.0.0-matchup.
     """
 
     try:
@@ -866,7 +819,8 @@ def analyze_game(
 
 @app.post("/api/v1/settle/{event_id}")
 def settle_game(
-    event_id: str
+    event_id: str,
+    prediction_id: str = None,
 ):
     try:
 
@@ -965,7 +919,7 @@ def settle_game(
             }
 
         # -------------------------------------------------
-        # Estado
+        # Estado del partido
         # -------------------------------------------------
 
         game_status = (
@@ -1060,7 +1014,7 @@ def settle_game(
         )
 
         # -------------------------------------------------
-        # Partido no terminado
+        # Partido todavía no terminado
         # -------------------------------------------------
 
         if game_status != "Final":
@@ -1147,6 +1101,8 @@ def settle_game(
             actual_winner=actual_winner,
             actual_home_score=home_score,
             actual_away_score=away_score,
+            prediction_id=prediction_id,
+            model_version=CURRENT_MODEL_VERSION,
         )
 
         # -------------------------------------------------
@@ -1208,6 +1164,21 @@ def settle_game(
         )
 
 
+@app.post("/api/v1/reconcile/{event_id}")
+def reconcile(event_id: str):
+    try:
+        return reconcile_settled_prediction(event_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "RECONCILE_ERROR",
+                "message": "No fue posible reconciliar el resultado.",
+                "details": str(exc),
+            },
+        )
+
+
 # =========================================================
 # PERFORMANCE
 # =========================================================
@@ -1259,24 +1230,19 @@ def predictions():
 
 
 # =========================================================
-# STATIC FRONTEND
+# FRONTEND WEB
 # =========================================================
 
-FRONTEND_DIST = (
-    Path(__file__).resolve().parent
-    / "dist"
-)
-
+FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 
 if FRONTEND_DIST.exists():
 
+    @app.get("/", include_in_schema=False)
+    def frontend_index():
+        return FileResponse(FRONTEND_DIST / "index.html")
+
     app.mount(
         "/",
-        StaticFiles(
-            directory=str(
-                FRONTEND_DIST
-            ),
-            html=True,
-        ),
+        StaticFiles(directory=str(FRONTEND_DIST), html=True),
         name="frontend",
     )
