@@ -1233,7 +1233,7 @@ def predictions():
 # FRONTEND WEB
 # =========================================================
 
-FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+FRONTEND_DIST = Path(__file__).resolve().parent / "dist"
 
 if FRONTEND_DIST.exists():
 
