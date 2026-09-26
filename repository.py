@@ -139,10 +139,6 @@ def save_analysis(analysis):
         "generated_at"
     )
 
-    data_cutoff = analysis.get(
-        "data_cutoff"
-    ) or generated_at
-
     if not generated_at:
         generated_at = datetime.now(
             timezone.utc
@@ -182,7 +178,7 @@ def save_analysis(analysis):
 
         "created_at": generated_at,
 
-        "data_cutoff": data_cutoff,
+        "data_cutoff": generated_at,
 
         "home_probability": prediction.get(
             "home_probability"
@@ -213,16 +209,44 @@ def save_analysis(analysis):
         "prediction_result": None,
     }
 
-    response = (
+    # Una sola predicción PENDING activa por partido y versión.
+    # Si el usuario vuelve a analizar el partido, actualizamos el
+    # snapshot vigente en lugar de crear duplicados.
+    existing_response = (
         supabase
         .table("prediction_snapshots")
-        .insert(payload)
+        .select("id")
+        .eq("event_id", str(event_id))
+        .eq("model_version", model_version)
+        .eq("result_status", "PENDING")
+        .order("created_at", desc=True)
+        .limit(1)
         .execute()
     )
+
+    existing_rows = existing_response.data or []
+
+    if existing_rows:
+        existing_id = existing_rows[0].get("id")
+        response = (
+            supabase
+            .table("prediction_snapshots")
+            .update(payload)
+            .eq("id", existing_id)
+            .execute()
+        )
+    else:
+        response = (
+            supabase
+            .table("prediction_snapshots")
+            .insert(payload)
+            .execute()
+        )
 
     return {
         "success": True,
         "saved": True,
+        "updated_existing": bool(existing_rows),
         "data": response.data,
     }
 
