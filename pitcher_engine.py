@@ -242,7 +242,10 @@ def get_probable_pitcher(
             "game_id": int(game_id),
             "team_side": team_side,
             "pitcher_id": None,
+            "id": None,
             "pitcher_name": None,
+            "name": None,
+            "fullName": None,
             "pitcher_hand": None,
             "source": None,
             "reason": (
@@ -313,7 +316,10 @@ def get_probable_pitcher(
         "game_id": int(game_id),
         "team_side": team_side,
         "pitcher_id": pitcher_id,
+        "id": pitcher_id,
         "pitcher_name": pitcher_name,
+        "name": pitcher_name,
+        "fullName": pitcher_name,
         "pitcher_hand": pitcher_hand,
         "source": source,
         "generated_at": datetime.now(
