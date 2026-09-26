@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, timedelta
 import requests
 
 
@@ -13,13 +13,6 @@ MLB_HEADERS = {
 def _safe_int(value, default=None):
     try:
         return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _safe_float(value, default=0.0):
-    try:
-        return float(value)
     except (TypeError, ValueError):
         return default
 
@@ -39,23 +32,15 @@ def _parse_datetime(value):
     if not value:
         return None
 
-    text = str(value).strip()
-
     try:
         return datetime.fromisoformat(
-            text.replace("Z", "+00:00")
+            str(value).replace("Z", "+00:00")
         )
     except ValueError:
         return None
 
 
 def _normalize_before_date(before_date):
-    """
-    Convierte before_date a datetime UTC cuando es posible.
-
-    Se utiliza solamente como límite temporal para evitar
-    data leakage.
-    """
     if before_date is None:
         return None
 
@@ -71,9 +56,6 @@ def _normalize_before_date(before_date):
 
 
 def _season_from_before_date(before_date):
-    """
-    Determina la temporada MLB a partir del partido analizado.
-    """
     parsed = _normalize_before_date(before_date)
 
     if parsed is not None:
@@ -82,18 +64,7 @@ def _season_from_before_date(before_date):
     return datetime.now(timezone.utc).year
 
 
-def _season_start_date(season):
-    """
-    Inicio de temporada suficientemente temprano para cubrir
-    toda la temporada regular.
-    """
-    return f"{int(season)}-03-01"
-
-
 def _extract_game_score(game):
-    """
-    Extrae marcador final directamente del objeto de MLB Stats API.
-    """
     teams = game.get("teams") or {}
 
     home = teams.get("home") or {}
@@ -102,66 +73,48 @@ def _extract_game_score(game):
     home_score = _safe_int(home.get("score"))
     away_score = _safe_int(away.get("score"))
 
-    if home_score is None or away_score is None:
-        return None, None
-
     return home_score, away_score
 
 
 def _game_is_before_cutoff(game, before_dt):
-    """
-    Evita utilizar información posterior al momento de análisis.
-    """
     if before_dt is None:
         return True
 
-    game_dt = _parse_datetime(game.get("gameDate"))
+    game_dt = _parse_datetime(
+        game.get("gameDate")
+    )
 
     if game_dt is None:
         return False
 
     if game_dt.tzinfo is None:
-        game_dt = game_dt.replace(tzinfo=timezone.utc)
+        game_dt = game_dt.replace(
+            tzinfo=timezone.utc
+        )
 
-    game_dt = game_dt.astimezone(timezone.utc)
+    return (
+        game_dt.astimezone(timezone.utc)
+        < before_dt
+    )
 
-    return game_dt < before_dt
 
-
-def _fetch_team_recent_games_from_mlb(
+def _fetch_schedule_window(
     team_id,
-    before_date=None,
-    season=None,
-    limit=15,
+    start_date,
+    end_date,
+    before_dt=None,
 ):
     """
-    Fuente canónica de forma reciente.
+    Consulta un rango corto del calendario MLB.
 
-    IMPORTANTE:
-    No depende de mlb_game_history.
-
-    MLB Stats API permite consultar el calendario por teamId,
-    startDate/endDate y gameTypes. Los marcadores vienen en
-    teams.home.score / teams.away.score.
+    Usamos ventanas pequeñas deliberadamente. Esto evita depender
+    de respuestas demasiado grandes del endpoint /schedule.
     """
+
     team_id = _safe_int(team_id)
 
     if team_id is None:
         return []
-
-    before_dt = _normalize_before_date(before_date)
-
-    if season is None:
-        season = _season_from_before_date(before_date)
-
-    season = int(season)
-
-    if before_dt is not None:
-        end_date = before_dt.date().isoformat()
-    else:
-        end_date = datetime.now(
-            timezone.utc
-        ).date().isoformat()
 
     try:
         data = _get_json(
@@ -169,7 +122,7 @@ def _fetch_team_recent_games_from_mlb(
             params={
                 "sportId": 1,
                 "teamId": team_id,
-                "startDate": _season_start_date(season),
+                "startDate": start_date,
                 "endDate": end_date,
                 "gameTypes": "R",
                 "hydrate": "team,linescore",
@@ -195,15 +148,10 @@ def _fetch_team_recent_games_from_mlb(
             ):
                 continue
 
-            home = (
-                (game.get("teams") or {})
-                .get("home") or {}
-            )
+            teams = game.get("teams") or {}
 
-            away = (
-                (game.get("teams") or {})
-                .get("away") or {}
-            )
+            home = teams.get("home") or {}
+            away = teams.get("away") or {}
 
             home_team = home.get("team") or {}
             away_team = away.get("team") or {}
@@ -255,6 +203,105 @@ def _fetch_team_recent_games_from_mlb(
                 "source": "mlb_stats_api",
             })
 
+    return games
+
+
+def get_team_history(
+    team_id,
+    before_date=None,
+    limit=15,
+):
+    """
+    Obtiene los últimos partidos FINAL anteriores al partido
+    que se está analizando.
+
+    La consulta se hace en ventanas de 30 días hacia atrás hasta
+    encontrar suficientes partidos. Así no dependemos de una
+    consulta enorme desde marzo hasta septiembre.
+
+    Fuente canónica:
+        MLB Stats API
+
+    No depende de mlb_game_history.
+    """
+
+    try:
+        limit = max(int(limit), 1)
+    except (TypeError, ValueError):
+        limit = 15
+
+    before_dt = _normalize_before_date(
+        before_date
+    )
+
+    if before_dt is None:
+        before_dt = datetime.now(
+            timezone.utc
+        )
+
+    season = before_dt.year
+
+    # No buscamos antes del inicio de la temporada MLB.
+    season_start = datetime(
+        season,
+        3,
+        1,
+        tzinfo=timezone.utc,
+    )
+
+    # Empezamos justo antes del día del partido.
+    cursor_end = before_dt.date()
+
+    collected = {}
+
+    # Hasta 6 ventanas de 30 días = 180 días.
+    # Es suficiente para encontrar 15 partidos incluso con
+    # periodos de baja actividad.
+    for _ in range(6):
+        cursor_start = (
+            cursor_end
+            - timedelta(days=30)
+        )
+
+        if cursor_start < season_start.date():
+            cursor_start = season_start.date()
+
+        start_text = (
+            cursor_start.isoformat()
+        )
+        end_text = (
+            cursor_end.isoformat()
+        )
+
+        window_games = _fetch_schedule_window(
+            team_id=team_id,
+            start_date=start_text,
+            end_date=end_text,
+            before_dt=before_dt,
+        )
+
+        for game in window_games:
+            game_id = game.get("game_id")
+
+            if game_id:
+                collected[game_id] = game
+
+        if len(collected) >= limit:
+            break
+
+        if cursor_start <= season_start.date():
+            break
+
+        # Evita volver a consultar exactamente el mismo día.
+        cursor_end = (
+            cursor_start
+            - timedelta(days=1)
+        )
+
+    games = list(
+        collected.values()
+    )
+
     games.sort(
         key=lambda row: (
             _parse_datetime(
@@ -267,67 +314,7 @@ def _fetch_team_recent_games_from_mlb(
         reverse=True,
     )
 
-    return games[:max(int(limit), 1)]
-
-
-def _get_game_score(game_id):
-    """
-    Fallback individual para un partido concreto.
-
-    Se utiliza solamente si una respuesta de calendario no trae
-    el marcador.
-    """
-    if not game_id:
-        return None, None
-
-    try:
-        data = _get_json(
-            f"{MLB_API}/schedule",
-            params={
-                "sportId": 1,
-                "gamePk": str(game_id),
-                "hydrate": "team,linescore",
-            },
-        )
-    except Exception:
-        return None, None
-
-    for date_block in data.get("dates", []):
-        for game in date_block.get("games", []):
-            status = (
-                game.get("status") or {}
-            ).get("abstractGameState")
-
-            if status != "Final":
-                continue
-
-            return _extract_game_score(game)
-
-    return None, None
-
-
-def get_team_history(
-    team_id,
-    before_date=None,
-    limit=15,
-):
-    """
-    Obtiene los últimos partidos FINAL de un equipo.
-
-    La fuente principal es MLB Stats API, no la tabla local.
-    Esto evita que una tabla histórica incompleta o con scores
-    nulos destruya la forma reciente del modelo.
-    """
-    games = _fetch_team_recent_games_from_mlb(
-        team_id=team_id,
-        before_date=before_date,
-        season=_season_from_before_date(
-            before_date
-        ),
-        limit=limit,
-    )
-
-    return games
+    return games[:limit]
 
 
 def calculate_team_form(
@@ -337,8 +324,9 @@ def calculate_team_form(
     games=None,
 ):
     """
-    Calcula estadísticas recientes de un equipo.
+    Calcula forma reciente usando partidos reales FINAL.
     """
+
     if games is None:
         games = get_team_history(
             team_id=team_id,
@@ -350,11 +338,13 @@ def calculate_team_form(
 
     wins = 0
     losses = 0
+
     runs_scored = 0
     runs_allowed = 0
 
     home_games = 0
     home_wins = 0
+
     away_games = 0
     away_wins = 0
 
@@ -402,8 +392,7 @@ def calculate_team_form(
             if away_score > home_score:
                 wins += 1
                 away_wins += 1
-            elif home_score > away_score:
-                losses += 1
+
         else:
             continue
 
@@ -431,7 +420,8 @@ def calculate_team_form(
         }
 
     run_differential = (
-        runs_scored - runs_allowed
+        runs_scored
+        - runs_allowed
     )
 
     return {
@@ -470,12 +460,13 @@ def get_matchup_form(
     before_date=None,
 ):
     """
-    Obtiene una sola muestra de 15 partidos por equipo y deriva
-    last_5/10/15 de esa muestra.
+    Obtiene una muestra única de 15 partidos por equipo y genera
+    las ventanas de 5, 10 y 15.
 
-    Los datos proceden directamente de MLB Stats API y quedan
-    limitados estrictamente por before_date.
+    Las tres ventanas utilizan exactamente la misma secuencia
+    histórica, evitando inconsistencias entre consultas.
     """
+
     home_games = get_team_history(
         home_team_id,
         before_date=before_date,
