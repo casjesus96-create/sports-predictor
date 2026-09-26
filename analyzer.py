@@ -1,6 +1,6 @@
 import math
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from matchup_engine import get_matchup_data
 
@@ -19,36 +19,17 @@ MLB_HEADERS = {
 
 
 # =========================================================
-# CONFIGURACIÓN
-# =========================================================
-
-RECENT_GAMES_LIMIT = 30
-
-RECENT_STRENGTH_WIN_RATE_WEIGHT = 0.45
-RECENT_STRENGTH_RUN_DIFF_WEIGHT = 0.25
-RECENT_STRENGTH_RUNS_SCORED_WEIGHT = 0.15
-RECENT_STRENGTH_RUNS_ALLOWED_WEIGHT = 0.15
-
-
-# =========================================================
 # UTILIDADES
 # =========================================================
 
-def clamp(
-    value,
-    minimum=0.05,
-    maximum=0.95,
-):
+def clamp(value, minimum=0.05, maximum=0.95):
     return max(
         minimum,
-        min(maximum, value),
+        min(maximum, value)
     )
 
 
-def get_json(
-    url,
-    params=None,
-):
+def get_json(url, params=None):
     response = requests.get(
         url,
         params=params,
@@ -61,10 +42,7 @@ def get_json(
     return response.json()
 
 
-def safe_float(
-    value,
-    default=None,
-):
+def safe_float(value, default=None):
     try:
         return float(value)
     except (
@@ -74,10 +52,7 @@ def safe_float(
         return default
 
 
-def safe_int(
-    value,
-    default=None,
-):
+def safe_int(value, default=None):
     try:
         return int(value)
     except (
@@ -87,28 +62,11 @@ def safe_int(
         return default
 
 
-def stat_value(
-    stats,
-    *keys,
-):
-    stats = stats or {}
-
-    for key in keys:
-        value = stats.get(key)
-
-        if value is not None:
-            return value
-
-    return None
-
-
 # =========================================================
 # PARTIDO MLB
 # =========================================================
 
-def get_game(
-    game_id,
-):
+def get_game(game_id):
     """
     Obtiene el feed completo del partido.
 
@@ -127,20 +85,11 @@ def get_game(
 # ESTADÍSTICAS DEL EQUIPO
 # =========================================================
 
-def get_team_season_stats(
-    team_id,
-    season=2026,
-):
+def get_team_season_stats(team_id, season=2026):
     """
     Obtiene estadísticas de temporada
     de bateo y pitcheo.
     """
-
-    if not team_id:
-        return {
-            "hitting": {},
-            "pitching": {},
-        }
 
     url = (
         f"{MLB_API}"
@@ -167,6 +116,7 @@ def get_team_season_stats(
         "stats",
         [],
     ):
+
         group = (
             split
             .get(
@@ -260,324 +210,223 @@ def get_player_pitching_stats(
 
 
 # =========================================================
-# RECENT STRENGTH — ÚLTIMOS 30 PARTIDOS
+# RECENT STRENGTH 30
 # =========================================================
 
-def _parse_game_date(
-    value,
-):
-    """
-    Convierte una fecha MLB en datetime UTC.
-    """
-
-    if not value:
-        return None
-
-    try:
-        text = str(value)
-
-        if text.endswith("Z"):
-            text = text[:-1]
-
-        parsed = datetime.fromisoformat(
-            text,
-        )
-
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(
-                tzinfo=timezone.utc,
-            )
-
-        return parsed.astimezone(
-            timezone.utc,
-        )
-
-    except (
-        TypeError,
-        ValueError,
-    ):
-        return None
-
-
-def _format_api_date(
-    value,
-):
-    """
-    Devuelve YYYY-MM-DD.
-    """
-
-    if isinstance(
-        value,
-        datetime,
-    ):
-        return value.strftime(
-            "%Y-%m-%d",
-        )
-
-    parsed = _parse_game_date(
-        value,
-    )
-
-    if parsed:
-        return parsed.strftime(
-            "%Y-%m-%d",
-        )
-
-    return str(value)[:10]
-
-
-def _get_recent_games_from_mlb(
+def get_recent_games(
     team_id,
     before_date=None,
-    limit=RECENT_GAMES_LIMIT,
+    limit=30,
 ):
     """
-    Obtiene directamente desde MLB Stats API
-    los partidos anteriores del equipo.
+    Obtiene los últimos partidos FINALIZADOS del equipo
+    directamente desde MLB Stats API.
 
-    No utiliza mlb_game_history.
-    No utiliza form_engine.
-    No depende de scores almacenados localmente.
+    Esta función reemplaza la dependencia del form_engine
+    para evitar que las ventanas last_5/10/15 aparezcan
+    como 0-0 cuando la fuente histórica no está completa.
 
-    La búsqueda retrocede por ventanas de 30 días
-    hasta conseguir suficientes partidos.
+    La muestra principal utiliza hasta 30 partidos.
     """
 
     if not team_id:
         return []
 
+    url = f"{MLB_API}/schedule"
+
+    params = {
+        "sportId": 1,
+        "teamId": team_id,
+        "hydrate": "team",
+        "gameType": "R",
+        "fields": (
+            "dates,"
+            "dates.date,"
+            "dates.games,"
+            "dates.games.gamePk,"
+            "dates.games.gameDate,"
+            "dates.games.status,"
+            "dates.games.teams,"
+            "dates.games.teams.home,"
+            "dates.games.teams.home.team,"
+            "dates.games.teams.home.score,"
+            "dates.games.teams.away,"
+            "dates.games.teams.away.team,"
+            "dates.games.teams.away.score"
+        ),
+    }
+
     try:
-        team_id = int(team_id)
-    except (
-        TypeError,
-        ValueError,
-    ):
+
+        data = get_json(
+            url,
+            params,
+        )
+
+    except Exception:
         return []
 
-    limit = max(
-        int(limit),
-        1,
-    )
+    games = []
+
+    before_dt = None
 
     if before_date:
-        cutoff = _parse_game_date(
-            before_date,
-        )
-    else:
-        cutoff = datetime.now(
-            timezone.utc,
-        )
-
-    if cutoff is None:
-        cutoff = datetime.now(
-            timezone.utc,
-        )
-
-    # Dejamos un pequeño margen para garantizar
-    # que no entre el propio partido analizado.
-    cutoff_date = cutoff.date()
-
-    collected = {}
-    end_date = cutoff_date
-
-    # Buscamos progresivamente hacia atrás.
-    # 12 meses cubren sobradamente los 30 partidos.
-    for _ in range(18):
-
-        start_date = (
-            end_date
-            - timedelta(days=30)
-        )
-
-        params = {
-            "sportId": 1,
-            "teamId": team_id,
-            "startDate": start_date.strftime(
-                "%m/%d/%Y",
-            ),
-            "endDate": end_date.strftime(
-                "%m/%d/%Y",
-            ),
-            "gameTypes": "R",
-            "hydrate": (
-                "team,linescore"
-            ),
-        }
 
         try:
-            data = get_json(
-                f"{MLB_API}/schedule",
-                params,
+            before_dt = datetime.fromisoformat(
+                str(before_date).replace(
+                    "Z",
+                    "+00:00",
+                )
             )
 
-        except Exception:
-            end_date = (
-                start_date
-                - timedelta(days=1)
-            )
-            continue
+            if before_dt.tzinfo is None:
+                before_dt = before_dt.replace(
+                    tzinfo=timezone.utc
+                )
 
-        for date_block in data.get(
-            "dates",
+        except (
+            TypeError,
+            ValueError,
+        ):
+            before_dt = None
+
+    for date_block in data.get(
+        "dates",
+        [],
+    ):
+
+        for game in date_block.get(
+            "games",
             [],
         ):
 
-            for game in date_block.get(
-                "games",
-                [],
+            status = (
+                game
+                .get(
+                    "status",
+                    {},
+                )
+                .get(
+                    "abstractGameState"
+                )
+            )
+
+            if status != "Final":
+                continue
+
+            game_date = game.get(
+                "gameDate"
+            )
+
+            if before_dt and game_date:
+
+                try:
+                    game_dt = datetime.fromisoformat(
+                        str(game_date).replace(
+                            "Z",
+                            "+00:00",
+                        )
+                    )
+
+                    if game_dt >= before_dt:
+                        continue
+
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    pass
+
+            teams = game.get(
+                "teams",
+                {},
+            )
+
+            home = teams.get(
+                "home",
+                {},
+            )
+
+            away = teams.get(
+                "away",
+                {},
+            )
+
+            home_team = home.get(
+                "team",
+                {},
+            )
+
+            away_team = away.get(
+                "team",
+                {},
+            )
+
+            home_id = home_team.get(
+                "id"
+            )
+
+            away_id = away_team.get(
+                "id"
+            )
+
+            home_score = safe_int(
+                home.get(
+                    "score"
+                )
+            )
+
+            away_score = safe_int(
+                away.get(
+                    "score"
+                )
+            )
+
+            if (
+                home_id is None
+                or away_id is None
+                or home_score is None
+                or away_score is None
             ):
+                continue
 
-                game_id = (
-                    game.get(
-                        "gamePk",
-                    )
-                )
+            if (
+                str(team_id) != str(home_id)
+                and str(team_id) != str(away_id)
+            ):
+                continue
 
-                if not game_id:
-                    continue
+            games.append(
+                {
+                    "game_id":
+                        game.get(
+                            "gamePk"
+                        ),
 
-                status = (
-                    game
-                    .get(
-                        "status",
-                        {},
-                    )
-                    .get(
-                        "abstractGameState",
-                    )
-                )
+                    "game_date":
+                        game_date,
 
-                if status != "Final":
-                    continue
+                    "home_team_id":
+                        home_id,
 
-                game_datetime = (
-                    game
-                    .get(
-                        "gameDate",
-                    )
-                )
+                    "away_team_id":
+                        away_id,
 
-                parsed_date = (
-                    _parse_game_date(
-                        game_datetime,
-                    )
-                )
+                    "home_score":
+                        home_score,
 
-                if not parsed_date:
-                    continue
-
-                # Protección contra data leakage.
-                if parsed_date >= cutoff:
-                    continue
-
-                teams = (
-                    game.get(
-                        "teams",
-                        {},
-                    )
-                )
-
-                home = (
-                    teams.get(
-                        "home",
-                        {},
-                    )
-                )
-
-                away = (
-                    teams.get(
-                        "away",
-                        {},
-                    )
-                )
-
-                home_team = (
-                    home.get(
-                        "team",
-                        {},
-                    )
-                )
-
-                away_team = (
-                    away.get(
-                        "team",
-                        {},
-                    )
-                )
-
-                home_id = home_team.get(
-                    "id",
-                )
-
-                away_id = away_team.get(
-                    "id",
-                )
-
-                home_score = safe_int(
-                    home.get(
-                        "score",
-                    )
-                )
-
-                away_score = safe_int(
-                    away.get(
-                        "score",
-                    )
-                )
-
-                if (
-                    home_score is None
-                    or away_score is None
-                ):
-                    continue
-
-                if (
-                    str(team_id)
-                    != str(home_id)
-                    and
-                    str(team_id)
-                    != str(away_id)
-                ):
-                    continue
-
-                collected[
-                    str(game_id)
-                ] = {
-                    "game_id": str(
-                        game_id,
-                    ),
-                    "game_date": (
-                        parsed_date
-                        .isoformat()
-                    ),
-                    "home_team_id": home_id,
-                    "away_team_id": away_id,
-                    "home_score": home_score,
-                    "away_score": away_score,
+                    "away_score":
+                        away_score,
                 }
-
-        if len(collected) >= limit:
-            break
-
-        end_date = (
-            start_date
-            - timedelta(days=1)
-        )
-
-    games = list(
-        collected.values()
-    )
+            )
 
     games.sort(
-        key=lambda game: (
-            _parse_game_date(
-                game.get(
-                    "game_date",
-                )
+        key=lambda x: (
+            x.get(
+                "game_date"
             )
-            or datetime.min.replace(
-                tzinfo=timezone.utc,
-            )
+            or ""
         ),
         reverse=True,
     )
@@ -588,54 +437,81 @@ def _get_recent_games_from_mlb(
 def calculate_recent_strength(
     team_id,
     before_date=None,
-    limit=RECENT_GAMES_LIMIT,
+    limit=30,
 ):
     """
-    Calcula la fuerza reciente del equipo
-    utilizando hasta 30 partidos FINALIZADOS
-    directamente desde MLB.
+    Calcula una señal de fuerza reciente utilizando
+    hasta los últimos 30 partidos oficiales.
 
     Componentes:
 
-    45% Win Rate
-    25% Run Differential / Game
-    15% Runs Scored / Game
-    15% Runs Allowed / Game
+    1. Win rate
+    2. Diferencial de carreras por partido
+    3. Carreras anotadas por partido
+    4. Carreras permitidas por partido
+
+    Pesos:
+
+    Win rate                  = 45%
+    Run differential          = 25%
+    Runs scored               = 15%
+    Runs allowed              = 15%
+
+    Devuelve también los datos completos utilizados
+    para que el frontend pueda mostrarlos.
     """
 
-    games = _get_recent_games_from_mlb(
+    games = get_recent_games(
         team_id=team_id,
         before_date=before_date,
         limit=limit,
     )
 
+    if not games:
+        return {
+            "games": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0.5,
+            "runs_scored": 0,
+            "runs_allowed": 0,
+            "run_differential": 0,
+            "runs_scored_per_game": 0,
+            "runs_allowed_per_game": 0,
+            "run_differential_per_game": 0,
+            "strength_score": 0.5,
+        }
+
     wins = 0
     losses = 0
-
     runs_scored = 0
     runs_allowed = 0
 
-    valid_games = 0
+    home_games = 0
+    home_wins = 0
+
+    away_games = 0
+    away_wins = 0
 
     for game in games:
 
         home_id = game.get(
-            "home_team_id",
+            "home_team_id"
         )
 
         away_id = game.get(
-            "away_team_id",
+            "away_team_id"
         )
 
         home_score = safe_int(
             game.get(
-                "home_score",
+                "home_score"
             )
         )
 
         away_score = safe_int(
             game.get(
-                "away_score",
+                "away_score"
             )
         )
 
@@ -650,55 +526,63 @@ def calculate_recent_strength(
             team_score = home_score
             opponent_score = away_score
 
+            home_games += 1
+
+            if team_score > opponent_score:
+                wins += 1
+                home_wins += 1
+
+            elif team_score < opponent_score:
+                losses += 1
+
         elif str(team_id) == str(away_id):
 
             team_score = away_score
             opponent_score = home_score
 
+            away_games += 1
+
+            if team_score > opponent_score:
+                wins += 1
+                away_wins += 1
+
+            elif team_score < opponent_score:
+                losses += 1
+
         else:
             continue
-
-        valid_games += 1
 
         runs_scored += team_score
         runs_allowed += opponent_score
 
-        if team_score > opponent_score:
-            wins += 1
+    valid_games = wins + losses
 
-        elif team_score < opponent_score:
-            losses += 1
-
-    if valid_games == 0:
+    if valid_games <= 0:
 
         return {
             "games": 0,
             "wins": 0,
             "losses": 0,
-            "win_rate": 0.0,
+            "win_rate": 0.5,
             "runs_scored": 0,
             "runs_allowed": 0,
             "run_differential": 0,
-            "runs_scored_per_game": 0.0,
-            "runs_allowed_per_game": 0.0,
-            "run_differential_per_game": 0.0,
-            "strength_score": 0.0,
-            "quality": 0,
+            "runs_scored_per_game": 0,
+            "runs_allowed_per_game": 0,
+            "run_differential_per_game": 0,
+            "strength_score": 0.5,
         }
 
     win_rate = (
-        wins
-        / valid_games
+        wins / valid_games
     )
 
     runs_scored_per_game = (
-        runs_scored
-        / valid_games
+        runs_scored / valid_games
     )
 
     runs_allowed_per_game = (
-        runs_allowed
-        / valid_games
+        runs_allowed / valid_games
     )
 
     run_differential = (
@@ -711,106 +595,115 @@ def calculate_recent_strength(
         / valid_games
     )
 
-    # -------------------------------------------------
-    # NORMALIZACIONES
-    # -------------------------------------------------
+    # Normalizamos los componentes para evitar
+    # que las carreras dominen la probabilidad.
 
-    # Win rate:
-    # 0.500 = 0
-    # 1.000 = positivo
-    # 0.000 = negativo
-    win_component = (
-        win_rate
-        - 0.500
+    win_component = clamp(
+        win_rate,
+        0.0,
+        1.0,
     )
 
-    # Diferencial de carreras.
-    # Limitamos la influencia de resultados extremos.
-    run_diff_component = math.tanh(
-        run_differential_per_game
-        / 3.0
-    )
-
-    # Carreras anotadas.
-    scoring_component = math.tanh(
-        (
-            runs_scored_per_game
-            - 4.5
+    run_diff_component = (
+        0.5
+        + math.tanh(
+            run_differential_per_game
+            / 3.0
         )
-        / 2.0
+        * 0.5
     )
 
-    # Carreras permitidas.
-    # Menos carreras permitidas = mejor.
-    prevention_component = math.tanh(
-        (
-            4.5
-            - runs_allowed_per_game
+    scoring_component = (
+        0.5
+        + math.tanh(
+            (
+                runs_scored_per_game
+                - 4.5
+            )
+            / 2.5
         )
-        / 2.0
+        * 0.5
+    )
+
+    prevention_component = (
+        0.5
+        + math.tanh(
+            (
+                4.5
+                - runs_allowed_per_game
+            )
+            / 2.5
+        )
+        * 0.5
     )
 
     strength_score = (
-        win_component
-        * RECENT_STRENGTH_WIN_RATE_WEIGHT
-        +
-        run_diff_component
-        * RECENT_STRENGTH_RUN_DIFF_WEIGHT
-        +
-        scoring_component
-        * RECENT_STRENGTH_RUNS_SCORED_WEIGHT
-        +
-        prevention_component
-        * RECENT_STRENGTH_RUNS_ALLOWED_WEIGHT
+        win_component * 0.45
+        + run_diff_component * 0.25
+        + scoring_component * 0.15
+        + prevention_component * 0.15
     )
 
-    # Calidad basada en tamaño real de muestra.
-    if valid_games >= 30:
-        quality = 100
-
-    elif valid_games >= 25:
-        quality = 95
-
-    elif valid_games >= 20:
-        quality = 90
-
-    elif valid_games >= 15:
-        quality = 80
-
-    elif valid_games >= 10:
-        quality = 70
-
-    else:
-        quality = 60
-
     return {
-        "games": valid_games,
-        "wins": wins,
-        "losses": losses,
-        "win_rate": round(
-            win_rate,
-            4,
-        ),
-        "runs_scored": runs_scored,
-        "runs_allowed": runs_allowed,
-        "run_differential": run_differential,
-        "runs_scored_per_game": round(
-            runs_scored_per_game,
-            3,
-        ),
-        "runs_allowed_per_game": round(
-            runs_allowed_per_game,
-            3,
-        ),
-        "run_differential_per_game": round(
-            run_differential_per_game,
-            3,
-        ),
-        "strength_score": round(
-            strength_score,
-            4,
-        ),
-        "quality": quality,
+        "games":
+            valid_games,
+
+        "wins":
+            wins,
+
+        "losses":
+            losses,
+
+        "win_rate":
+            round(
+                win_rate,
+                4,
+            ),
+
+        "runs_scored":
+            runs_scored,
+
+        "runs_allowed":
+            runs_allowed,
+
+        "run_differential":
+            run_differential,
+
+        "runs_scored_per_game":
+            round(
+                runs_scored_per_game,
+                3,
+            ),
+
+        "runs_allowed_per_game":
+            round(
+                runs_allowed_per_game,
+                3,
+            ),
+
+        "run_differential_per_game":
+            round(
+                run_differential_per_game,
+                3,
+            ),
+
+        "home_games":
+            home_games,
+
+        "home_wins":
+            home_wins,
+
+        "away_games":
+            away_games,
+
+        "away_wins":
+            away_wins,
+
+        "strength_score":
+            round(
+                strength_score,
+                4,
+            ),
     }
 
 
@@ -825,19 +718,22 @@ def calculate_probability(
     away_pitching,
     home_pitcher,
     away_pitcher,
-    home_recent_strength,
-    away_recent_strength,
+    home_strength,
+    away_strength,
 ):
     """
-    Modelo pregame 2.1.0.
+    Modelo pregame 2.1.
 
     Componentes:
 
-    1. OPS
+    1. OPS de temporada
     2. ERA de equipos
     3. ERA de pitchers probables
     4. Ventaja de local
     5. Recent Strength 30
+
+    Recent Strength utiliza una muestra de hasta
+    30 partidos anteriores al encuentro.
     """
 
     home_score = 0.50
@@ -848,14 +744,14 @@ def calculate_probability(
 
     home_ops = safe_float(
         home_hitting.get(
-            "ops",
+            "ops"
         ),
         0.700,
     )
 
     away_ops = safe_float(
         away_hitting.get(
-            "ops",
+            "ops"
         ),
         0.700,
     )
@@ -876,14 +772,14 @@ def calculate_probability(
 
     home_era = safe_float(
         home_pitching.get(
-            "era",
+            "era"
         ),
         4.50,
     )
 
     away_era = safe_float(
         away_pitching.get(
-            "era",
+            "era"
         ),
         4.50,
     )
@@ -904,13 +800,13 @@ def calculate_probability(
 
     home_sp_era = safe_float(
         home_pitcher.get(
-            "era",
+            "era"
         )
     )
 
     away_sp_era = safe_float(
         away_pitcher.get(
-            "era",
+            "era"
         )
     )
 
@@ -934,28 +830,28 @@ def calculate_probability(
     # 5. RECENT STRENGTH 30
     # -------------------------------------------------
 
-    home_strength = safe_float(
-        home_recent_strength.get(
-            "strength_score",
+    home_strength_score = safe_float(
+        home_strength.get(
+            "strength_score"
         ),
-        0.0,
+        0.5,
     )
 
-    away_strength = safe_float(
-        away_recent_strength.get(
-            "strength_score",
+    away_strength_score = safe_float(
+        away_strength.get(
+            "strength_score"
         ),
-        0.0,
+        0.5,
     )
 
     strength_difference = (
-        home_strength
-        - away_strength
+        home_strength_score
+        - away_strength_score
     )
 
     home_score += (
         strength_difference
-        * 0.18
+        * 0.30
     )
 
     # -------------------------------------------------
@@ -963,7 +859,7 @@ def calculate_probability(
     # -------------------------------------------------
 
     probability = clamp(
-        home_score,
+        home_score
     )
 
     return {
@@ -971,6 +867,7 @@ def calculate_probability(
             probability,
             4,
         ),
+
         "away": round(
             1 - probability,
             4,
@@ -982,13 +879,13 @@ def calculate_probability(
 # ANÁLISIS PRINCIPAL
 # =========================================================
 
-def analyze_mlb_game(
-    game_id,
-):
+def analyze_mlb_game(game_id):
     """
-    Analiza un partido MLB utilizando
-    exclusivamente información disponible
-    antes del comienzo.
+    Analiza un partido MLB utilizando exclusivamente
+    información disponible antes del comienzo.
+
+    Modelo:
+        2.1.0-recent-strength-30
     """
 
     # -------------------------------------------------
@@ -996,7 +893,7 @@ def analyze_mlb_game(
     # -------------------------------------------------
 
     game = get_game(
-        game_id,
+        game_id
     )
 
     game_data = game.get(
@@ -1015,7 +912,7 @@ def analyze_mlb_game(
             {},
         )
         .get(
-            "abstractGameState",
+            "abstractGameState"
         )
     )
 
@@ -1026,7 +923,7 @@ def analyze_mlb_game(
             {},
         )
         .get(
-            "detailedState",
+            "detailedState"
         )
     )
 
@@ -1050,19 +947,19 @@ def analyze_mlb_game(
     )
 
     home_id = home_team.get(
-        "id",
+        "id"
     )
 
     away_id = away_team.get(
-        "id",
+        "id"
     )
 
     home_name = home_team.get(
-        "name",
+        "name"
     )
 
     away_name = away_team.get(
-        "name",
+        "name"
     )
 
     # -------------------------------------------------
@@ -1076,7 +973,7 @@ def analyze_mlb_game(
             {},
         )
         .get(
-            "name",
+            "name"
         )
     )
 
@@ -1091,12 +988,12 @@ def analyze_mlb_game(
             {},
         )
         .get(
-            "dateTime",
+            "dateTime"
         )
     )
 
     # -------------------------------------------------
-    # 6. PROTECCIÓN DATA LEAKAGE
+    # 6. PROTEGER CONTRA DATA LEAKAGE
     # -------------------------------------------------
 
     if status in {
@@ -1114,32 +1011,26 @@ def analyze_mlb_game(
                 "del partido."
             ),
 
-            "game_id": str(
-                game_id,
-            ),
+            "game_id":
+                str(game_id),
 
-            "status": status,
+            "status":
+                status,
 
             "detailed_status":
                 detailed_status,
         }
 
     # -------------------------------------------------
-    # 7. ESTADÍSTICAS DE TEMPORADA
+    # 7. ESTADÍSTICAS DE EQUIPOS
     # -------------------------------------------------
 
-    home_stats = (
-        get_team_season_stats(
-            home_id,
-            season=2026,
-        )
+    home_stats = get_team_season_stats(
+        home_id
     )
 
-    away_stats = (
-        get_team_season_stats(
-            away_id,
-            season=2026,
-        )
+    away_stats = get_team_season_stats(
+        away_id
     )
 
     # -------------------------------------------------
@@ -1172,49 +1063,40 @@ def analyze_mlb_game(
 
     home_pitcher_id = (
         home_pitcher_info.get(
-            "id",
+            "id"
         )
     )
 
     away_pitcher_id = (
         away_pitcher_info.get(
-            "id",
+            "id"
         )
     )
 
     home_pitcher_stats = (
         get_player_pitching_stats(
-            home_pitcher_id,
-            season=2026,
+            home_pitcher_id
         )
     )
 
     away_pitcher_stats = (
         get_player_pitching_stats(
-            away_pitcher_id,
-            season=2026,
+            away_pitcher_id
         )
     )
 
     # -------------------------------------------------
-    # 9. RECENT STRENGTH
+    # 9. RECENT STRENGTH 30
     # -------------------------------------------------
 
-    recent_strength_error = None
+    home_strength_error = None
+    away_strength_error = None
 
     try:
 
-        home_recent_strength = (
+        home_strength = (
             calculate_recent_strength(
-                team_id=home_id,
-                before_date=datetime_value,
-                limit=30,
-            )
-        )
-
-        away_recent_strength = (
-            calculate_recent_strength(
-                team_id=away_id,
+                home_id,
                 before_date=datetime_value,
                 limit=30,
             )
@@ -1222,67 +1104,79 @@ def analyze_mlb_game(
 
     except Exception as exc:
 
-        recent_strength_error = str(
+        home_strength_error = str(
             exc
         )
 
-        home_recent_strength = {
+        home_strength = {
             "games": 0,
             "wins": 0,
             "losses": 0,
-            "win_rate": 0.0,
+            "win_rate": 0.5,
             "runs_scored": 0,
             "runs_allowed": 0,
             "run_differential": 0,
-            "runs_scored_per_game": 0.0,
-            "runs_allowed_per_game": 0.0,
-            "run_differential_per_game": 0.0,
-            "strength_score": 0.0,
-            "quality": 0,
+            "runs_scored_per_game": 0,
+            "runs_allowed_per_game": 0,
+            "run_differential_per_game": 0,
+            "strength_score": 0.5,
         }
 
-        away_recent_strength = {
+    try:
+
+        away_strength = (
+            calculate_recent_strength(
+                away_id,
+                before_date=datetime_value,
+                limit=30,
+            )
+        )
+
+    except Exception as exc:
+
+        away_strength_error = str(
+            exc
+        )
+
+        away_strength = {
             "games": 0,
             "wins": 0,
             "losses": 0,
-            "win_rate": 0.0,
+            "win_rate": 0.5,
             "runs_scored": 0,
             "runs_allowed": 0,
             "run_differential": 0,
-            "runs_scored_per_game": 0.0,
-            "runs_allowed_per_game": 0.0,
-            "run_differential_per_game": 0.0,
-            "strength_score": 0.0,
-            "quality": 0,
+            "runs_scored_per_game": 0,
+            "runs_allowed_per_game": 0,
+            "run_differential_per_game": 0,
+            "strength_score": 0.5,
         }
 
     # -------------------------------------------------
     # 10. PROBABILIDADES
     # -------------------------------------------------
 
-    probabilities = (
-        calculate_probability(
-            home_stats.get(
-                "hitting",
-                {},
-            ),
-            away_stats.get(
-                "hitting",
-                {},
-            ),
-            home_stats.get(
-                "pitching",
-                {},
-            ),
-            away_stats.get(
-                "pitching",
-                {},
-            ),
-            home_pitcher_stats,
-            away_pitcher_stats,
-            home_recent_strength,
-            away_recent_strength,
-        )
+    probabilities = calculate_probability(
+        home_stats.get(
+            "hitting",
+            {},
+        ),
+        away_stats.get(
+            "hitting",
+            {},
+        ),
+        home_stats.get(
+            "pitching",
+            {},
+        ),
+        away_stats.get(
+            "pitching",
+            {},
+        ),
+        home_pitcher_stats,
+        away_pitcher_stats,
+        home_strength,
+        away_strength,
     )
 
     # -------------------------------------------------
@@ -1312,36 +1206,45 @@ def analyze_mlb_game(
         matchup_data = {}
 
     # -------------------------------------------------
-    # 12. DATOS OFENSIVOS / PITCHEO
+    # 12. ESTADÍSTICAS
     # -------------------------------------------------
 
     home_hitting = (
         home_stats.get(
-            "hitting",
+            "hitting"
         )
         or {}
     )
 
     away_hitting = (
         away_stats.get(
-            "hitting",
+            "hitting"
         )
         or {}
     )
 
     home_pitching = (
         home_stats.get(
-            "pitching",
+            "pitching"
         )
         or {}
     )
 
     away_pitching = (
         away_stats.get(
-            "pitching",
+            "pitching"
         )
         or {}
     )
+
+    def stat_value(stats, *keys):
+
+        for key in keys:
+
+            if stats.get(key) is not None:
+                return stats.get(key)
+
+        return None
 
     # -------------------------------------------------
     # 13. FACTORES
@@ -1349,36 +1252,37 @@ def analyze_mlb_game(
 
     factors = {
 
-        "home_advantage": 0.025,
+        "home_advantage":
+            0.025,
 
         "home_team_ops":
             home_hitting.get(
-                "ops",
+                "ops"
             ),
 
         "away_team_ops":
             away_hitting.get(
-                "ops",
+                "ops"
             ),
 
         "home_team_era":
             home_pitching.get(
-                "era",
+                "era"
             ),
 
         "away_team_era":
             away_pitching.get(
-                "era",
+                "era"
             ),
 
         "home_pitcher_era":
             home_pitcher_stats.get(
-                "era",
+                "era"
             ),
 
         "away_pitcher_era":
             away_pitcher_stats.get(
-                "era",
+                "era"
             ),
 
         # -------------------------------------------------
@@ -1600,7 +1504,7 @@ def analyze_mlb_game(
         },
 
         # -------------------------------------------------
-        # PITCHERS PROBABLES
+        # PITCHERS
         # -------------------------------------------------
 
         "probable_pitchers": {
@@ -1613,14 +1517,7 @@ def analyze_mlb_game(
         },
 
         # -------------------------------------------------
-        # MATCHUP
-        # -------------------------------------------------
-
-        "matchup":
-            matchup_data,
-
-        # -------------------------------------------------
-        # RECENT STRENGTH
+        # RECENT STRENGTH 30
         # -------------------------------------------------
 
         "recent_strength": {
@@ -1629,36 +1526,31 @@ def analyze_mlb_game(
                 30,
 
             "home":
-                home_recent_strength,
+                home_strength,
 
             "away":
-                away_recent_strength,
-
-            "difference":
-                round(
-                    safe_float(
-                        home_recent_strength.get(
-                            "strength_score",
-                        ),
-                        0.0,
-                    )
-                    -
-                    safe_float(
-                        away_recent_strength.get(
-                            "strength_score",
-                        ),
-                        0.0,
-                    ),
-                    4,
-                ),
+                away_strength,
         },
+
+        # -------------------------------------------------
+        # MATCHUP
+        # -------------------------------------------------
+
+        "matchup":
+            matchup_data,
     }
 
-    if recent_strength_error:
+    if home_strength_error:
 
         factors[
-            "recent_strength_engine_error"
-        ] = recent_strength_error
+            "home_recent_strength_error"
+        ] = home_strength_error
+
+    if away_strength_error:
+
+        factors[
+            "away_recent_strength_error"
+        ] = away_strength_error
 
     if matchup_error:
 
@@ -1672,14 +1564,12 @@ def analyze_mlb_game(
 
     probability_difference = abs(
         probabilities["home"]
-        -
-        probabilities["away"]
+        - probabilities["away"]
     )
 
     confidence = clamp(
         0.50
-        +
-        probability_difference
+        + probability_difference
         * 0.75,
         0.50,
         0.90,
@@ -1693,8 +1583,7 @@ def analyze_mlb_game(
         home_name
         if (
             probabilities["home"]
-            >=
-            probabilities["away"]
+            >= probabilities["away"]
         )
         else away_name
     )
@@ -1703,61 +1592,52 @@ def analyze_mlb_game(
     # 16. CALIDAD DE DATOS
     # -------------------------------------------------
 
-    recent_quality_home = (
-        safe_int(
-            home_recent_strength.get(
-                "quality",
-            ),
-            0,
-        )
-    )
-
-    recent_quality_away = (
-        safe_int(
-            away_recent_strength.get(
-                "quality",
-            ),
-            0,
-        )
-    )
-
-    recent_quality = min(
-        recent_quality_home,
-        recent_quality_away,
-    )
-
-    # Calidad base de estadísticas de temporada.
-    base_quality = 100
-
-    # Si no tenemos pitcher probable,
-    # reducimos la calidad.
-    if not home_pitcher_stats:
-        base_quality -= 5
-
-    if not away_pitcher_stats:
-        base_quality -= 5
-
-    if recent_strength_error:
-        base_quality = min(
-            base_quality,
-            60,
-        )
-
-    data_quality = round(
-        (
-            base_quality * 0.70
-            +
-            recent_quality * 0.30
-        )
-    )
-
-    data_quality = max(
-        0,
-        min(
-            100,
-            data_quality,
+    home_games = safe_int(
+        home_strength.get(
+            "games"
         ),
+        0,
     )
+
+    away_games = safe_int(
+        away_strength.get(
+            "games"
+        ),
+        0,
+    )
+
+    minimum_recent_games = min(
+        home_games,
+        away_games,
+    )
+
+    if minimum_recent_games >= 30:
+
+        data_quality = 100
+
+    elif minimum_recent_games >= 25:
+
+        data_quality = 95
+
+    elif minimum_recent_games >= 20:
+
+        data_quality = 90
+
+    elif minimum_recent_games >= 15:
+
+        data_quality = 85
+
+    elif minimum_recent_games >= 10:
+
+        data_quality = 75
+
+    elif minimum_recent_games >= 5:
+
+        data_quality = 65
+
+    else:
+
+        data_quality = 50
 
     # -------------------------------------------------
     # 17. RESPUESTA FINAL
@@ -1773,7 +1653,7 @@ def analyze_mlb_game(
 
         "generated_at":
             datetime.now(
-                timezone.utc,
+                timezone.utc
             ).isoformat(),
 
         "game": {
