@@ -8,7 +8,6 @@ from pathlib import Path
 
 from analyzer import analyze_mlb_game
 from repository import (
-    save_prediction,
     save_analysis,
     settle_prediction,
     get_performance,
@@ -741,24 +740,19 @@ def create_experimental_prediction(
 ):
     try:
 
-        result = save_prediction(
-            event_id=event_id,
-            sport=sport,
-            league=league,
-            model_version="MLB-Baseline-0.1",
-            home_probability=0.53743,
-            away_probability=0.46257,
-            confidence="Inicial",
-            data_quality=72,
-            features={
-                "source": "experimental",
-            },
-        )
+        analysis = analyze_mlb_game(event_id)
+
+        if not analysis.get("success"):
+            return analysis
+
+        persistence = save_analysis(analysis)
 
         return {
             "success": True,
             "saved": True,
-            "data": result,
+            "model_version": CURRENT_MODEL_VERSION,
+            "analysis": analysis,
+            "persistence": persistence,
         }
 
     except Exception as exc:
