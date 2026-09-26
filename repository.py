@@ -139,6 +139,10 @@ def save_analysis(analysis):
         "generated_at"
     )
 
+    data_cutoff = analysis.get(
+        "data_cutoff"
+    ) or generated_at
+
     if not generated_at:
         generated_at = datetime.now(
             timezone.utc
@@ -178,7 +182,7 @@ def save_analysis(analysis):
 
         "created_at": generated_at,
 
-        "data_cutoff": generated_at,
+        "data_cutoff": data_cutoff,
 
         "home_probability": prediction.get(
             "home_probability"
