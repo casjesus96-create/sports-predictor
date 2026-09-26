@@ -162,11 +162,10 @@ def calculate_team_form(
 
     valid_games = wins + losses
 
-    if valid_games == 0:
-        valid_games = 1
+    divisor = max(valid_games, 1)
 
     return {
-        "games": total,
+        "games": valid_games,
         "wins": wins,
         "losses": losses,
 
@@ -190,7 +189,12 @@ def calculate_team_form(
         ),
 
         "runs_allowed_per_game": round(
-            runs_allowed / valid_games,
+            runs_allowed / divisor,
+            3
+        ),
+
+        "run_differential_per_game": round(
+            (runs_scored - runs_allowed) / divisor,
             3
         ),
 
