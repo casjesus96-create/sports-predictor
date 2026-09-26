@@ -291,16 +291,12 @@ function Performance({ performance }: { performance: any }) {
 
 function GameDetail({ game, prediction: p, onClose }: { game: Game; prediction: Prediction; onClose: () => void }) {
   const f = p?.factors || {};
-  const homeForm = f?.recent_form?.home || {};
-  const awayForm = f?.recent_form?.away || {};
-  const home = homeForm?.last_5 || {};
-  const away = awayForm?.last_5 || {};
-  const seasonHome = f?.team_season_stats?.home || {};
-  const seasonAway = f?.team_season_stats?.away || {};
-  const homeOff = Object.keys(teamStats(f, "home")).length ? teamStats(f, "home") : (seasonHome.hitting || {});
-  const awayOff = Object.keys(teamStats(f, "away")).length ? teamStats(f, "away") : (seasonAway.hitting || {});
-  const homePitch = Object.keys(pitchingStats(f, "home")).length ? pitchingStats(f, "home") : (seasonHome.pitching || {});
-  const awayPitch = Object.keys(pitchingStats(f, "away")).length ? pitchingStats(f, "away") : (seasonAway.pitching || {});
+  const home = f?.recent_form?.home?.last_5 || f?.recent_form?.home || null;
+  const away = f?.recent_form?.away?.last_5 || f?.recent_form?.away || null;
+  const homeOff = teamStats(f, "home");
+  const awayOff = teamStats(f, "away");
+  const homePitch = pitchingStats(f, "home");
+  const awayPitch = pitchingStats(f, "away");
   const matchup = f?.matchup || {};
   const h2h = matchup?.h2h || {};
   const homePitcher = matchup?.pitchers?.home || f?.probable_pitchers?.home || {};
@@ -363,8 +359,8 @@ function GameDetail({ game, prediction: p, onClose }: { game: Game; prediction: 
 
       <h3 className="detail-heading">Pitchers probables</h3>
       <div className="factor-grid">
-        <Factor label={`Local · ${homePitcher.name || homePitcher.pitcher_name || homePitcher.fullName || "Pitcher pendiente"}`} value={homePitcher.pitcher_hand ? `Mano ${homePitcher.pitcher_hand}` : "Mano —"} />
-        <Factor label={`Visitante · ${awayPitcher.name || awayPitcher.pitcher_name || awayPitcher.fullName || "Pitcher pendiente"}`} value={awayPitcher.pitcher_hand ? `Mano ${awayPitcher.pitcher_hand}` : "Mano —"} />
+        <Factor label={`Local · ${homePitcher.name || "Pitcher pendiente"}`} value={homePitcher.pitcher_hand ? `Mano ${homePitcher.pitcher_hand}` : "Mano —"} />
+        <Factor label={`Visitante · ${awayPitcher.name || "Pitcher pendiente"}`} value={awayPitcher.pitcher_hand ? `Mano ${awayPitcher.pitcher_hand}` : "Mano —"} />
       </div>
 
       <h3 className="detail-heading">Matchup vs mano del pitcher</h3>
@@ -379,10 +375,10 @@ function GameDetail({ game, prediction: p, onClose }: { game: Game; prediction: 
 
       <h3 className="detail-heading">Forma reciente</h3>
       <div className="factor-grid">
-        <Factor label="Local · últimos 5" value={homeForm?.last_5 ? `${homeForm.last_5.wins ?? 0}-${homeForm.last_5.losses ?? 0}` : "—"} />
-        <Factor label="Visitante · últimos 5" value={awayForm?.last_5 ? `${awayForm.last_5.wins ?? 0}-${awayForm.last_5.losses ?? 0}` : "—"} />
-        <Factor label="Dif. carreras local" value={homeForm?.last_5 ? num(homeForm.last_5.run_differential_per_game ?? (homeForm.last_5.run_differential / Math.max(homeForm.last_5.games, 1)), 2) : "—"} />
-        <Factor label="Dif. carreras visitante" value={awayForm?.last_5 ? num(awayForm.last_5.run_differential_per_game ?? (awayForm.last_5.run_differential / Math.max(awayForm.last_5.games, 1)), 2) : "—"} />
+        <Factor label="Local · últimos 5" value={home ? `${home.wins ?? 0}-${home.losses ?? 0}` : "—"} />
+        <Factor label="Visitante · últimos 5" value={away ? `${away.wins ?? 0}-${away.losses ?? 0}` : "—"} />
+        <Factor label="Dif. carreras local" value={home ? num(home.run_differential_per_game ?? (home.run_differential / Math.max(home.games, 1)), 2) : "—"} />
+        <Factor label="Dif. carreras visitante" value={away ? num(away.run_differential_per_game ?? (away.run_differential / Math.max(away.games, 1)), 2) : "—"} />
       </div>
 
       <h3 className="detail-heading">Enfrentamientos directos</h3>
