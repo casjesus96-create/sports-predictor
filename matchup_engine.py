@@ -4,26 +4,43 @@ from datetime import datetime, timezone
 from pitcher_engine import get_game_pitchers
 from repository import get_supabase_client
 from split_engine import get_team_batting_split
+from bullpen_engine import get_bullpen_matchup_data
 
 
 MLB_API = "https://statsapi.mlb.com/api/v1"
 
 
+# =========================================================
+# UTILIDADES
+# =========================================================
+
 def _safe_int(value):
     try:
         return int(value)
-    except (TypeError, ValueError):
+
+    except (
+        TypeError,
+        ValueError,
+    ):
         return None
 
 
 def _safe_float(value):
     try:
         return float(value)
-    except (TypeError, ValueError):
+
+    except (
+        TypeError,
+        ValueError,
+    ):
         return 0.0
 
 
-def _get_json(url, params=None, timeout=30):
+def _get_json(
+    url,
+    params=None,
+    timeout=30,
+):
     response = requests.get(
         url,
         params=params,
@@ -34,6 +51,10 @@ def _get_json(url, params=None, timeout=30):
 
     return response.json()
 
+
+# =========================================================
+# H2H
+# =========================================================
 
 def get_h2h_games(
     home_team_id,
@@ -50,10 +71,18 @@ def get_h2h_games(
 
     supabase = get_supabase_client()
 
-    home_team_id = _safe_int(home_team_id)
-    away_team_id = _safe_int(away_team_id)
+    home_team_id = _safe_int(
+        home_team_id
+    )
 
-    if home_team_id is None or away_team_id is None:
+    away_team_id = _safe_int(
+        away_team_id
+    )
+
+    if (
+        home_team_id is None
+        or away_team_id is None
+    ):
         return []
 
     query = (
@@ -108,8 +137,13 @@ def calculate_h2h(
         limit=limit,
     )
 
-    home_team_id = _safe_int(home_team_id)
-    away_team_id = _safe_int(away_team_id)
+    home_team_id = _safe_int(
+        home_team_id
+    )
+
+    away_team_id = _safe_int(
+        away_team_id
+    )
 
     home_wins = 0
     away_wins = 0
@@ -120,64 +154,137 @@ def calculate_h2h(
     valid_games = 0
 
     for game in games:
+
         home_id = _safe_int(
-            game.get("home_team_id")
+            game.get(
+                "home_team_id"
+            )
         )
 
         away_id = _safe_int(
-            game.get("away_team_id")
+            game.get(
+                "away_team_id"
+            )
         )
 
-        home_score = game.get("home_score")
-        away_score = game.get("away_score")
+        home_score = game.get(
+            "home_score"
+        )
 
-        if home_score is None or away_score is None:
+        away_score = game.get(
+            "away_score"
+        )
+
+        if (
+            home_score is None
+            or away_score is None
+        ):
             continue
 
-        home_score = _safe_int(home_score)
-        away_score = _safe_int(away_score)
+        home_score = _safe_int(
+            home_score
+        )
 
-        if home_score is None or away_score is None:
+        away_score = _safe_int(
+            away_score
+        )
+
+        if (
+            home_score is None
+            or away_score is None
+        ):
+            continue
+
+        if (
+            home_id != home_team_id
+            and home_id != away_team_id
+        ):
             continue
 
         valid_games += 1
 
         if home_id == home_team_id:
-            home_team_score = home_score
-            away_team_score = away_score
+
+            home_team_score = (
+                home_score
+            )
+
+            away_team_score = (
+                away_score
+            )
 
         elif home_id == away_team_id:
-            home_team_score = away_score
-            away_team_score = home_score
+
+            home_team_score = (
+                away_score
+            )
+
+            away_team_score = (
+                home_score
+            )
 
         else:
             continue
 
-        home_runs += home_team_score
-        away_runs += away_team_score
+        home_runs += (
+            home_team_score
+        )
 
-        if home_team_score > away_team_score:
+        away_runs += (
+            away_team_score
+        )
+
+        if (
+            home_team_score
+            > away_team_score
+        ):
+
             home_wins += 1
-        elif away_team_score > home_team_score:
+
+        elif (
+            away_team_score
+            > home_team_score
+        ):
+
             away_wins += 1
 
     run_differential = (
-        home_runs - away_runs
+        home_runs
+        - away_runs
     )
 
     return {
-        "available": valid_games > 0,
-        "games": valid_games,
-        "home_team_wins": home_wins,
-        "away_team_wins": away_wins,
-        "home_team_runs": home_runs,
-        "away_team_runs": away_runs,
-        "home_team_run_differential": run_differential,
-        "generated_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        "available":
+            valid_games > 0,
+
+        "games":
+            valid_games,
+
+        "home_team_wins":
+            home_wins,
+
+        "away_team_wins":
+            away_wins,
+
+        "home_team_runs":
+            home_runs,
+
+        "away_team_runs":
+            away_runs,
+
+        "home_team_run_differential":
+            run_differential,
+
+        "generated_at":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
     }
 
+
+# =========================================================
+# CONTEXTO GENERAL DEL EQUIPO
+# =========================================================
 
 def get_team_general_context(
     team_id,
@@ -188,12 +295,14 @@ def get_team_general_context(
     Obtiene contexto histórico general del equipo.
     """
 
-    games = (
-        get_team_history(
-            team_id=team_id,
-            before_date=before_date,
-            limit=limit,
-        )
+    games = get_team_history(
+        team_id=team_id,
+        before_date=before_date,
+        limit=limit,
+    )
+
+    team_id = _safe_int(
+        team_id
     )
 
     wins = 0
@@ -203,20 +312,29 @@ def get_team_general_context(
     runs_allowed = 0
 
     for game in games:
+
         home_id = _safe_int(
-            game.get("home_team_id")
+            game.get(
+                "home_team_id"
+            )
         )
 
         away_id = _safe_int(
-            game.get("away_team_id")
+            game.get(
+                "away_team_id"
+            )
         )
 
         home_score = _safe_int(
-            game.get("home_score")
+            game.get(
+                "home_score"
+            )
         )
 
         away_score = _safe_int(
-            game.get("away_score")
+            game.get(
+                "away_score"
+            )
         )
 
         if (
@@ -226,48 +344,100 @@ def get_team_general_context(
             continue
 
         if team_id == home_id:
-            team_score = home_score
-            opponent_score = away_score
+
+            team_score = (
+                home_score
+            )
+
+            opponent_score = (
+                away_score
+            )
 
         elif team_id == away_id:
-            team_score = away_score
-            opponent_score = home_score
+
+            team_score = (
+                away_score
+            )
+
+            opponent_score = (
+                home_score
+            )
 
         else:
             continue
 
-        runs_scored += team_score
-        runs_allowed += opponent_score
+        runs_scored += (
+            team_score
+        )
 
-        if team_score > opponent_score:
+        runs_allowed += (
+            opponent_score
+        )
+
+        if (
+            team_score
+            > opponent_score
+        ):
+
             wins += 1
+
         else:
+
             losses += 1
 
-    games_count = wins + losses
+    games_count = (
+        wins
+        + losses
+    )
 
     return {
-        "available": games_count > 0,
-        "games": games_count,
-        "wins": wins,
-        "losses": losses,
-        "win_rate": round(
-            wins / games_count,
-            4,
-        ) if games_count else 0,
-        "runs_scored": runs_scored,
-        "runs_allowed": runs_allowed,
-        "run_differential": (
-            runs_scored - runs_allowed
-        ),
-        "runs_scored_per_game": round(
-            runs_scored / games_count,
-            3,
-        ) if games_count else 0,
-        "runs_allowed_per_game": round(
-            runs_allowed / games_count,
-            3,
-        ) if games_count else 0,
+        "available":
+            games_count > 0,
+
+        "games":
+            games_count,
+
+        "wins":
+            wins,
+
+        "losses":
+            losses,
+
+        "win_rate":
+            round(
+                wins / games_count,
+                4,
+            )
+            if games_count
+            else 0,
+
+        "runs_scored":
+            runs_scored,
+
+        "runs_allowed":
+            runs_allowed,
+
+        "run_differential":
+            (
+                runs_scored
+                - runs_allowed
+            ),
+
+        "runs_scored_per_game":
+            round(
+                runs_scored / games_count,
+                3,
+            )
+            if games_count
+            else 0,
+
+        "runs_allowed_per_game":
+            round(
+                runs_allowed / games_count,
+                3,
+            )
+            if games_count
+            else 0,
     }
 
 
@@ -283,7 +453,9 @@ def get_team_history(
 
     supabase = get_supabase_client()
 
-    team_id = _safe_int(team_id)
+    team_id = _safe_int(
+        team_id
+    )
 
     if team_id is None:
         return []
@@ -292,7 +464,10 @@ def get_team_history(
         supabase
         .table("mlb_game_history")
         .select("*")
-        .eq("status", "Final")
+        .eq(
+            "status",
+            "Final",
+        )
         .or_(
             f"home_team_id.eq.{team_id},"
             f"away_team_id.eq.{team_id}"
@@ -315,6 +490,10 @@ def get_team_history(
     return response.data or []
 
 
+# =========================================================
+# SPLITS OFENSIVOS
+# =========================================================
+
 def get_matchup_batting_splits(
     home_team_id,
     away_team_id,
@@ -334,8 +513,13 @@ def get_matchup_batting_splits(
         batea contra pitcher local.
     """
 
-    home_team_id = _safe_int(home_team_id)
-    away_team_id = _safe_int(away_team_id)
+    home_team_id = _safe_int(
+        home_team_id
+    )
+
+    away_team_id = _safe_int(
+        away_team_id
+    )
 
     home_pitcher_hand = str(
         home_pitcher_hand or ""
@@ -348,18 +532,24 @@ def get_matchup_batting_splits(
     home_vs_away_pitcher = {
         "available": False,
         "reason": (
-            "No se conoce la mano del pitcher visitante."
+            "No se conoce la mano "
+            "del pitcher visitante."
         ),
     }
 
     away_vs_home_pitcher = {
         "available": False,
         "reason": (
-            "No se conoce la mano del pitcher local."
+            "No se conoce la mano "
+            "del pitcher local."
         ),
     }
 
-    if away_pitcher_hand in ("R", "L"):
+    if away_pitcher_hand in (
+        "R",
+        "L",
+    ):
+
         home_vs_away_pitcher = (
             get_team_batting_split(
                 team_id=home_team_id,
@@ -369,7 +559,11 @@ def get_matchup_batting_splits(
             )
         )
 
-    if home_pitcher_hand in ("R", "L"):
+    if home_pitcher_hand in (
+        "R",
+        "L",
+    ):
+
         away_vs_home_pitcher = (
             get_team_batting_split(
                 team_id=away_team_id,
@@ -381,20 +575,37 @@ def get_matchup_batting_splits(
 
     return {
         "home_team": {
-            "team_id": home_team_id,
-            "pitcher_faced": away_pitcher_hand,
-            "batting_split": home_vs_away_pitcher,
+            "team_id":
+                home_team_id,
+
+            "pitcher_faced":
+                away_pitcher_hand,
+
+            "batting_split":
+                home_vs_away_pitcher,
         },
+
         "away_team": {
-            "team_id": away_team_id,
-            "pitcher_faced": home_pitcher_hand,
-            "batting_split": away_vs_home_pitcher,
+            "team_id":
+                away_team_id,
+
+            "pitcher_faced":
+                home_pitcher_hand,
+
+            "batting_split":
+                away_vs_home_pitcher,
         },
-        "generated_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
+
+        "generated_at":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
     }
 
+
+# =========================================================
+# MATCHUP PRINCIPAL
+# =========================================================
 
 def get_matchup_data(
     game_id,
@@ -412,57 +623,108 @@ def get_matchup_data(
     - H2H
     - Contexto general de cada equipo
     - Splits ofensivos contra la mano del pitcher rival
+    - Disponibilidad/carga reciente del bullpen
+
+    IMPORTANTE:
+
+    El bullpen se incorpora como información adicional.
+    Este módulo NO modifica ninguna probabilidad.
     """
 
-    game_id = _safe_int(game_id)
-    home_team_id = _safe_int(home_team_id)
-    away_team_id = _safe_int(away_team_id)
+    game_id = _safe_int(
+        game_id
+    )
+
+    home_team_id = _safe_int(
+        home_team_id
+    )
+
+    away_team_id = _safe_int(
+        away_team_id
+    )
 
     if game_id is None:
-        raise ValueError("game_id inválido.")
+        raise ValueError(
+            "game_id inválido."
+        )
 
     if home_team_id is None:
-        raise ValueError("home_team_id inválido.")
+        raise ValueError(
+            "home_team_id inválido."
+        )
 
     if away_team_id is None:
-        raise ValueError("away_team_id inválido.")
+        raise ValueError(
+            "away_team_id inválido."
+        )
+
+    # -----------------------------------------------------
+    # TEMPORADA
+    # -----------------------------------------------------
 
     if season is None:
+
         if before_date:
+
             try:
                 season = int(
-                    str(before_date)[:4]
+                    str(
+                        before_date
+                    )[:4]
                 )
-            except (TypeError, ValueError):
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+
                 season = datetime.now(
                     timezone.utc
                 ).year
+
         else:
+
             season = datetime.now(
                 timezone.utc
             ).year
+
+    # -----------------------------------------------------
+    # PITCHERS
+    # -----------------------------------------------------
 
     pitchers = get_game_pitchers(
         game_id
     )
 
     home_pitcher = (
-        pitchers.get("home_pitcher")
+        pitchers.get(
+            "home_pitcher"
+        )
         or {}
     )
 
     away_pitcher = (
-        pitchers.get("away_pitcher")
+        pitchers.get(
+            "away_pitcher"
+        )
         or {}
     )
 
     home_pitcher_hand = (
-        home_pitcher.get("pitcher_hand")
+        home_pitcher.get(
+            "pitcher_hand"
+        )
     )
 
     away_pitcher_hand = (
-        away_pitcher.get("pitcher_hand")
+        away_pitcher.get(
+            "pitcher_hand"
+        )
     )
+
+    # -----------------------------------------------------
+    # H2H
+    # -----------------------------------------------------
 
     h2h = calculate_h2h(
         home_team_id=home_team_id,
@@ -471,17 +733,29 @@ def get_matchup_data(
         limit=20,
     )
 
-    home_context = get_team_general_context(
-        team_id=home_team_id,
-        before_date=before_date,
-        limit=200,
+    # -----------------------------------------------------
+    # CONTEXTO GENERAL
+    # -----------------------------------------------------
+
+    home_context = (
+        get_team_general_context(
+            team_id=home_team_id,
+            before_date=before_date,
+            limit=200,
+        )
     )
 
-    away_context = get_team_general_context(
-        team_id=away_team_id,
-        before_date=before_date,
-        limit=200,
+    away_context = (
+        get_team_general_context(
+            team_id=away_team_id,
+            before_date=before_date,
+            limit=200,
+        )
     )
+
+    # -----------------------------------------------------
+    # SPLITS OFENSIVOS
+    # -----------------------------------------------------
 
     batting_splits = (
         get_matchup_batting_splits(
@@ -494,33 +768,148 @@ def get_matchup_data(
         )
     )
 
+    # -----------------------------------------------------
+    # BULLPEN
+    # -----------------------------------------------------
+    #
+    # El bullpen recibe exactamente el mismo
+    # before_date utilizado por el matchup.
+    #
+    # Por lo tanto, el motor solamente puede utilizar
+    # partidos anteriores al encuentro analizado.
+    #
+    # NO se modifica ninguna probabilidad aquí.
+    # -----------------------------------------------------
+
+    bullpen_error = None
+
+    try:
+
+        bullpen_data = (
+            get_bullpen_matchup_data(
+                home_team_id=home_team_id,
+                away_team_id=away_team_id,
+                before_datetime=before_date,
+                season=season,
+            )
+        )
+
+    except Exception as exc:
+
+        bullpen_error = str(
+            exc
+        )
+
+        bullpen_data = {
+            "available": False,
+
+            "home": {
+                "team_id":
+                    home_team_id,
+
+                "availability_score":
+                    None,
+
+                "confidence":
+                    0.0,
+            },
+
+            "away": {
+                "team_id":
+                    away_team_id,
+
+                "availability_score":
+                    None,
+
+                "confidence":
+                    0.0,
+            },
+
+            "difference":
+                0.0,
+
+            "signal":
+                0.0,
+
+            "confidence":
+                0.0,
+
+            "reason": (
+                "No se pudo obtener "
+                "la información del bullpen."
+            ),
+        }
+
+    if bullpen_error:
+        bullpen_data[
+            "error"
+        ] = bullpen_error
+
+    # -----------------------------------------------------
+    # RESPUESTA
+    # -----------------------------------------------------
+
     return {
-        "available": True,
-        "game_id": game_id,
-        "season": season,
-        "home_team_id": home_team_id,
-        "away_team_id": away_team_id,
+        "available":
+            True,
+
+        "game_id":
+            game_id,
+
+        "season":
+            season,
+
+        "home_team_id":
+            home_team_id,
+
+        "away_team_id":
+            away_team_id,
 
         "pitchers": {
-            "home": home_pitcher,
-            "away": away_pitcher,
+            "home":
+                home_pitcher,
+
+            "away":
+                away_pitcher,
         },
 
         "pitcher_hands": {
-            "home": home_pitcher_hand,
-            "away": away_pitcher_hand,
+            "home":
+                home_pitcher_hand,
+
+            "away":
+                away_pitcher_hand,
         },
 
-        "h2h": h2h,
+        "h2h":
+            h2h,
 
         "general_context": {
-            "home": home_context,
-            "away": away_context,
+            "home":
+                home_context,
+
+            "away":
+                away_context,
         },
 
-        "batting_splits": batting_splits,
+        "batting_splits":
+            batting_splits,
 
-        "generated_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        # =================================================
+        # NUEVO BLOQUE
+        # =================================================
+        #
+        # Información del bullpen disponible para
+        # analyzer.py y para una futura calibración.
+        #
+        # Todavía no modifica probabilidades.
+        # =================================================
+
+        "bullpen":
+            bullpen_data,
+
+        "generated_at":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
     }
