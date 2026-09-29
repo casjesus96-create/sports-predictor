@@ -98,8 +98,10 @@ def get_team_season_stats(
     season=2026
 ):
     """
-    Obtiene por separado las estadísticas de temporada
-    de bateo y pitcheo del equipo.
+    Obtiene por separado las estadísticas de temporada de bateo
+    y pitcheo del equipo. Separar las consultas evita perder uno
+    de los grupos cuando MLB Stats API no devuelve correctamente
+    la respuesta combinada.
     """
 
     team_id = int(team_id)
@@ -111,7 +113,6 @@ def get_team_season_stats(
     }
 
     for group in ("hitting", "pitching"):
-
         url = f"{MLB_API}/teams/{team_id}/stats"
 
         params = {
@@ -126,19 +127,12 @@ def get_team_season_stats(
         )
 
         for stat_group in data.get("stats") or []:
-
-            splits = (
-                stat_group.get("splits")
-                or []
-            )
+            splits = stat_group.get("splits") or []
 
             if not splits:
                 continue
 
-            stats = (
-                splits[0].get("stat")
-                or {}
-            )
+            stats = splits[0].get("stat") or {}
 
             if stats:
                 result[group] = stats
@@ -156,8 +150,7 @@ def get_player_pitching_stats(
     season=2026
 ):
     """
-    Obtiene estadísticas de temporada
-    del pitcher probable.
+    Obtiene estadísticas de temporada del pitcher probable.
     """
 
     if not player_id:
@@ -166,10 +159,7 @@ def get_player_pitching_stats(
     player_id = int(player_id)
     season = int(season)
 
-    url = (
-        f"{MLB_API}/people/"
-        f"{player_id}/stats"
-    )
+    url = f"{MLB_API}/people/{player_id}/stats"
 
     params = {
         "stats": "season",
@@ -183,19 +173,10 @@ def get_player_pitching_stats(
     )
 
     for stat_group in data.get("stats") or []:
-
-        splits = (
-            stat_group.get("splits")
-            or []
-        )
+        splits = stat_group.get("splits") or []
 
         if splits:
-
-            return (
-                splits[0]
-                .get("stat")
-                or {}
-            )
+            return splits[0].get("stat") or {}
 
     return {}
 
@@ -211,6 +192,7 @@ def calculate_recent_form_score(
     Calcula una señal de forma reciente.
 
     Peso:
+
     últimos 5  = 50%
     últimos 10 = 30%
     últimos 15 = 20%
@@ -378,10 +360,6 @@ def calculate_probability(
     4. Ventaja de local
     5. Forma reciente
     6. Diferencial de carreras
-
-    IMPORTANTE:
-    El bullpen todavía NO modifica esta probabilidad.
-    Se integra primero como factor de análisis y validación.
     """
 
     home_score = 0.50
@@ -556,11 +534,9 @@ def analyze_mlb_game(
     game_id
 ):
     """
-    Analiza un partido MLB utilizando únicamente
-    información disponible antes del comienzo.
-
-    Modelo oficial:
-        2.0.0-matchup
+    Analiza un partido MLB
+    utilizando únicamente información
+    disponible antes del comienzo.
     """
 
     # -------------------------------------------------
@@ -830,7 +806,11 @@ def analyze_mlb_game(
     )
 
     # -------------------------------------------------
-    # 11. MATCHUP 2.0
+    # 11. FACTORES
+    # -------------------------------------------------
+
+    # -------------------------------------------------
+    # 11B. MATCHUP 2.0
     # -------------------------------------------------
 
     matchup_data = {}
@@ -855,15 +835,8 @@ def analyze_mlb_game(
 
         matchup_data = {}
 
-    # =================================================
-    # 11B. PITCHERS CANÓNICOS DEL MATCHUP
-    # =================================================
-
-    # El matchup_engine es la fuente canónica de
-    # pitchers y manos.
-    #
-    # No dependemos únicamente de
-    # gameData.probablePitchers.
+    # El matchup_engine es la fuente canónica de pitchers y manos.
+    # No dependemos únicamente de gameData.probablePitchers del feed.
 
     matchup_pitchers = (
         matchup_data.get(
@@ -975,9 +948,8 @@ def analyze_mlb_game(
             )
         )
 
-    # =================================================
-    # 11C. ESTADÍSTICAS CANÓNICAS DE PITCHERS
-    # =================================================
+    # Volvemos a obtener las estadísticas ahora que conocemos
+    # los IDs canónicos de los pitchers del matchup.
 
     home_pitcher_stats = (
         get_player_pitching_stats(
@@ -992,37 +964,6 @@ def analyze_mlb_game(
             season=2026,
         )
     )
-
-    # =================================================
-    # 11D. BULLPEN
-    # =================================================
-
-    bullpen_data = {}
-    bullpen_error = None
-
-    try:
-
-        bullpen_data = (
-            get_bullpen_matchup_data(
-                home_team_id=home_id,
-                away_team_id=away_id,
-                before_datetime=datetime_value,
-                season=2026,
-            )
-            or {}
-        )
-
-    except Exception as exc:
-
-        bullpen_error = str(
-            exc
-        )
-
-        bullpen_data = {}
-
-    # -------------------------------------------------
-    # ESTADÍSTICAS NORMALIZADAS
-    # -------------------------------------------------
 
     home_hitting = (
         home_stats.get(
@@ -1064,10 +1005,6 @@ def analyze_mlb_game(
                 return stats.get(key)
 
         return None
-
-    # =================================================
-    # 11E. FACTORES
-    # =================================================
 
     factors = {
 
@@ -1391,27 +1328,14 @@ def analyze_mlb_game(
         },
 
         # =================================================
-        # MATCHUP ENGINE
+        # MATCHUP
         # =================================================
 
         "matchup":
             matchup_data,
 
         # =================================================
-        # BULLPEN ENGINE
-        # =================================================
-        #
-        # IMPORTANTE:
-        # Se expone como factor de análisis.
-        #
-        # NO modifica todavía la probabilidad.
-        #
-
-        "bullpen":
-            bullpen_data,
-
-        # =================================================
-        # ESTADÍSTICAS DE EQUIPO
+        # ESTADÍSTICAS DE TEMPORADA
         # =================================================
 
         "team_season_stats": {
@@ -1475,10 +1399,6 @@ def analyze_mlb_game(
         },
     }
 
-    # =================================================
-    # ERRORES DE MOTORES
-    # =================================================
-
     if form_error:
 
         factors[
@@ -1491,15 +1411,105 @@ def analyze_mlb_game(
             "matchup_engine_error"
         ] = matchup_error
 
+    # -------------------------------------------------
+    # 11C. BULLPEN
+    # -------------------------------------------------
+    #
+    # El bullpen se calcula como un factor informativo
+    # independiente.
+    #
+    # IMPORTANTE:
+    #
+    # En esta etapa NO modifica todavía las probabilidades
+    # del modelo.
+    #
+    # Primero almacenamos y validamos la señal con datos
+    # reales antes de darle peso predictivo.
+    #
+    # Esto evita crear una segunda lógica de proyección
+    # o alterar el modelo MLB 2.0.0-matchup sin calibración.
+    # -------------------------------------------------
+
+    bullpen_error = None
+
+    bullpen_data = {}
+
+    try:
+
+        bullpen_data = (
+            get_bullpen_matchup_data(
+                home_team_id=home_id,
+                away_team_id=away_id,
+                before_datetime=datetime_value,
+                season=2026,
+            )
+            or {}
+        )
+
+    except Exception as exc:
+
+        bullpen_error = str(
+            exc
+        )
+
+        bullpen_data = {
+
+            "available": False,
+
+            "home": {
+
+                "team_id":
+                    home_id,
+
+                "availability_score":
+                    None,
+
+                "confidence":
+                    0.0,
+            },
+
+            "away": {
+
+                "team_id":
+                    away_id,
+
+                "availability_score":
+                    None,
+
+                "confidence":
+                    0.0,
+            },
+
+            "difference":
+                0.0,
+
+            "signal":
+                0.0,
+
+            "confidence":
+                0.0,
+
+            "error":
+                bullpen_error,
+        }
+
+    # -------------------------------------------------
+    # GUARDAR BULLPEN DENTRO DE FACTORS
+    # -------------------------------------------------
+
+    factors[
+        "bullpen"
+    ] = bullpen_data
+
     if bullpen_error:
 
         factors[
             "bullpen_engine_error"
         ] = bullpen_error
 
-    # =================================================
+    # -------------------------------------------------
     # 12. CONFIANZA
-    # =================================================
+    # -------------------------------------------------
 
     probability_difference = abs(
         probabilities["home"]
@@ -1514,9 +1524,9 @@ def analyze_mlb_game(
         0.90
     )
 
-    # =================================================
+    # -------------------------------------------------
     # 13. GANADOR PROYECTADO
-    # =================================================
+    # -------------------------------------------------
 
     predicted_team = (
         home_name
@@ -1527,9 +1537,9 @@ def analyze_mlb_game(
         else away_name
     )
 
-    # =================================================
+    # -------------------------------------------------
     # 14. CALIDAD DE DATOS
-    # =================================================
+    # -------------------------------------------------
 
     home_form_games = (
         home_form
@@ -1587,9 +1597,9 @@ def analyze_mlb_game(
             70
         )
 
-    # =================================================
+    # -------------------------------------------------
     # 15. RESPUESTA FINAL
-    # =================================================
+    # -------------------------------------------------
 
     return {
 
