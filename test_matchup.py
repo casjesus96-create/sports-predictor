@@ -1,168 +1,60 @@
-from datetime import datetime, timezone
+import os
 
-from matchup_engine import (
-    calculate_h2h,
-    get_matchup_data,
-)
+from matchup_engine import calculate_h2h, get_matchup_data
 
 
-# =========================================================
-# CONFIGURACIÓN DE PRUEBA
-# =========================================================
-
-# Yankees
-HOME_TEAM_ID = 147
-
-# Rays
-AWAY_TEAM_ID = 139
-
-# Fecha del partido que estamos analizando.
-#
-# MUY IMPORTANTE:
-# Todo lo utilizado por H2H debe ser anterior
-# a esta fecha.
+HOME_TEAM_ID = 147  # New York Yankees
+AWAY_TEAM_ID = 139  # Tampa Bay Rays
 BEFORE_DATE = "2026-09-22T00:00:00Z"
 
 
-# =========================================================
-# PRUEBA H2H
-# =========================================================
-
-print("=" * 60)
-print("PRUEBA H2H")
-print("=" * 60)
-
-try:
-
-    h2h = calculate_h2h(
+def test_h2h_shape():
+    result = calculate_h2h(
         home_team_id=HOME_TEAM_ID,
         away_team_id=AWAY_TEAM_ID,
         before_date=BEFORE_DATE,
         limit=10,
     )
 
-    print(
-        "Partidos H2H encontrados:",
-        h2h["games"]
-    )
-
-    print(
-        "Victorias Yankees:",
-        h2h["home_team"]["wins"]
-    )
-
-    print(
-        "Derrotas Yankees:",
-        h2h["home_team"]["losses"]
-    )
-
-    print(
-        "Win rate Yankees:",
-        h2h["home_team"]["win_rate"]
-    )
-
-    print(
-        "Victorias Rays:",
-        h2h["away_team"]["wins"]
-    )
-
-    print(
-        "Derrotas Rays:",
-        h2h["away_team"]["losses"]
-    )
-
-    print(
-        "Win rate Rays:",
-        h2h["away_team"]["win_rate"]
-    )
-
-    print(
-        "Carreras Yankees:",
-        h2h["home_team"]["runs_scored"]
-    )
-
-    print(
-        "Carreras Rays:",
-        h2h["away_team"]["runs_scored"]
-    )
-
-    print(
-        "Diferencia de carreras Yankees:",
-        h2h["run_differential"]["home"]
-    )
-
-    print(
-        "Diferencia de carreras Rays:",
-        h2h["run_differential"]["away"]
-    )
-
-except Exception as exc:
-
-    print(
-        "ERROR H2H:",
-        str(exc)
-    )
+    assert isinstance(result, dict)
+    assert "available" in result
+    assert "games" in result
+    assert "home_team_wins" in result
+    assert "away_team_wins" in result
+    assert "home_team_runs" in result
+    assert "away_team_runs" in result
+    assert "home_team_run_differential" in result
+    assert isinstance(result["games"], int)
 
 
-# =========================================================
-# PRUEBA MATCHUP COMPLETO
-# =========================================================
-
-print()
-print("=" * 60)
-print("PRUEBA MATCHUP")
-print("=" * 60)
-
-try:
-
-    matchup = get_matchup_data(
+def test_matchup_shape():
+    result = get_matchup_data(
+        game_id=0,
         home_team_id=HOME_TEAM_ID,
         away_team_id=AWAY_TEAM_ID,
         before_date=BEFORE_DATE,
-        pitcher_hand_home="R",
-        pitcher_hand_away="R",
+        season=2026,
+        game_type="R",
     )
 
-    print()
-
-    print(
-        "H2H:",
-        matchup["h2h"]
-    )
-
-    print()
-
-    print(
-        "Matchup de pitchers:"
-    )
-
-    print(
-        matchup["pitcher_matchup"]
-    )
-
-except Exception as exc:
-
-    print(
-        "ERROR MATCHUP:",
-        str(exc)
-    )
+    assert result["available"] is True
+    assert result["home_team_id"] == HOME_TEAM_ID
+    assert result["away_team_id"] == AWAY_TEAM_ID
+    assert "pitchers" in result
+    assert "pitcher_hands" in result
+    assert "h2h" in result
+    assert "general_context" in result
+    assert "batting_splits" in result
+    assert "bullpen" in result
 
 
-# =========================================================
-# FIN
-# =========================================================
+def test_only_official_model_is_declared():
+    from prediction import MODEL_VERSION
 
-print()
-print("=" * 60)
-print("PRUEBA FINALIZADA")
-print("=" * 60)
-print(
-    "Fecha límite utilizada:",
-    BEFORE_DATE
-)
-print(
-    "Hora de ejecución:",
-    datetime.now(
-        timezone.utc
-    ).isoformat()
-)
+    assert MODEL_VERSION == "2.0.0-matchup"
+
+
+if __name__ == "__main__":
+    import pytest
+
+    raise SystemExit(pytest.main([os.path.abspath(__file__), "-q"]))
