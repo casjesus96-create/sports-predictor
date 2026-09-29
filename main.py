@@ -8,6 +8,7 @@ from pathlib import Path
 
 from analyzer import analyze_mlb_game
 from repository import (
+    save_prediction,
     save_analysis,
     settle_prediction,
     get_performance,
@@ -725,41 +726,6 @@ def analyze_mlb_day(
                 ),
                 "details": str(exc),
             },
-        )
-
-
-# =========================================================
-# EXPERIMENTAL PREDICTION
-# =========================================================
-
-@app.post("/api/v1/predictions/experimental")
-def create_experimental_prediction(
-    event_id: str,
-    sport: str = "baseball",
-    league: str = "MLB",
-):
-    try:
-
-        analysis = analyze_mlb_game(event_id)
-
-        if not analysis.get("success"):
-            return analysis
-
-        persistence = save_analysis(analysis)
-
-        return {
-            "success": True,
-            "saved": True,
-            "model_version": CURRENT_MODEL_VERSION,
-            "analysis": analysis,
-            "persistence": persistence,
-        }
-
-    except Exception as exc:
-
-        raise HTTPException(
-            status_code=500,
-            detail=str(exc),
         )
 
 
