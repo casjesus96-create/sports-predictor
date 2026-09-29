@@ -9,6 +9,7 @@ const MODEL_VERSION = "2.0.0-matchup";
 function localDate() {
   const d = new Date();
   const offset = d.getTimezoneOffset();
+
   return new Date(d.getTime() - offset * 60000)
     .toISOString()
     .slice(0, 10);
@@ -16,6 +17,7 @@ function localDate() {
 
 function pct(value: any) {
   const n = Number(value);
+
   return Number.isFinite(n)
     ? `${(n * 100).toFixed(1)}%`
     : "—";
@@ -23,6 +25,7 @@ function pct(value: any) {
 
 function num(value: any, digits = 1) {
   const n = Number(value);
+
   return Number.isFinite(n)
     ? n.toFixed(digits)
     : "—";
@@ -72,7 +75,7 @@ function findPrediction(
 ) {
   return predictions.find(
     (p) =>
-      String(p.event_id) ===
+      String(p?.event_id) ===
       String(eventId)
   );
 }
@@ -139,31 +142,99 @@ function pitchingStats(
 
 /*
  * =========================================================
- * BULLPEN
+ * BULLPEN — EXTRACCIÓN ROBUSTA
  * =========================================================
  *
- * El backend actual entrega el bullpen dentro de factors.
+ * El frontend acepta varias estructuras posibles porque
+ * durante la integración podemos encontrar snapshots
+ * antiguos o respuestas con nombres ligeramente distintos.
  *
- * Esta función soporta:
+ * Estructuras soportadas:
  *
- * factors.bullpen.home
- * factors.bullpen.away
+ * factors.bullpen
+ * factors.bullpen_matchup
+ * factors.analysis.bullpen
+ * factors.analysis.bullpen_matchup
+ * prediction.bullpen
+ * prediction.bullpen_matchup
+ * prediction.analysis.bullpen
+ * prediction.analysis.bullpen_matchup
  *
- * y además tolera estructuras alternativas que hayan quedado
- * almacenadas en snapshots anteriores.
+ * También soporta:
+ *
+ * home / away
+ * home_team / away_team
  */
 
+function getBullpenRoot(
+  factors: any,
+  prediction: any
+) {
+  const candidates = [
+    factors?.bullpen,
+    factors?.bullpen_matchup,
+
+    factors?.analysis?.bullpen,
+    factors?.analysis?.bullpen_matchup,
+
+    factors?.matchup?.bullpen,
+    factors?.matchup?.bullpen_matchup,
+
+    prediction?.bullpen,
+    prediction?.bullpen_matchup,
+
+    prediction?.analysis?.bullpen,
+    prediction?.analysis?.bullpen_matchup,
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      candidate &&
+      typeof candidate === "object" &&
+      !Array.isArray(candidate)
+    ) {
+      return candidate;
+    }
+  }
+
+  /*
+   * Algunas estructuras pueden guardar directamente
+   * home_team / away_team en factors.
+   */
+
+  if (
+    factors?.home_team &&
+    factors?.away_team &&
+    (
+      factors?.home_team?.availability_score !== undefined ||
+      factors?.away_team?.availability_score !== undefined
+    )
+  ) {
+    return {
+      home_team:
+        factors.home_team,
+
+      away_team:
+        factors.away_team,
+    };
+  }
+
+  return {};
+}
+
 function bullpenStatus(
-  f: any,
+  factors: any,
+  prediction: any,
   side: "home" | "away"
 ) {
-  const bullpen =
-    f?.bullpen ||
-    f?.bullpen_matchup ||
-    {};
+  const root =
+    getBullpenRoot(
+      factors,
+      prediction
+    );
 
   const direct =
-    bullpen?.[side];
+    root?.[side];
 
   if (
     direct &&
@@ -172,24 +243,36 @@ function bullpenStatus(
     return direct;
   }
 
-  /*
-   * Compatibilidad adicional:
-   * algunas respuestas pueden guardar los equipos
-   * dentro de home / away con otra estructura.
-   */
-
   if (
     side === "home" &&
-    bullpen?.home_team
+    root?.home_team
   ) {
-    return bullpen.home_team;
+    return root.home_team;
   }
 
   if (
     side === "away" &&
-    bullpen?.away_team
+    root?.away_team
   ) {
-    return bullpen.away_team;
+    return root.away_team;
+  }
+
+  /*
+   * Compatibilidad con nombres alternativos.
+   */
+
+  if (
+    side === "home" &&
+    root?.local
+  ) {
+    return root.local;
+  }
+
+  if (
+    side === "away" &&
+    root?.visitor
+  ) {
+    return root.visitor;
   }
 
   return {};
@@ -197,16 +280,159 @@ function bullpenStatus(
 
 function bullpenUsage(
   bullpen: any,
-  window: "usage_3_days" | "usage_5_days"
+  window:
+    | "usage_3_days"
+    | "usage_5_days"
+) {
+  if (!bullpen) {
+    return {};
+  }
+
+  const candidates =
+    window === "usage_3_days"
+      ? [
+          bullpen?.usage_3_days,
+          bullpen?.last_3_days,
+          bullpen?.usage_3,
+          bullpen?.recent_3_days,
+          bullpen?.recent_3,
+          bullpen?.load_3_days,
+        ]
+      : [
+          bullpen?.usage_5_days,
+          bullpen?.last_5_days,
+          bullpen?.usage_5,
+          bullpen?.recent_5_days,
+          bullpen?.recent_5,
+          bullpen?.load_5_days,
+        ];
+
+  for (const candidate of candidates) {
+    if (
+      candidate &&
+      typeof candidate === "object"
+    ) {
+      return candidate;
+    }
+  }
+
+  return {};
+}
+
+function bullpenValue(
+  object: any,
+  keys: string[]
+) {
+  if (
+    !object ||
+    typeof object !== "object"
+  ) {
+    return null;
+  }
+
+  for (const key of keys) {
+    if (
+      object[key] !== null &&
+      object[key] !== undefined
+    ) {
+      return object[key];
+    }
+  }
+
+  return null;
+}
+
+function bullpenHasData(
+  bullpen: any
+) {
+  if (
+    !bullpen ||
+    typeof bullpen !== "object"
+  ) {
+    return false;
+  }
+
+  const availability =
+    bullpenValue(
+      bullpen,
+      [
+        "availability_score",
+        "availability",
+        "score",
+      ]
+    );
+
+  const confidence =
+    bullpenValue(
+      bullpen,
+      [
+        "confidence",
+      ]
+    );
+
+  const usage3 =
+    bullpenUsage(
+      bullpen,
+      "usage_3_days"
+    );
+
+  const usage5 =
+    bullpenUsage(
+      bullpen,
+      "usage_5_days"
+    );
+
+  const rest =
+    bullpen?.rest;
+
+  return (
+    availability !== null ||
+    confidence !== null ||
+    Object.keys(usage3).length > 0 ||
+    Object.keys(usage5).length > 0 ||
+    Boolean(rest)
+  );
+}
+
+function bullpenAvailability(
+  bullpen: any
+) {
+  return bullpenValue(
+    bullpen,
+    [
+      "availability_score",
+      "availability",
+      "score",
+    ]
+  );
+}
+
+function bullpenConfidence(
+  bullpen: any
+) {
+  return bullpenValue(
+    bullpen,
+    [
+      "confidence",
+    ]
+  );
+}
+
+function bullpenRest(
+  bullpen: any
 ) {
   return (
-    bullpen?.[window] ||
-    bullpen?.[window === "usage_3_days"
-      ? "last_3_days"
-      : "last_5_days"] ||
+    bullpen?.rest ||
+    bullpen?.rest_data ||
     {}
   );
 }
+
+/*
+ * =========================================================
+ * APP
+ * =========================================================
+ */
 
 export default function App() {
   const [date, setDate] =
@@ -362,10 +588,6 @@ export default function App() {
         eventId
       );
 
-    /*
-     * Un partido Final ya no vuelve a pasar
-     * por el motor pregame.
-     */
     if (
       game?.status === "Final" &&
       existing
@@ -520,7 +742,9 @@ export default function App() {
     <main className="app-shell">
 
       <header className="topbar">
+
         <div>
+
           <div className="eyebrow">
             PROYECCIONES DEPORTIVAS
           </div>
@@ -532,6 +756,7 @@ export default function App() {
           <p>
             MLB · análisis, matchup y validación histórica
           </p>
+
         </div>
 
         <div className="model-pill">
@@ -540,6 +765,7 @@ export default function App() {
             {MODEL_VERSION}
           </b>
         </div>
+
       </header>
 
       <section className="toolbar panel">
@@ -584,6 +810,7 @@ export default function App() {
           </button>
 
         </div>
+
       </section>
 
       {error && (
@@ -654,7 +881,9 @@ export default function App() {
         <div>
 
           <div className="section-heading">
+
             <div>
+
               <span className="section-kicker">
                 JORNADA MLB
               </span>
@@ -662,22 +891,29 @@ export default function App() {
               <h2>
                 Partidos del {date}
               </h2>
+
             </div>
 
             <span className="muted">
               {games.length} juegos
             </span>
+
           </div>
 
           {loading ? (
+
             <div className="empty panel">
               Cargando datos…
             </div>
+
           ) : games.length === 0 ? (
+
             <div className="empty panel">
               No hay partidos MLB para esta fecha.
             </div>
+
           ) : (
+
             <div className="games-list">
 
               {games.map(
@@ -798,6 +1034,7 @@ export default function App() {
                       </div>
 
                       {p ? (
+
                         <div className="prediction-strip">
 
                           <div>
@@ -852,10 +1089,13 @@ export default function App() {
                           </span>
 
                         </div>
+
                       ) : (
+
                         <div className="no-prediction">
                           Sin predicción guardada
                         </div>
+
                       )}
 
                       <div className="card-actions">
@@ -865,11 +1105,13 @@ export default function App() {
                           onClick={(
                             e
                           ) => {
+
                             e.stopPropagation();
 
                             analyzeGame(
                               game.game_id
                             );
+
                           }}
                           disabled={
                             actionLoading ===
@@ -890,17 +1132,20 @@ export default function App() {
                           p.result
                             ?.status ===
                             "PENDING" && (
+
                             <button
                               className="secondary small"
                               onClick={(
                                 e
                               ) => {
+
                                 e.stopPropagation();
 
                                 settle(
                                   game.game_id,
                                   p.id
                                 );
+
                               }}
                               disabled={
                                 actionLoading ===
@@ -912,6 +1157,7 @@ export default function App() {
                                 ? "Liquidando…"
                                 : "✓ Liquidar"}
                             </button>
+
                           )}
 
                       </div>
@@ -922,6 +1168,7 @@ export default function App() {
               )}
 
             </div>
+
           )}
 
         </div>
@@ -929,6 +1176,7 @@ export default function App() {
         <aside className="side-column">
 
           {selected ? (
+
             <GameDetail
               game={selected}
               prediction={findPrediction(
@@ -939,12 +1187,15 @@ export default function App() {
                 setSelected(null)
               }
             />
+
           ) : (
+
             <Performance
               performance={
                 performance
               }
             />
+
           )}
 
         </aside>
@@ -954,6 +1205,12 @@ export default function App() {
     </main>
   );
 }
+
+/*
+ * =========================================================
+ * MÉTRICA
+ * =========================================================
+ */
 
 function Metric({
   title,
@@ -982,6 +1239,12 @@ function Metric({
     </div>
   );
 }
+
+/*
+ * =========================================================
+ * PERFORMANCE
+ * =========================================================
+ */
 
 function Performance({
   performance,
@@ -1049,6 +1312,7 @@ function Performance({
       </div>
 
       <div className="bar-label">
+
         <span>
           Precisión total
         </span>
@@ -1059,9 +1323,11 @@ function Performance({
             1
           )}%
         </b>
+
       </div>
 
       <div className="bar-track">
+
         <i
           style={{
             width: `${
@@ -1077,9 +1343,11 @@ function Performance({
             }%`,
           }}
         />
+
       </div>
 
       <div className="bar-label">
+
         <span>
           Precisión {MODEL_VERSION}
         </span>
@@ -1090,9 +1358,11 @@ function Performance({
             1
           )}%
         </b>
+
       </div>
 
       <div className="bar-track">
+
         <i
           style={{
             width: `${
@@ -1108,6 +1378,7 @@ function Performance({
             }%`,
           }}
         />
+
       </div>
 
       <div className="model-note">
@@ -1131,6 +1402,12 @@ function Performance({
   );
 }
 
+/*
+ * =========================================================
+ * DETALLE DEL PARTIDO
+ * =========================================================
+ */
+
 function GameDetail({
   game,
   prediction: p,
@@ -1143,6 +1420,15 @@ function GameDetail({
 
   const f =
     p?.factors || {};
+
+  const prediction =
+    p?.prediction;
+
+  /*
+   * =======================================================
+   * DATOS TRADICIONALES
+   * =======================================================
+   */
 
   const home =
     f?.recent_form?.home
@@ -1157,16 +1443,28 @@ function GameDetail({
     null;
 
   const homeOff =
-    teamStats(f, "home");
+    teamStats(
+      f,
+      "home"
+    );
 
   const awayOff =
-    teamStats(f, "away");
+    teamStats(
+      f,
+      "away"
+    );
 
   const homePitch =
-    pitchingStats(f, "home");
+    pitchingStats(
+      f,
+      "home"
+    );
 
   const awayPitch =
-    pitchingStats(f, "away");
+    pitchingStats(
+      f,
+      "away"
+    );
 
   /*
    * =======================================================
@@ -1175,19 +1473,22 @@ function GameDetail({
    */
 
   const bullpen =
-    f?.bullpen ||
-    f?.bullpen_matchup ||
-    {};
+    getBullpenRoot(
+      f,
+      prediction
+    );
 
   const homeBullpen =
     bullpenStatus(
       f,
+      prediction,
       "home"
     );
 
   const awayBullpen =
     bullpenStatus(
       f,
+      prediction,
       "away"
     );
 
@@ -1214,6 +1515,75 @@ function GameDetail({
       awayBullpen,
       "usage_5_days"
     );
+
+  const homeAvailability =
+    bullpenAvailability(
+      homeBullpen
+    );
+
+  const awayAvailability =
+    bullpenAvailability(
+      awayBullpen
+    );
+
+  const homeConfidence =
+    bullpenConfidence(
+      homeBullpen
+    );
+
+  const awayConfidence =
+    bullpenConfidence(
+      awayBullpen
+    );
+
+  const homeRest =
+    bullpenRest(
+      homeBullpen
+    );
+
+  const awayRest =
+    bullpenRest(
+      awayBullpen
+    );
+
+  const bullpenSignal =
+    bullpenValue(
+      bullpen,
+      [
+        "signal",
+        "bullpen_signal",
+        "matchup_signal",
+      ]
+    );
+
+  const bullpenMatchupConfidence =
+    bullpenValue(
+      bullpen,
+      [
+        "confidence",
+        "matchup_confidence",
+      ]
+    );
+
+  const hasHomeBullpen =
+    bullpenHasData(
+      homeBullpen
+    );
+
+  const hasAwayBullpen =
+    bullpenHasData(
+      awayBullpen
+    );
+
+  const bullpenAvailable =
+    hasHomeBullpen &&
+    hasAwayBullpen;
+
+  /*
+   * =======================================================
+   * MATCHUP
+   * =======================================================
+   */
 
   const matchup =
     f?.matchup || {};
@@ -1245,9 +1615,6 @@ function GameDetail({
       ?.batting_split ||
     {};
 
-  const prediction =
-    p?.prediction;
-
   const result =
     effectiveResult(p);
 
@@ -1258,20 +1625,6 @@ function GameDetail({
   const actualAway =
     p?.result
       ?.actual_away_score;
-
-  /*
-   * La disponibilidad del matchup completo
-   * requiere que ambos equipos tengan información.
-   */
-
-  const bullpenAvailable =
-    Boolean(
-      bullpen?.available ??
-      (
-        homeBullpen?.available &&
-        awayBullpen?.available
-      )
-    );
 
   return (
     <div className="panel detail-panel">
@@ -1307,11 +1660,14 @@ function GameDetail({
       </p>
 
       {!p ? (
+
         <div className="empty">
           Todavía no existe una
           predicción para este partido.
         </div>
+
       ) : (
+
         <>
 
           <div className="winner-box">
@@ -1338,7 +1694,8 @@ function GameDetail({
 
             {p?.result
               ?.status ===
-              "SETTLED" && (
+            "SETTLED" && (
+
               <span
                 className={`result ${resultClass(
                   result
@@ -1352,13 +1709,15 @@ function GameDetail({
                   ?.actual_winner ||
                   "—"}
               </span>
+
             )}
 
           </div>
 
           {p?.result
             ?.status ===
-            "SETTLED" && (
+          "SETTLED" && (
+
             <div className="score-box">
 
               <span>
@@ -1374,6 +1733,7 @@ function GameDetail({
               </strong>
 
             </div>
+
           )}
 
           <div className="prob-grid">
@@ -1779,11 +2139,10 @@ function GameDetail({
             <Factor
               label={`Disponibilidad · ${game.home?.name}`}
               value={
-                homeBullpen
-                  ?.availability_score !=
-                null
+                homeAvailability !==
+                  null
                   ? pct(
-                      homeBullpen.availability_score
+                      homeAvailability
                     )
                   : "—"
               }
@@ -1792,11 +2151,34 @@ function GameDetail({
             <Factor
               label={`Disponibilidad · ${game.away?.name}`}
               value={
-                awayBullpen
-                  ?.availability_score !=
-                null
+                awayAvailability !==
+                  null
                   ? pct(
-                      awayBullpen.availability_score
+                      awayAvailability
+                    )
+                  : "—"
+              }
+            />
+
+            <Factor
+              label={`Confianza · ${game.home?.name}`}
+              value={
+                homeConfidence !==
+                  null
+                  ? pct(
+                      homeConfidence
+                    )
+                  : "—"
+              }
+            />
+
+            <Factor
+              label={`Confianza · ${game.away?.name}`}
+              value={
+                awayConfidence !==
+                  null
+                  ? pct(
+                      awayConfidence
                     )
                   : "—"
               }
@@ -1805,21 +2187,29 @@ function GameDetail({
             <Factor
               label={`Carga 3 días · ${game.home?.name}`}
               value={
-                homeUsage3 &&
-                (
-                  homeUsage3.total_innings !=
-                    null ||
-                  homeUsage3.total_pitches !=
-                    null
-                )
+                Object.keys(
+                  homeUsage3
+                ).length > 0
                   ? `${
                       num(
-                        homeUsage3.total_innings,
+                        bullpenValue(
+                          homeUsage3,
+                          [
+                            "total_innings",
+                            "innings",
+                          ]
+                        ),
                         1
                       )
                     } IP · ${
                       stat(
-                        homeUsage3.total_pitches
+                        bullpenValue(
+                          homeUsage3,
+                          [
+                            "total_pitches",
+                            "pitches",
+                          ]
+                        )
                       )
                     } lanz.`
                   : "—"
@@ -1829,21 +2219,29 @@ function GameDetail({
             <Factor
               label={`Carga 3 días · ${game.away?.name}`}
               value={
-                awayUsage3 &&
-                (
-                  awayUsage3.total_innings !=
-                    null ||
-                  awayUsage3.total_pitches !=
-                    null
-                )
+                Object.keys(
+                  awayUsage3
+                ).length > 0
                   ? `${
                       num(
-                        awayUsage3.total_innings,
+                        bullpenValue(
+                          awayUsage3,
+                          [
+                            "total_innings",
+                            "innings",
+                          ]
+                        ),
                         1
                       )
                     } IP · ${
                       stat(
-                        awayUsage3.total_pitches
+                        bullpenValue(
+                          awayUsage3,
+                          [
+                            "total_pitches",
+                            "pitches",
+                          ]
+                        )
                       )
                     } lanz.`
                   : "—"
@@ -1853,21 +2251,29 @@ function GameDetail({
             <Factor
               label={`Carga 5 días · ${game.home?.name}`}
               value={
-                homeUsage5 &&
-                (
-                  homeUsage5.total_innings !=
-                    null ||
-                  homeUsage5.total_pitches !=
-                    null
-                )
+                Object.keys(
+                  homeUsage5
+                ).length > 0
                   ? `${
                       num(
-                        homeUsage5.total_innings,
+                        bullpenValue(
+                          homeUsage5,
+                          [
+                            "total_innings",
+                            "innings",
+                          ]
+                        ),
                         1
                       )
                     } IP · ${
                       stat(
-                        homeUsage5.total_pitches
+                        bullpenValue(
+                          homeUsage5,
+                          [
+                            "total_pitches",
+                            "pitches",
+                          ]
+                        )
                       )
                     } lanz.`
                   : "—"
@@ -1877,21 +2283,29 @@ function GameDetail({
             <Factor
               label={`Carga 5 días · ${game.away?.name}`}
               value={
-                awayUsage5 &&
-                (
-                  awayUsage5.total_innings !=
-                    null ||
-                  awayUsage5.total_pitches !=
-                    null
-                )
+                Object.keys(
+                  awayUsage5
+                ).length > 0
                   ? `${
                       num(
-                        awayUsage5.total_innings,
+                        bullpenValue(
+                          awayUsage5,
+                          [
+                            "total_innings",
+                            "innings",
+                          ]
+                        ),
                         1
                       )
                     } IP · ${
                       stat(
-                        awayUsage5.total_pitches
+                        bullpenValue(
+                          awayUsage5,
+                          [
+                            "total_pitches",
+                            "pitches",
+                          ]
+                        )
                       )
                     } lanz.`
                   : "—"
@@ -1901,11 +2315,10 @@ function GameDetail({
             <Factor
               label={`Descanso · ${game.home?.name}`}
               value={
-                homeBullpen
-                  ?.rest?.available
+                homeRest?.available
                   ? `${
                       num(
-                        homeBullpen.rest.rest_days,
+                        homeRest.rest_days,
                         1
                       )
                     } días`
@@ -1916,11 +2329,10 @@ function GameDetail({
             <Factor
               label={`Descanso · ${game.away?.name}`}
               value={
-                awayBullpen
-                  ?.rest?.available
+                awayRest?.available
                   ? `${
                       num(
-                        awayBullpen.rest.rest_days,
+                        awayRest.rest_days,
                         1
                       )
                     } días`
@@ -1931,9 +2343,10 @@ function GameDetail({
             <Factor
               label="Señal bullpen"
               value={
-                bullpenAvailable
+                bullpenSignal !==
+                  null
                   ? num(
-                      bullpen.signal,
+                      bullpenSignal,
                       3
                     )
                   : "—"
@@ -1941,11 +2354,12 @@ function GameDetail({
             />
 
             <Factor
-              label="Confianza bullpen"
+              label="Confianza matchup bullpen"
               value={
-                bullpenAvailable
+                bullpenMatchupConfidence !==
+                  null
                   ? pct(
-                      bullpen.confidence
+                      bullpenMatchupConfidence
                     )
                   : "—"
               }
@@ -1953,18 +2367,36 @@ function GameDetail({
 
           </div>
 
-          {!bullpenAvailable && (
+          {bullpenAvailable ? (
+
             <div
               className="muted"
               style={{
-                marginTop: 8,
+                marginTop: 10,
               }}
             >
-              El motor de bullpen no
-              dispone de suficiente
-              historial pregame para
-              este partido.
+              Bullpen disponible para
+              análisis pregame. Los datos
+              corresponden únicamente a
+              partidos anteriores al
+              encuentro analizado.
             </div>
+
+          ) : (
+
+            <div
+              className="muted"
+              style={{
+                marginTop: 10,
+              }}
+            >
+              {Object.keys(
+                bullpen
+              ).length > 0
+                ? "El motor de bullpen respondió, pero no existe suficiente historial pregame para uno o ambos equipos."
+                : "La respuesta de esta predicción no contiene todavía el bloque de datos del bullpen."}
+            </div>
+
           )}
 
           <h3 className="detail-heading">
@@ -2018,11 +2450,18 @@ function GameDetail({
           </div>
 
         </>
+
       )}
 
     </div>
   );
 }
+
+/*
+ * =========================================================
+ * PROBABILIDAD
+ * =========================================================
+ */
 
 function Probability({
   name,
@@ -2035,6 +2474,7 @@ function Probability({
     <div className="prob-card">
 
       <div>
+
         <span>
           {name}
         </span>
@@ -2042,9 +2482,11 @@ function Probability({
         <b>
           {pct(value)}
         </b>
+
       </div>
 
       <div className="bar-track">
+
         <i
           style={{
             width: `${
@@ -2054,11 +2496,18 @@ function Probability({
             }%`,
           }}
         />
+
       </div>
 
     </div>
   );
 }
+
+/*
+ * =========================================================
+ * FACTOR
+ * =========================================================
+ */
 
 function Factor({
   label,
