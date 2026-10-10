@@ -1,5 +1,5 @@
 # =========================================================
-# ETAPA 1 — FRONTEND
+# ETAPA 1 — COMPILAR FRONTEND
 # =========================================================
 
 FROM node:20-alpine AS frontend-builder
@@ -9,6 +9,8 @@ WORKDIR /frontend
 COPY package.json ./
 
 COPY App.tsx ./
+COPY MLBApp.tsx ./
+COPY NFLApp.tsx ./
 COPY main.tsx ./
 COPY index.html ./
 COPY styles.css ./
@@ -27,13 +29,13 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY requirements.txt ./
 
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY *.py ./
 
-# Copiar frontend compilado
+# Copiar el frontend compilado
 COPY --from=frontend-builder /frontend/dist ./dist
 
 EXPOSE 8000
