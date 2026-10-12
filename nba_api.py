@@ -47,7 +47,7 @@ def nba_predict(game_id: str):
         if not analysis.get("success"):
             return analysis
         persistence = save_nba_analysis(analysis)
-        return {"success": True, "sport": "NBA", "league": "NBA", "model_version": MODEL_VERSION, "game_id": str(game_id), "prediction": analysis.get("prediction"), "data_cutoff": analysis.get("data_cutoff"), "persistence": persistence}
+        return {"success": True, "sport": "NBA", "league": "NBA", "model_version": MODEL_VERSION, "game_id": str(game_id), "prediction": analysis.get("prediction"), "projections": analysis.get("projections") or {}, "factors": analysis.get("factors") or {}, "data_cutoff": analysis.get("data_cutoff"), "persistence": persistence}
     except Exception as exc:
         logger.exception("Error guardando predicción NBA game_id=%s", game_id)
         raise HTTPException(status_code=500, detail={"error": "NBA_PREDICTION_SAVE_ERROR", "message": "No fue posible guardar la proyección NBA.", "details": str(exc)}) from exc
