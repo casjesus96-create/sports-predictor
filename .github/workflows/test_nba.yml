@@ -5,11 +5,13 @@ on:
     branches:
       - feature/nba-1.0.0
       - fix/nba-espn-date-range
+      - fix/dockerfile-include-nba
     paths:
       - "nba_*.py"
       - "NBAApp.tsx"
       - "App.tsx"
       - "main.py"
+      - "Dockerfile"
       - "test_nba_prediction.py"
       - "test_nba_client.py"
       - ".github/workflows/test_nba.yml"
@@ -21,6 +23,7 @@ on:
       - "main.py"
       - "test_nba_prediction.py"
       - "test_nba_client.py"
+      - "Dockerfile"
   workflow_dispatch:
 
 jobs:
@@ -55,3 +58,5 @@ jobs:
         run: npm install
       - name: Build frontend
         run: npm run build
+      - name: Validate Docker image build
+        run: docker build -t sports-predictor:nba-check .
