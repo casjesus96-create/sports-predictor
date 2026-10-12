@@ -14,8 +14,8 @@ def test_get_events_uses_month_keys_and_filters_date_range(monkeypatch):
     def fake_month_events(month_start):
         requested.append(month_start.strftime("%Y%m"))
         return [
-            {"game_id": f"{month_start:%Y%m}-inside", "kickoff": f"{month_start:%Y-%m}-10T20:00:00+00:00"},
-            {"game_id": f"{month_start:%Y%m}-outside", "kickoff": f"{month_start:%Y-%m}-28T20:00:00+00:00"},
+            {"game_id": f"{month_start:%Y%m}-start", "kickoff": f"{month_start:%Y-%m}-01T20:00:00+00:00"},
+            {"game_id": f"{month_start:%Y%m}-middle", "kickoff": f"{month_start:%Y-%m}-15T20:00:00+00:00"},
         ]
 
     monkeypatch.setattr(nba_client, "_get_month_events", fake_month_events)
@@ -23,7 +23,7 @@ def test_get_events_uses_month_keys_and_filters_date_range(monkeypatch):
 
     assert requested == ["202610", "202611"]
     assert all("-" not in key for key in requested)
-    assert [item["game_id"] for item in result] == ["202610-inside", "202611-inside"]
+    assert [item["game_id"] for item in result] == ["202610-middle", "202611-start"]
 
 
 def test_get_team_histories_groups_games_for_both_teams(monkeypatch):
