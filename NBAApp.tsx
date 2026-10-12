@@ -227,7 +227,7 @@ export default function NBAApp() {
           ) : (
             <div className="games-list">
               {predictions.filter((row) => row.result_status === "PENDING").map((row) => {
-                const game = row.features?.game || {};
+                const game: Partial<Game> = row.features?.game || {};
                 return (
                   <article className="game-card" key={row.id || row.event_id}>
                     <div className="game-head">
