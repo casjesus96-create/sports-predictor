@@ -1,4 +1,4 @@
-"""Modelo oficial NBA-1.0.0. Solo usa información disponible antes del inicio."""
+"""Modelo oficial NBA-1.1.0. Solo usa información disponible antes del inicio."""
 import math
 
 MODEL_VERSION = "NBA-1.1.0"
@@ -75,6 +75,7 @@ def predict_winner(home_history, away_history, neutral_site=False):
         + 0.20 * recent_edge
         + 0.15 * win_edge
         + 0.10 * recent_win_edge
+        + boxscore_edge
         + home_advantage
     )
     probability_home = 1.0 / (1.0 + math.exp(-_clamp(expected_margin / 8.5, -6, 6)))
