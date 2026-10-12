@@ -1,5 +1,4 @@
 
-import os
 from datetime import datetime, timezone
 
 import requests
@@ -9,7 +8,7 @@ from repository import get_pending_predictions, get_supabase_client
 
 router = APIRouter()
 
-MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
+MLB_GAME_URL = "https://statsapi.mlb.com/api/v1.1/game"
 MLB_HEADERS = {
     "User-Agent": "Sports-Predictor/1.0",
     "Accept": "application/json",
@@ -38,17 +37,11 @@ def pending_predictions():
 
 @router.post("/api/v1/predictions/settle-pending")
 def settle_pending_predictions():
-    """
-    Comprueba todas las predicciones pendientes contra MLB.
-    Solo liquida partidos FINALIZADOS y con un pronóstico
-    identificable. Actualiza cada registro por su ID exacto.
-    """
     try:
         supabase = get_supabase_client()
 
         response = (
-            supabase
-            .table("prediction_snapshots")
+            supabase.table("prediction_snapshots")
             .select("*")
             .eq("result_status", "PENDING")
             .order("created_at", desc=False)
@@ -72,62 +65,51 @@ def settle_pending_predictions():
                 if not event_id or not prediction_id:
                     item.update({
                         "status": "SKIPPED",
-                        "reason": "Falta event_id o ID de predicción.",
+                        "reason": "Falta el ID del partido o de la predicción.",
                     })
                     results.append(item)
                     continue
 
+                url = f"{MLB_GAME_URL}/{event_id}/feed/live"
                 api_response = requests.get(
-                    MLB_SCHEDULE_URL,
-                    params={
-                        "sportId": 1,
-                        "gamePk": event_id,
-                    },
+                    url,
                     headers=MLB_HEADERS,
                     timeout=20,
                 )
-                api_response.raise_for_status()
-                schedule = api_response.json()
 
-                game = None
-                for date_block in schedule.get("dates", []):
-                    for candidate in date_block.get("games", []):
-                        if str(candidate.get("gamePk")) == event_id:
-                            game = candidate
-                            break
-                    if game:
-                        break
-
-                if not game:
+                if api_response.status_code == 404:
                     item.update({
                         "status": "SKIPPED",
-                        "reason": "MLB no devolvió este partido.",
+                        "reason": "MLB no encontró el feed de este partido.",
                     })
                     results.append(item)
                     continue
 
-                game_status = (
-                    (game.get("status") or {})
-                    .get("abstractGameState")
-                )
+                api_response.raise_for_status()
+                feed = api_response.json()
 
-                if game_status != "Final":
+                game_data = feed.get("gameData") or {}
+                live_data = feed.get("liveData") or {}
+                status_data = game_data.get("status") or {}
+                status = status_data.get("abstractGameState")
+
+                if status != "Final":
                     item.update({
                         "status": "NOT_FINAL",
-                        "game_status": game_status,
-                        "reason": "El partido aún no figura como finalizado.",
+                        "game_status": status,
+                        "reason": "MLB todavía no confirma el partido como finalizado.",
                     })
                     results.append(item)
                     continue
 
-                teams = game.get("teams") or {}
-                home_data = teams.get("home") or {}
-                away_data = teams.get("away") or {}
+                teams = game_data.get("teams") or {}
+                home_team = (teams.get("home") or {}).get("name")
+                away_team = (teams.get("away") or {}).get("name")
 
-                home_team = (home_data.get("team") or {}).get("name")
-                away_team = (away_data.get("team") or {}).get("name")
-                home_score = home_data.get("score")
-                away_score = away_data.get("score")
+                linescore = live_data.get("linescore") or {}
+                score_teams = linescore.get("teams") or {}
+                home_score = (score_teams.get("home") or {}).get("runs")
+                away_score = (score_teams.get("away") or {}).get("runs")
 
                 if (
                     not home_team
@@ -138,33 +120,30 @@ def settle_pending_predictions():
                 ):
                     item.update({
                         "status": "SKIPPED",
-                        "reason": "No hay marcador final válido para determinar el ganador.",
+                        "reason": "El feed final no contiene un marcador válido.",
                     })
                     results.append(item)
                     continue
 
                 actual_winner = (
-                    home_team if home_score > away_score else away_team
+                    home_team if int(home_score) > int(away_score)
+                    else away_team
                 )
 
                 features = record.get("features") or {}
-                stored_winner = features.get("predicted_winner")
+                predicted_winner = features.get("predicted_winner")
 
-                # Solo aceptar el ganador guardado si corresponde
-                # a uno de los dos equipos del partido.
-                if stored_winner:
-                    normalized = str(stored_winner).strip().casefold()
+                if predicted_winner:
+                    normalized = str(predicted_winner).strip().casefold()
                     if normalized == home_team.casefold():
                         predicted_winner = home_team
                     elif normalized == away_team.casefold():
                         predicted_winner = away_team
                     else:
                         predicted_winner = None
-                else:
-                    predicted_winner = None
 
-                # Si el ganador no está guardado, reconstruirlo
-                # exclusivamente con las probabilidades originales.
+                # Si falta el ganador guardado, utilizar únicamente
+                # las probabilidades originales de la predicción.
                 if not predicted_winner:
                     try:
                         home_probability = float(record["home_probability"])
@@ -180,14 +159,13 @@ def settle_pending_predictions():
                     ):
                         item.update({
                             "status": "SKIPPED",
-                            "reason": "No se puede identificar el pronóstico original de forma segura.",
+                            "reason": "No se puede reconstruir el pronóstico original con seguridad.",
                         })
                         results.append(item)
                         continue
 
                     predicted_winner = (
-                        home_team
-                        if home_probability > away_probability
+                        home_team if home_probability > away_probability
                         else away_team
                     )
 
@@ -197,8 +175,6 @@ def settle_pending_predictions():
                     else "INCORRECT"
                 )
 
-                # Conservar los factores originales y guardar el
-                # ganador calculado para futuras auditorías.
                 updated_features = dict(features)
                 updated_features["predicted_winner"] = predicted_winner
                 updated_features["game"] = {
@@ -211,25 +187,24 @@ def settle_pending_predictions():
                     "result_status": "SETTLED",
                     "prediction_result": prediction_result,
                     "actual_winner": actual_winner,
-                    "actual_home_score": home_score,
-                    "actual_away_score": away_score,
+                    "actual_home_score": int(home_score),
+                    "actual_away_score": int(away_score),
                     "settled_at": datetime.now(timezone.utc).isoformat(),
                     "features": updated_features,
                 }
 
-                update_response = (
-                    supabase
-                    .table("prediction_snapshots")
+                saved = (
+                    supabase.table("prediction_snapshots")
                     .update(update_data)
                     .eq("id", prediction_id)
                     .eq("result_status", "PENDING")
                     .execute()
                 )
 
-                if not update_response.data:
+                if not saved.data:
                     item.update({
                         "status": "SKIPPED",
-                        "reason": "El registro cambió o ya fue liquidado.",
+                        "reason": "La predicción ya cambió de estado.",
                     })
                     results.append(item)
                     continue
@@ -238,8 +213,8 @@ def settle_pending_predictions():
                     "status": "SETTLED",
                     "home": home_team,
                     "away": away_team,
-                    "home_score": home_score,
-                    "away_score": away_score,
+                    "home_score": int(home_score),
+                    "away_score": int(away_score),
                     "predicted_winner": predicted_winner,
                     "actual_winner": actual_winner,
                     "prediction_result": prediction_result,
@@ -259,14 +234,13 @@ def settle_pending_predictions():
                 })
                 results.append(item)
 
-        settled = sum(1 for row in results if row["status"] == "SETTLED")
         return {
             "success": True,
             "checked": len(records),
-            "settled": settled,
-            "not_final": sum(1 for row in results if row["status"] == "NOT_FINAL"),
-            "skipped": sum(1 for row in results if row["status"] == "SKIPPED"),
-            "errors": sum(1 for row in results if row["status"] == "ERROR"),
+            "settled": sum(r["status"] == "SETTLED" for r in results),
+            "not_final": sum(r["status"] == "NOT_FINAL" for r in results),
+            "skipped": sum(r["status"] == "SKIPPED" for r in results),
+            "errors": sum(r["status"] == "ERROR" for r in results),
             "results": results,
         }
 
