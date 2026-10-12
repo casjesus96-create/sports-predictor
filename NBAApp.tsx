@@ -41,6 +41,22 @@ type Performance = {
 };
 
 const API = "/api/v1/nba";
+
+function localDate() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+function gameDate(value?: string | null) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+}
 const pct = (value?: number | null) =>
   typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
 const dateLabel = (value?: string | null) => {
@@ -67,6 +83,8 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export default function NBAApp() {
+  const [date, setDate] = useState(localDate());
+  const [allGames, setAllGames] = useState(false);
   const [games, setGames] = useState<Game[]>([]);
   const [predictions, setPredictions] = useState<PredictionRow[]>([]);
   const [performance, setPerformance] = useState<Performance | null>(null);
@@ -80,8 +98,8 @@ export default function NBAApp() {
     setError("");
     try {
       const [gamesData, predictionData, performanceData] = await Promise.all([
-        api<{ games?: Game[] }>("/games?days=30&limit=50"),
-        api<{ predictions?: PredictionRow[] }>("/predictions?limit=200"),
+        api<{ games?: Game[] }>("/games?days=45&limit=100"),
+        api<{ predictions?: PredictionRow[] }>("/predictions?limit=500"),
         api<Performance>("/performance"),
       ]);
       setGames(gamesData.games || []);
@@ -97,6 +115,50 @@ export default function NBAApp() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   const predictionByGame = new Map(predictions.map((item) => [String(item.event_id), item]));
+
+  const mergedGames = (() => {
+    const byId = new Map<string, Game>();
+    for (const game of games) {
+      if (game.game_id) byId.set(String(game.game_id), game);
+    }
+    for (const row of predictions) {
+      const storedGame = row.features?.game;
+      const id = String(row.event_id || storedGame?.game_id || "");
+      if (id && !byId.has(id) && storedGame) {
+        byId.set(id, { ...storedGame, game_id: id });
+      }
+    }
+    return Array.from(byId.values()).sort(
+      (a, b) => new Date(a.kickoff || 0).getTime() - new Date(b.kickoff || 0).getTime(),
+    );
+  })();
+
+  const filteredGames = allGames
+    ? mergedGames
+    : mergedGames.filter((game) => gameDate(game.kickoff) === date);
+
+  const settleAllPending = async () => {
+    setBusy("settle-all");
+    setError("");
+    setMessage("");
+    try {
+      const result = await api<{
+        success?: boolean;
+        summary?: { checked?: number; settled?: number; still_pending?: number; errors?: number };
+        message?: string;
+      }>("/settle-pending", { method: "POST" });
+      const summary = result.summary || {};
+      setMessage(
+        result.message ||
+        `Revisión terminada. Liquidadas: ${summary.settled ?? 0}; pendientes: ${summary.still_pending ?? 0}; errores: ${summary.errors ?? 0}.`,
+      );
+      await refresh();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const analyze = async (game: Game) => {
     setBusy(game.game_id);
@@ -162,25 +224,63 @@ export default function NBAApp() {
       <section className="panel toolbar">
         <div>
           <div className="section-kicker">CALENDARIO</div>
-          <strong className="toolbar-title">Próximos partidos NBA</strong>
+          <strong className="toolbar-title">Calendario NBA</strong>
           <div className="muted">Fuente pública ESPN · Solo se proyectan partidos antes del inicio.</div>
         </div>
+        <label>
+          Fecha del encuentro
+          <input
+            type="date"
+            value={date}
+            onChange={(event) => {
+              setDate(event.target.value);
+              setAllGames(false);
+            }}
+          />
+        </label>
         <div className="toolbar-actions">
-          <button className="secondary" type="button" onClick={() => void refresh()} disabled={loading || !!busy}>{loading ? "Actualizando…" : "Actualizar datos"}</button>
+          <button
+            className="secondary"
+            type="button"
+            onClick={() => setAllGames((value) => !value)}
+            disabled={loading}
+          >
+            {allGames ? "Filtrar por fecha" : "Todos los partidos guardados"}
+          </button>
+          <button
+            className="secondary"
+            type="button"
+            onClick={() => void settleAllPending()}
+            disabled={loading || !!busy}
+          >
+            {busy === "settle-all" ? "Revisando pendientes…" : "Liquidar pendientes"}
+          </button>
+          <button className="primary" type="button" onClick={() => void refresh()} disabled={loading || !!busy}>
+            {loading ? "Actualizando…" : "Actualizar datos"}
+          </button>
         </div>
       </section>
 
       <div className="content-grid">
         <section>
           <div className="section-heading">
-            <div><div className="section-kicker">PARTIDOS DISPONIBLES</div><h2>Calendario y proyecciones</h2></div>
-            <span className="muted">{games.length} partidos</span>
+            <div>
+              <div className="section-kicker">PARTIDOS DISPONIBLES</div>
+              <h2>{allGames ? "Todos los partidos guardados" : `Encuentros del ${date}`}</h2>
+            </div>
+            <span className="muted">{filteredGames.length} partidos</span>
           </div>
-          {loading ? <div className="panel empty">Cargando calendario NBA…</div> : games.length === 0 ? (
-            <div className="panel empty">No se encontraron próximos partidos en el calendario público. Vuelve a actualizar más tarde.</div>
+          {loading ? <div className="panel empty">Cargando calendario NBA…</div> : filteredGames.length === 0 ? (
+            <div className="panel empty">
+              <b>No hay partidos para esta fecha dentro de los datos cargados.</b>
+              <p>Elige otra fecha o muestra todos los partidos que tienen proyecciones guardadas.</p>
+              <button className="secondary" type="button" onClick={() => setAllGames(true)}>
+                Ver todos los partidos guardados
+              </button>
+            </div>
           ) : (
             <div className="games-list">
-              {games.map((game) => {
+              {filteredGames.map((game) => {
                 const stored = predictionByGame.get(String(game.game_id));
                 const pending = stored?.result_status === "PENDING";
                 const settled = stored?.result_status === "SETTLED";
