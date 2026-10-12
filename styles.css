@@ -105,3 +105,19 @@ button:disabled{cursor:not-allowed;opacity:.55}
   outline: 2px solid #9cc9f3;
   outline-offset: 3px;
 }
+
+
+/* NBA: paneles de análisis detallado y estadísticas legibles en móvil. */
+.analysis-details{margin-top:12px;padding:12px;border:1px solid #29465f;border-radius:12px;background:#0c1d2c}
+.analysis-details>summary{cursor:pointer;font-weight:700;font-size:.84rem;color:#c5d7e7}
+.analysis-content{padding-top:8px}
+.analysis-content h4{margin:14px 0 8px;font-size:.86rem;color:#c4d6e5}
+.analysis-content .muted{font-size:.76rem;line-height:1.5}
+.analysis-teams{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+.analysis-teams>.panel{padding:12px;min-width:0}
+.analysis-teams>.panel>b{display:block;margin-bottom:10px;font-size:.84rem}
+.analysis-teams .score-row{gap:8px;font-size:.75rem;padding:7px 0;border-bottom:1px solid #1b3449}
+.analysis-teams .score-row span{color:#90a6b9}
+.analysis-teams .score-row b{text-align:right;white-space:nowrap}
+.analysis-teams small{display:block;margin-top:10px}
+@media(max-width:600px){.analysis-teams{grid-template-columns:1fr}.analysis-details{padding:10px}.analysis-teams>.panel{padding:10px}}
