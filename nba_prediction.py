@@ -1,7 +1,7 @@
 """Modelo oficial NBA-1.0.0. Solo usa información disponible antes del inicio."""
 import math
 
-MODEL_VERSION = "NBA-1.0.0"
+MODEL_VERSION = "NBA-1.1.0"
 
 
 def _clamp(value, low, high):
@@ -28,6 +28,31 @@ def predict_winner(home_history, away_history, neutral_site=False):
     away_win = _number(away_history.get("win_rate"), 0.5)
     home_recent_win = _number(home_history.get("recent_win_rate"), 0.5)
     away_recent_win = _number(away_history.get("recent_win_rate"), 0.5)
+
+    # Aporte secundario de boxscore reciente. Si ESPN no ofrece una métrica,
+    # su diferencia es cero y no se inventan estadísticas.
+    home_stats = home_history.get("recent_stats_per_game") or {}
+    away_stats = away_history.get("recent_stats_per_game") or {}
+
+    def stat_edge(key, weight, invert=False):
+        home_value = home_stats.get(key)
+        away_value = away_stats.get(key)
+        if home_value is None or away_value is None:
+            return 0.0
+        difference = _number(home_value) - _number(away_value)
+        return (-difference if invert else difference) * weight
+
+    boxscore_edge = (
+        stat_edge("rebounds", 0.10)
+        + stat_edge("assists", 0.12)
+        + stat_edge("blocks", 0.25)
+        + stat_edge("steals", 0.15)
+        + stat_edge("turnovers", 0.12, invert=True)
+        + stat_edge("field_goal_pct", 0.05)
+        + stat_edge("three_point_pct", 0.025)
+        + stat_edge("free_throw_pct", 0.01)
+    )
+    boxscore_edge = _clamp(boxscore_edge, -4.0, 4.0)
 
     # Regulariza las muestras pequeñas hacia valores neutrales.
     home_reliability = home_n / (home_n + 8.0)
@@ -71,6 +96,7 @@ def predict_winner(home_history, away_history, neutral_site=False):
         "confidence": round(max(probability_home, probability_away), 4),
         "data_quality": int(data_quality),
         "expected_margin_home": round(expected_margin, 2),
+        "recent_boxscore_edge": round(boxscore_edge, 2),
         "sample_size_home": home_n,
         "sample_size_away": away_n,
     }
