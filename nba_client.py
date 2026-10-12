@@ -5,6 +5,7 @@ YYYYMMDD-YYYYMMDD (que pueden devolver HTTP 400), las consultas históricas
 se hacen por mes y se filtran localmente al intervalo solicitado.
 """
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 
 import requests
@@ -200,6 +201,130 @@ def get_team_histories(team_ids, cutoff, days=180):
         result[team_id].sort(key=lambda item: item["kickoff"], reverse=True)
     return result
 
+
+
+BOX_SCORE_KEYS = {
+    "points": ("points", "pts"),
+    "rebounds": ("rebounds", "totalrebounds", "reb"),
+    "offensive_rebounds": ("offensiverebounds", "oreb"),
+    "defensive_rebounds": ("defensiverebounds", "dreb"),
+    "assists": ("assists", "ast"),
+    "steals": ("steals", "stl"),
+    "blocks": ("blocks", "blk"),
+    "turnovers": ("turnovers", "to"),
+    "fouls": ("fouls", "personalfouls", "pf"),
+    "field_goal_pct": ("fieldgoalpct", "fieldgoalpercentage", "fgpct"),
+    "three_point_pct": ("threepointfieldgoalpct", "threepointpercentage", "3ppct", "threepointpct"),
+    "free_throw_pct": ("freethrowpct", "freethrowpercentage", "ftpct"),
+}
+
+
+def _stat_number(value):
+    if value is None:
+        return None
+    try:
+        text = str(value).strip().replace("%", "")
+        if "-" in text and not text.startswith("-"):
+            made, attempted = text.split("-", 1)
+            made_value, attempted_value = float(made), float(attempted)
+            return round(made_value / attempted_value * 100, 2) if attempted_value else 0.0
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_boxscore_stats(raw_stats):
+    normalized = {}
+    for stat in raw_stats or []:
+        name = str(stat.get("name") or stat.get("abbreviation") or "").strip().lower()
+        key = "".join(char for char in name if char.isalnum())
+        value = _stat_number(stat.get("displayValue", stat.get("value")))
+        if value is None:
+            continue
+        for target, aliases in BOX_SCORE_KEYS.items():
+            alias_keys = {"".join(char for char in alias.lower() if char.isalnum()) for alias in aliases}
+            if key in alias_keys:
+                normalized[target] = value
+                break
+
+        # ESPN sometimes exposes makes-attempts rather than a percentage.
+        # Check three-point attempts before general field-goal attempts because
+        # the former key also contains the latter substring.
+        if "threepointfieldgoalsmade" in key and "attempted" in key:
+            normalized.setdefault("three_point_pct", value)
+        elif "fieldgoalsmade" in key and "attempted" in key:
+            normalized.setdefault("field_goal_pct", value)
+        elif "freethrowsmade" in key and "attempted" in key:
+            normalized.setdefault("free_throw_pct", value)
+    return normalized
+
+
+def _get_boxscore_for_game(game_id):
+    response = requests.get(
+        f"{BASE_URL}/summary",
+        params={"event": str(game_id)},
+        headers=HEADERS,
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    boxscore = payload.get("boxscore") or {}
+    team_stats = {}
+    for item in boxscore.get("teams") or []:
+        team = item.get("team") or {}
+        team_id = str(team.get("id") or item.get("id") or "")
+        stats = _normalize_boxscore_stats(item.get("statistics") or [])
+        if team_id and stats:
+            team_stats[team_id] = stats
+    return str(game_id), team_stats
+
+
+def get_team_boxscore_histories(team_histories, max_games=5):
+    """Obtiene estadísticas de equipo de los últimos partidos finalizados, sin consultar el partido objetivo."""
+    selected = {}
+    for team_id, games in (team_histories or {}).items():
+        for game in (games or [])[:max_games]:
+            game_id = str(game.get("game_id") or "")
+            if game_id:
+                selected[game_id] = game
+
+    if not selected:
+        return {str(team_id): [] for team_id in (team_histories or {})}
+
+    stats_by_game = {}
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {
+            pool.submit(_get_boxscore_for_game, game_id): game_id
+            for game_id in selected
+        }
+        for future in as_completed(futures):
+            game_id = futures[future]
+            try:
+                _, stats_by_game[game_id] = future.result()
+            except Exception as exc:
+                logger.warning("No se pudieron obtener estadísticas boxscore NBA game_id=%s: %s", game_id, exc)
+                stats_by_game[game_id] = {}
+
+    result = {str(team_id): [] for team_id in (team_histories or {})}
+    for team_id, games in (team_histories or {}).items():
+        team_key = str(team_id)
+        for game in (games or [])[:max_games]:
+            game_id = str(game.get("game_id") or "")
+            game_stats = stats_by_game.get(game_id, {})
+            own_stats = game_stats.get(team_key)
+            opponent_id = str(
+                game.get("away_team_id") if str(game.get("home_team_id")) == team_key
+                else game.get("home_team_id") or ""
+            )
+            opponent_stats = game_stats.get(opponent_id)
+            if own_stats:
+                result.setdefault(team_key, []).append({
+                    "game_id": game_id,
+                    "kickoff": game.get("kickoff"),
+                    "stats": own_stats,
+                    "opponent_stats": opponent_stats or {},
+                })
+    return result
 
 def get_team_history(team_id, cutoff, days=180):
     """Compatibilidad: historial de un equipo."""

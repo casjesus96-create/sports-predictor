@@ -23,3 +23,44 @@ def test_small_sample_is_regularized():
     result = predict_winner(empty, empty)
     assert result["data_quality"] <= 35
     assert 0.5 < result["home_probability"] < 0.6
+
+
+
+def test_recent_boxscore_stats_influence_model_probability():
+    neutral = {
+        "games": 12,
+        "point_diff_per_game": 0,
+        "recent_point_diff_per_game": 0,
+        "win_rate": 0.5,
+        "recent_win_rate": 0.5,
+        "recent_games": 5,
+        "recent_stats_per_game": {
+            "rebounds": 45,
+            "assists": 29,
+            "blocks": 7,
+            "steals": 9,
+            "turnovers": 10,
+            "field_goal_pct": 49,
+            "three_point_pct": 38,
+            "free_throw_pct": 80,
+        },
+    }
+    weak = {
+        **neutral,
+        "recent_stats_per_game": {
+            "rebounds": 38,
+            "assists": 20,
+            "blocks": 2,
+            "steals": 5,
+            "turnovers": 17,
+            "field_goal_pct": 42,
+            "three_point_pct": 31,
+            "free_throw_pct": 72,
+        },
+    }
+
+    result = predict_winner(neutral, weak, neutral_site=True)
+
+    assert result["model_version"] == "NBA-1.1.0"
+    assert result["recent_boxscore_edge"] > 0
+    assert result["home_probability"] > 0.5

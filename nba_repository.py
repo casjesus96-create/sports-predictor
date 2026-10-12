@@ -31,7 +31,7 @@ def save_nba_analysis(analysis):
         "away_probability": prediction.get("away_probability"),
         "confidence": prediction.get("confidence"),
         "data_quality": prediction.get("data_quality", 0),
-        "features": {"game": game, "factors": analysis.get("factors") or {}, "predicted_winner": prediction.get("winner")},
+        "features": {"game": game, "factors": analysis.get("factors") or {}, "projections": analysis.get("projections") or {}, "predicted_winner": prediction.get("winner")},
         "result_status": "PENDING", "actual_winner": None,
         "actual_home_score": None, "actual_away_score": None,
         "settled_at": None, "prediction_result": None,
@@ -41,12 +41,14 @@ def save_nba_analysis(analysis):
     return {"success": True, "saved": True, "existing": False, "prediction_id": saved[0].get("id") if saved else None, "data": saved}
 
 
-def get_nba_predictions(status=None, limit=100):
+def get_nba_predictions(status=None, limit=100, model_version=None):
     query = (get_supabase_client().table("prediction_snapshots").select("*")
-        .eq("sport", SPORT).eq("league", LEAGUE).eq("model_version", MODEL_VERSION)
+        .eq("sport", SPORT).eq("league", LEAGUE)
         .order("created_at", desc=True).limit(max(1, min(int(limit), 500))))
     if status:
         query = query.eq("result_status", status.upper())
+    if model_version:
+        query = query.eq("model_version", model_version)
     return query.execute().data or []
 
 
@@ -60,10 +62,11 @@ def settle_nba_prediction(event_id, actual_home_score, actual_away_score, predic
         return {"success": False, "updated": False, "message": "Marcadores reales no válidos."}
     db = get_supabase_client()
     query = (db.table("prediction_snapshots").select("*").eq("event_id", str(event_id))
-        .eq("sport", SPORT).eq("league", LEAGUE).eq("model_version", MODEL_VERSION)
-        .eq("result_status", "PENDING"))
+        .eq("sport", SPORT).eq("league", LEAGUE).eq("result_status", "PENDING"))
     if prediction_id:
         query = query.eq("id", prediction_id)
+    else:
+        query = query.eq("model_version", MODEL_VERSION)
     rows = query.order("created_at", desc=False).limit(1).execute().data or []
     if not rows:
         return {"success": False, "updated": False, "message": "No existe una proyección NBA pendiente para este partido."}
@@ -87,7 +90,7 @@ def settle_nba_prediction(event_id, actual_home_score, actual_away_score, predic
 
 
 def get_nba_performance():
-    rows = get_nba_predictions(limit=500)
+    rows = get_nba_predictions(limit=500, model_version=MODEL_VERSION)
     settled = [r for r in rows if r.get("result_status") == "SETTLED"]
     correct = sum(r.get("prediction_result") == "CORRECT" for r in settled)
     incorrect = sum(r.get("prediction_result") == "INCORRECT" for r in settled)
