@@ -95,6 +95,74 @@ def nba_settle(game_id: str, prediction_id: str = None):
         raise HTTPException(status_code=500, detail={"error": "NBA_SETTLEMENT_ERROR", "message": "No fue posible liquidar la proyección NBA.", "details": str(exc)}) from exc
 
 
+@router.post("/settle-pending")
+def nba_settle_pending():
+    """Revisa y liquida las proyecciones NBA pendientes con las mismas validaciones individuales."""
+    rows = get_nba_predictions(status="PENDING", limit=500)
+    settled = 0
+    still_pending = 0
+    errors = 0
+    results = []
+
+    for row in rows:
+        event_id = str(row.get("event_id") or "")
+        if not event_id:
+            errors += 1
+            results.append({"event_id": None, "success": False, "message": "La proyección no contiene event_id."})
+            continue
+
+        try:
+            result = nba_settle(
+                event_id,
+                prediction_id=str(row.get("id")) if row.get("id") else None,
+            )
+            settlement = result.get("settlement") or {}
+            if result.get("success") and settlement.get("success"):
+                settled += 1
+                results.append({
+                    "event_id": event_id,
+                    "success": True,
+                    "prediction_result": settlement.get("prediction_result"),
+                })
+            elif result.get("status") == "PENDING":
+                still_pending += 1
+                results.append({
+                    "event_id": event_id,
+                    "success": False,
+                    "status": "PENDING",
+                    "message": result.get("message"),
+                })
+            else:
+                errors += 1
+                results.append({
+                    "event_id": event_id,
+                    "success": False,
+                    "message": result.get("message") or settlement.get("message") or "No se pudo liquidar la proyección.",
+                })
+        except Exception as exc:
+            errors += 1
+            logger.exception("Error al liquidar pendiente NBA game_id=%s", event_id)
+            results.append({"event_id": event_id, "success": False, "message": str(exc)})
+
+    summary = {
+        "checked": len(rows),
+        "settled": settled,
+        "still_pending": still_pending,
+        "errors": errors,
+    }
+    return {
+        "success": True,
+        "sport": "NBA",
+        "model_version": MODEL_VERSION,
+        "summary": summary,
+        "message": (
+            f"Revisión terminada. Liquidadas: {settled}; "
+            f"pendientes: {still_pending}; errores: {errors}."
+        ),
+        "results": results,
+    }
+
+
 @router.get("/performance")
 def nba_performance():
     try:
