@@ -1,6 +1,7 @@
 
-from datetime import datetime, timedelta, timezone
+import logging
 import math
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 
@@ -15,6 +16,7 @@ from nfl_repository import (
     get_nfl_calibration,
 )
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/nfl", tags=["NFL"])
 
@@ -35,13 +37,7 @@ def _valid_score(value):
 
 
 def _final_candidate(game):
-    """
-    Validación conservadora del resultado.
-
-    Exige marcador válido y que hayan pasado al menos cuatro horas
-    desde el inicio programado. Este plazo no equivale a una
-    confirmación oficial de final.
-    """
+    """Comprueba que existan marcadores y haya pasado el plazo mínimo."""
     home_score = game.get("home_score")
     away_score = game.get("away_score")
 
@@ -104,6 +100,7 @@ def nfl_games(limit: int = 20):
             "games": games,
         }
     except Exception as exc:
+        logger.exception("Error obteniendo calendario NFL")
         raise HTTPException(
             status_code=502,
             detail={
@@ -111,7 +108,7 @@ def nfl_games(limit: int = 20):
                 "message": "No fue posible obtener los partidos NFL.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.get("/games/{game_id}")
@@ -138,6 +135,7 @@ def nfl_game(game_id: str):
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("Error obteniendo partido NFL game_id=%s", game_id)
         raise HTTPException(
             status_code=500,
             detail={
@@ -145,7 +143,7 @@ def nfl_game(game_id: str):
                 "message": "Error obteniendo el partido NFL.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.get("/analyze/{game_id}")
@@ -153,6 +151,7 @@ def analyze_nfl(game_id: str):
     try:
         return analyze_nfl_game(game_id=game_id)
     except Exception as exc:
+        logger.exception("Error analizando partido NFL game_id=%s", game_id)
         raise HTTPException(
             status_code=500,
             detail={
@@ -160,7 +159,7 @@ def analyze_nfl(game_id: str):
                 "message": "Error ejecutando el análisis NFL.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.post("/predict/{game_id}")
@@ -184,6 +183,7 @@ def predict_nfl(game_id: str):
             "persistence": persistence,
         }
     except Exception as exc:
+        logger.exception("Error guardando proyección NFL game_id=%s", game_id)
         raise HTTPException(
             status_code=500,
             detail={
@@ -191,7 +191,7 @@ def predict_nfl(game_id: str):
                 "message": "No fue posible generar y guardar la proyección NFL.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.get("/predictions")
@@ -216,6 +216,7 @@ def nfl_predictions(status: str = None, limit: int = 100):
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("Error obteniendo proyecciones NFL")
         raise HTTPException(
             status_code=500,
             detail={
@@ -223,7 +224,7 @@ def nfl_predictions(status: str = None, limit: int = 100):
                 "message": "No fue posible obtener las proyecciones NFL.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.get("/pending")
@@ -238,6 +239,7 @@ def nfl_pending():
             "predictions": rows,
         }
     except Exception as exc:
+        logger.exception("Error obteniendo proyecciones NFL pendientes")
         raise HTTPException(
             status_code=500,
             detail={
@@ -245,13 +247,20 @@ def nfl_pending():
                 "message": "No fue posible obtener las proyecciones pendientes.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.post("/settle/{game_id}")
 def settle_nfl(game_id: str, prediction_id: str = None):
-    """Liquida una proyección, incluyendo empates registrados como PUSH."""
+    """Liquida una proyección; los empates se registran como PUSH."""
     try:
+        logger.info(
+            "Iniciando liquidación NFL: game_id=%s prediction_id=%s model=%s",
+            game_id,
+            prediction_id,
+            MODEL_VERSION,
+        )
+
         game = get_game(game_id=game_id, season=2026)
 
         if not game:
@@ -264,8 +273,24 @@ def settle_nfl(game_id: str, prediction_id: str = None):
                 },
             )
 
+        logger.info(
+            "Partido NFL recuperado: game_id=%s home=%s away=%s "
+            "home_score=%s away_score=%s kickoff=%s",
+            game_id,
+            game.get("home"),
+            game.get("away"),
+            game.get("home_score"),
+            game.get("away_score"),
+            game.get("kickoff"),
+        )
+
         eligible, reason = _final_candidate(game)
         if not eligible:
+            logger.warning(
+                "Liquidación NFL no elegible: game_id=%s reason=%s",
+                game_id,
+                reason,
+            )
             return {
                 "success": False,
                 "game_id": str(game_id),
@@ -277,12 +302,32 @@ def settle_nfl(game_id: str, prediction_id: str = None):
         home_score, away_score = _scores(game)
         is_tie = home_score == away_score
 
+        logger.info(
+            "Enviando liquidación al repositorio: game_id=%s "
+            "actual_winner=%s score=%s-%s tie=%s prediction_id=%s",
+            game_id,
+            actual_winner,
+            home_score,
+            away_score,
+            is_tie,
+            prediction_id,
+        )
+
         settlement = settle_nfl_prediction(
             event_id=game_id,
             actual_winner=actual_winner,
             actual_home_score=home_score,
             actual_away_score=away_score,
             prediction_id=prediction_id,
+        )
+
+        logger.info(
+            "Resultado del repositorio NFL: game_id=%s success=%s "
+            "result=%s message=%s",
+            game_id,
+            settlement.get("success"),
+            settlement.get("prediction_result"),
+            settlement.get("message"),
         )
 
         return {
@@ -302,9 +347,15 @@ def settle_nfl(game_id: str, prediction_id: str = None):
             ),
             "settlement": settlement,
         }
+
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception(
+            "NFL_SETTLEMENT_ERROR game_id=%s prediction_id=%s",
+            game_id,
+            prediction_id,
+        )
         raise HTTPException(
             status_code=500,
             detail={
@@ -312,12 +363,12 @@ def settle_nfl(game_id: str, prediction_id: str = None):
                 "message": "No fue posible liquidar la proyección NFL.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.post("/settle-pending")
 def settle_pending_nfl():
-    """Revisa las proyecciones pendientes sin volver a calcularlas."""
+    """Revisa proyecciones pendientes sin volver a calcularlas."""
     try:
         pending = get_nfl_pending_predictions()
         settled = []
@@ -373,6 +424,10 @@ def settle_pending_nfl():
                         ),
                     })
             except Exception as exc:
+                logger.exception(
+                    "Error liquidando proyección pendiente NFL event_id=%s",
+                    event_id,
+                )
                 failed.append({
                     "event_id": event_id,
                     "message": str(exc),
@@ -397,6 +452,7 @@ def settle_pending_nfl():
             "failed": failed,
         }
     except Exception as exc:
+        logger.exception("Error revisando proyecciones pendientes NFL")
         raise HTTPException(
             status_code=500,
             detail={
@@ -404,7 +460,7 @@ def settle_pending_nfl():
                 "message": "No fue posible revisar las proyecciones pendientes.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.get("/performance")
@@ -412,6 +468,7 @@ def nfl_performance():
     try:
         return get_nfl_performance()
     except Exception as exc:
+        logger.exception("Error calculando rendimiento NFL")
         raise HTTPException(
             status_code=500,
             detail={
@@ -419,7 +476,7 @@ def nfl_performance():
                 "message": "No fue posible calcular el rendimiento NFL.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.get("/calibration")
@@ -433,6 +490,7 @@ def nfl_calibration(minimum_sample: int = 30):
     try:
         return get_nfl_calibration(minimum_sample=minimum_sample)
     except Exception as exc:
+        logger.exception("Error calculando calibración NFL")
         raise HTTPException(
             status_code=500,
             detail={
@@ -440,7 +498,7 @@ def nfl_calibration(minimum_sample: int = 30):
                 "message": "No fue posible calcular la calibración NFL.",
                 "details": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.get("/status")
