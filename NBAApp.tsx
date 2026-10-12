@@ -208,7 +208,46 @@ export default function NBAApp() {
                     )}
                     <div className="card-actions">
                       {!stored && <button className="primary" type="button" disabled={!!busy} onClick={() => void analyze(game)}>{busy === game.game_id ? "Analizando…" : "Analizar partido"}</button>}
-                      {pending && <button className="secondary" type="button" disabled={!!busy} onClick={() => void settle(stored)}>{busy === `settle:${game.game_id}` ? "Liquidando…" : "Liquidar resultado"}</button>}
+                      {pending && <button className="secondary" type="button" disabled={!!busy} onClick={() => stored && void settle(stored)}>{busy === `settle:${game.game_id}` ? "Liquidando…" : "Liquidar resultado"}</button>}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section style={{ marginTop: 22 }}>
+          <div className="section-heading">
+            <div><div className="section-kicker">SEGUIMIENTO</div><h2>Proyecciones pendientes</h2></div>
+            <span className="muted">{predictions.filter((row) => row.result_status === "PENDING").length} pendientes</span>
+          </div>
+          {predictions.filter((row) => row.result_status === "PENDING").length === 0 ? (
+            <div className="panel empty">No hay proyecciones NBA pendientes de liquidación.</div>
+          ) : (
+            <div className="games-list">
+              {predictions.filter((row) => row.result_status === "PENDING").map((row) => {
+                const game = row.features?.game || {};
+                return (
+                  <article className="game-card" key={row.id || row.event_id}>
+                    <div className="game-head">
+                      <span className="muted">Inicio: {dateLabel(game.kickoff)}</span>
+                      <span className="status pending">PENDIENTE</span>
+                    </div>
+                    <div className="matchup">
+                      <div><strong>{game.away || "Visitante"}</strong><span>VISITANTE</span></div>
+                      <div className="vs">@</div>
+                      <div className="home-team"><strong>{game.home || "Local"}</strong><span>LOCAL</span></div>
+                    </div>
+                    <div className="prediction-strip">
+                      <div><span>Ganador proyectado</span><b>{row.features?.predicted_winner || "—"}</b></div>
+                      <div><span>Confianza</span><b>{pct(row.confidence)}</b></div>
+                      <div><span>Versión</span><b>{row.model_version || "NBA-1.0.0"}</b></div>
+                    </div>
+                    <div className="card-actions">
+                      <button className="secondary" type="button" disabled={!!busy} onClick={() => void settle(row)}>
+                        {busy === `settle:${row.event_id}` ? "Verificando resultado…" : "Verificar y liquidar"}
+                      </button>
                     </div>
                   </article>
                 );
