@@ -41,6 +41,37 @@ def save_nba_analysis(analysis):
     return {"success": True, "saved": True, "existing": False, "prediction_id": saved[0].get("id") if saved else None, "data": saved}
 
 
+
+def refresh_nba_analysis(analysis):
+    """Actualiza el detalle de una proyección pendiente sin duplicarla."""
+    if not analysis.get("success"):
+        raise ValueError("No se puede actualizar un análisis fallido.")
+    game = analysis.get("game") or {}
+    event_id = str(game.get("game_id") or "")
+    if not event_id:
+        raise ValueError("El análisis NBA no contiene game_id.")
+    db = get_supabase_client()
+    existing = (db.table("prediction_snapshots").select("*")
+        .eq("event_id", event_id).eq("sport", SPORT).eq("league", LEAGUE)
+        .eq("model_version", MODEL_VERSION).eq("result_status", "PENDING")
+        .order("created_at", desc=True).limit(1).execute().data or [])
+    if not existing:
+        return save_nba_analysis(analysis)
+    row = existing[0]
+    old_features = row.get("features") or {}
+    new_features = {**old_features, "game": game,
+        "factors": analysis.get("factors") or {},
+        "projections": analysis.get("projections") or {},
+        "analysis_refreshed_at": analysis.get("generated_at") or datetime.now(timezone.utc).isoformat(),
+        "analysis_data_cutoff": analysis.get("data_cutoff")}
+    updated = (db.table("prediction_snapshots").update({"features": new_features, "data_cutoff": analysis.get("data_cutoff")})
+        .eq("id", row["id"]).eq("result_status", "PENDING").execute())
+    saved = updated.data or []
+    if not saved:
+        raise RuntimeError("No se pudo actualizar la proyección pendiente.")
+    return {"success": True, "saved": True, "existing": True, "refreshed": True,
+        "prediction_id": row.get("id"), "data": saved[0]}
+
 def get_nba_predictions(status=None, limit=100, model_version=None):
     query = (get_supabase_client().table("prediction_snapshots").select("*")
         .eq("sport", SPORT).eq("league", LEAGUE)
