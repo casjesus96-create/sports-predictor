@@ -438,7 +438,7 @@ export default function NBAApp() {
           <section className="panel detail-panel">
             <div className="section-kicker">MODELO OFICIAL</div>
             <h2>NBA-1.1.0</h2>
-            <p className="side-copy">Pondera diferencial de puntos de temporada, forma de los últimos cinco partidos, porcentaje de victorias y ventaja de localía. Las muestras pequeñas se regularizan hacia valores neutrales.</p>
+            <p className="side-copy">Combina diferencial de puntos, forma reciente, victorias, localía y estadísticas recientes de boxscore: rebotes, asistencias, bloqueos, robos, pérdidas y porcentajes de tiro. Las muestras pequeñas se regularizan hacia valores neutrales.</p>
             <div className="score-row"><span>Persistencia de snapshots</span><b>Activa</b></div>
             <div className="score-row"><span>Liquidación</span><b>Manual verificada</b></div>
             <div className="score-row"><span>Control pregame</span><b>Activo</b></div>
