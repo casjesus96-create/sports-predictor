@@ -248,10 +248,12 @@ def _normalize_boxscore_stats(raw_stats):
                 break
 
         # ESPN sometimes exposes makes-attempts rather than a percentage.
-        if "fieldgoalsmade" in key and "attempted" in key:
-            normalized.setdefault("field_goal_pct", value)
-        elif "threepointfieldgoalsmade" in key and "attempted" in key:
+        # Check three-point attempts before general field-goal attempts because
+        # the former key also contains the latter substring.
+        if "threepointfieldgoalsmade" in key and "attempted" in key:
             normalized.setdefault("three_point_pct", value)
+        elif "fieldgoalsmade" in key and "attempted" in key:
+            normalized.setdefault("field_goal_pct", value)
         elif "freethrowsmade" in key and "attempted" in key:
             normalized.setdefault("free_throw_pct", value)
     return normalized
