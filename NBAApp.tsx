@@ -182,7 +182,7 @@ export default function NBAApp() {
         { method: "POST" },
       );
       if (!result.success) throw new Error(result.message || "No se pudo generar la proyección.");
-      setMessage(`Proyección guardada con NBA-1.0.0. Ganador proyectado: ${result.prediction?.winner || "—"}; confianza: ${pct(result.prediction?.confidence)}.`);
+      setMessage(`Proyección guardada con NBA-1.1.0. Ganador proyectado: ${result.prediction?.winner || "—"}; confianza: ${pct(result.prediction?.confidence)}.`);
       await refresh();
     } catch (err) {
       setError(errorText(err));
@@ -220,11 +220,11 @@ export default function NBAApp() {
           <h1>NBA Predictor</h1>
           <p>Proyecciones pregame, historial guardado y seguimiento de resultados.</p>
         </div>
-        <div className="model-pill">Modelo oficial <b>NBA-1.0.0</b></div>
+        <div className="model-pill">Modelo oficial <b>NBA-1.1.0</b></div>
       </header>
 
       <section className="metrics-grid" aria-label="Rendimiento NBA">
-        <div className="metric panel"><span>Proyecciones</span><strong>{summary.total_predictions ?? "—"}</strong><small>Modelo NBA-1.0.0</small></div>
+        <div className="metric panel"><span>Proyecciones</span><strong>{summary.total_predictions ?? "—"}</strong><small>Modelo NBA-1.1.0</small></div>
         <div className="metric panel"><span>Pendientes</span><strong>{summary.pending_predictions ?? "—"}</strong><small>Esperando resultado final</small></div>
         <div className="metric panel"><span>Acierto decisivo</span><strong>{summary.accuracy_percentage != null ? `${summary.accuracy_percentage.toFixed(1)}%` : "—"}</strong><small>{summary.correct_predictions ?? 0} correctas · {summary.incorrect_predictions ?? 0} incorrectas</small></div>
         <div className="metric panel"><span>Brier score</span><strong>{summary.brier_score != null ? summary.brier_score.toFixed(3) : "—"}</strong><small>Menor suele ser mejor; requiere muestra</small></div>
@@ -420,7 +420,7 @@ export default function NBAApp() {
                     <div className="prediction-strip">
                       <div><span>Ganador proyectado</span><b>{row.features?.predicted_winner || "—"}</b></div>
                       <div><span>Confianza</span><b>{pct(row.confidence)}</b></div>
-                      <div><span>Versión</span><b>{row.model_version || "NBA-1.0.0"}</b></div>
+                      <div><span>Versión</span><b>{row.model_version || "NBA-1.1.0"}</b></div>
                     </div>
                     <div className="card-actions">
                       <button className="secondary" type="button" disabled={!!busy} onClick={() => void settle(row)}>
@@ -437,7 +437,7 @@ export default function NBAApp() {
         <aside className="side-column">
           <section className="panel detail-panel">
             <div className="section-kicker">MODELO OFICIAL</div>
-            <h2>NBA-1.0.0</h2>
+            <h2>NBA-1.1.0</h2>
             <p className="side-copy">Pondera diferencial de puntos de temporada, forma de los últimos cinco partidos, porcentaje de victorias y ventaja de localía. Las muestras pequeñas se regularizan hacia valores neutrales.</p>
             <div className="score-row"><span>Persistencia de snapshots</span><b>Activa</b></div>
             <div className="score-row"><span>Liquidación</span><b>Manual verificada</b></div>
@@ -451,7 +451,7 @@ export default function NBAApp() {
       </div>
 
       <footer className="model-note">
-        Sports Predictor · NBA-1.0.0 · Las proyecciones guardadas no se recalculan al liquidar. La precisión solo se interpreta con una muestra suficiente.
+        Sports Predictor · NBA-1.1.0 · Las proyecciones guardadas no se recalculan al liquidar. La precisión solo se interpreta con una muestra suficiente.
       </footer>
     </main>
   );
