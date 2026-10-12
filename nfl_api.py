@@ -1,3 +1,4 @@
+
 from datetime import datetime, timedelta, timezone
 import math
 
@@ -35,11 +36,11 @@ def _valid_score(value):
 
 def _final_candidate(game):
     """
-    Validación conservadora de resultado.
+    Validación conservadora del resultado.
 
-    nflverse no proporciona aquí un estado live/final inequívoco.
-    Por eso exigimos marcador válido y kickoff de hace al menos
-    cuatro horas. No equivale a una confirmación oficial de final.
+    Exige marcador válido y que hayan pasado al menos cuatro horas
+    desde el inicio programado. Este plazo no equivale a una
+    confirmación oficial de final.
     """
     home_score = game.get("home_score")
     away_score = game.get("away_score")
@@ -55,10 +56,8 @@ def _final_candidate(game):
         kickoff = datetime.fromisoformat(
             str(kickoff_value).replace("Z", "+00:00")
         )
-
         if kickoff.tzinfo is None:
             kickoff = kickoff.replace(tzinfo=UTC)
-
         kickoff = kickoff.astimezone(UTC)
     except (TypeError, ValueError):
         return False, "No se pudo interpretar la hora de inicio."
@@ -80,6 +79,10 @@ def _actual_winner(game):
         return None
 
     return game["home"] if home_score > away_score else game["away"]
+
+
+def _scores(game):
+    return int(float(game["home_score"])), int(float(game["away_score"]))
 
 
 @router.get("/games")
@@ -247,7 +250,7 @@ def nfl_pending():
 
 @router.post("/settle/{game_id}")
 def settle_nfl(game_id: str, prediction_id: str = None):
-    """Liquida una proyección pendiente si el resultado puede evaluarse."""
+    """Liquida una proyección, incluyendo empates registrados como PUSH."""
     try:
         game = get_game(game_id=game_id, season=2026)
 
@@ -271,24 +274,14 @@ def settle_nfl(game_id: str, prediction_id: str = None):
             }
 
         actual_winner = _actual_winner(game)
-        if actual_winner is None:
-            return {
-                "success": False,
-                "game_id": str(game_id),
-                "status": "UNRESOLVED",
-                "message": (
-                    "El marcador está empatado; no se asignó un ganador "
-                    "ni se modificó la proyección."
-                ),
-                "home_score": int(float(game["home_score"])),
-                "away_score": int(float(game["away_score"])),
-            }
+        home_score, away_score = _scores(game)
+        is_tie = home_score == away_score
 
         settlement = settle_nfl_prediction(
             event_id=game_id,
             actual_winner=actual_winner,
-            actual_home_score=int(float(game["home_score"])),
-            actual_away_score=int(float(game["away_score"])),
+            actual_home_score=home_score,
+            actual_away_score=away_score,
             prediction_id=prediction_id,
         )
 
@@ -299,9 +292,14 @@ def settle_nfl(game_id: str, prediction_id: str = None):
             "game_id": str(game_id),
             "home": game.get("home"),
             "away": game.get("away"),
-            "home_score": int(float(game["home_score"])),
-            "away_score": int(float(game["away_score"])),
-            "actual_winner": actual_winner,
+            "home_score": home_score,
+            "away_score": away_score,
+            "actual_winner": "TIE" if is_tie else actual_winner,
+            "status": (
+                "PUSH"
+                if settlement.get("prediction_result") == "PUSH"
+                else settlement.get("status")
+            ),
             "settlement": settlement,
         }
     except HTTPException:
@@ -354,18 +352,13 @@ def settle_pending_nfl():
                     continue
 
                 actual_winner = _actual_winner(game)
-                if actual_winner is None:
-                    failed.append({
-                        "event_id": event_id,
-                        "message": "Marcador empatado; no se asignó ganador.",
-                    })
-                    continue
+                home_score, away_score = _scores(game)
 
                 result = settle_nfl_prediction(
                     event_id=event_id,
                     actual_winner=actual_winner,
-                    actual_home_score=int(float(game["home_score"])),
-                    actual_away_score=int(float(game["away_score"])),
+                    actual_home_score=home_score,
+                    actual_away_score=away_score,
                     prediction_id=prediction.get("id"),
                 )
 
@@ -394,6 +387,10 @@ def settle_pending_nfl():
                 "settled": len(settled),
                 "still_pending": len(still_pending),
                 "failed": len(failed),
+                "push": sum(
+                    1 for item in settled
+                    if item.get("prediction_result") == "PUSH"
+                ),
             },
             "settled": settled,
             "still_pending": still_pending,
