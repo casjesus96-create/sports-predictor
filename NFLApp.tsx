@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 
 const API = "/api/v1";
@@ -7,20 +8,21 @@ type AnyRecord = Record<string, any>;
 
 function localDate() {
   const d = new Date();
-  const offset = d.getTimezoneOffset();
-  return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 10);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
 }
 
 function pct(value: any) {
+  if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
   return Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : "—";
 }
 
 function number(value: any, digits = 1) {
+  if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
-  return value === null || value === undefined || value === "" || !Number.isFinite(n)
-    ? "—"
-    : n.toFixed(digits);
+  return Number.isFinite(n) ? n.toFixed(digits) : "—";
 }
 
 function formatKickoff(value: any) {
@@ -40,8 +42,9 @@ function gameDate(value: any) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
-  const offset = date.getTimezoneOffset();
-  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
 }
 
 function getPredictionGame(row: AnyRecord) {
@@ -53,35 +56,76 @@ function getPredictionFactors(row: AnyRecord) {
 }
 
 function getPredictedWinner(row: AnyRecord) {
-  return row?.features?.predicted_winner ||
+  return (
+    row?.features?.predicted_winner ||
     row?.prediction?.winner ||
     (Number(row?.home_probability) >= Number(row?.away_probability)
       ? getPredictionGame(row)?.home
-      : getPredictionGame(row)?.away);
+      : getPredictionGame(row)?.away)
+  );
 }
 
 function getProbability(row: AnyRecord, side: "home" | "away") {
-  return row?.[`${side}_probability`] ??
+  return (
+    row?.[`${side}_probability`] ??
     row?.prediction?.[`${side}_probability`] ??
-    null;
+    null
+  );
 }
 
-function TeamFactor({ label, value }: { label: string; value: any }) {
+function resultLabel(result: any) {
+  switch (String(result || "").toUpperCase()) {
+    case "CORRECT":
+      return "CORRECTA";
+    case "INCORRECT":
+      return "INCORRECTA";
+    case "PUSH":
+      return "EMPATE";
+    default:
+      return String(result || "PENDIENTE");
+  }
+}
+
+function TeamFactor({
+  label,
+  value,
+}: {
+  label: string;
+  value: any;
+}) {
   return (
     <div className="factor">
       <span>{label}</span>
-      <b>{value === null || value === undefined || value === "" ? "—" : String(value)}</b>
+      <b>
+        {value === null || value === undefined || value === ""
+          ? "—"
+          : String(value)}
+      </b>
     </div>
   );
 }
 
-function Probability({ label, value }: { label: string; value: any }) {
+function Probability({
+  label,
+  value,
+}: {
+  label: string;
+  value: any;
+}) {
   const n = Number(value);
-  const width = Number.isFinite(n) ? Math.max(0, Math.min(100, n * 100)) : 0;
+  const width = Number.isFinite(n)
+    ? Math.max(0, Math.min(100, n * 100))
+    : 0;
+
   return (
     <div className="prob-card">
-      <div><span>{label}</span><b>{pct(value)}</b></div>
-      <div className="bar-track"><i style={{ width: `${width}%` }} /></div>
+      <div>
+        <span>{label}</span>
+        <b>{pct(value)}</b>
+      </div>
+      <div className="bar-track">
+        <i style={{ width: `${width}%` }} />
+      </div>
     </div>
   );
 }
@@ -104,7 +148,8 @@ export default function NFLApp() {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      const message = data?.detail?.message ||
+      const message =
+        data?.detail?.message ||
         (typeof data?.detail === "string" ? data.detail : "") ||
         data?.message ||
         "La API devolvió un error.";
@@ -125,31 +170,28 @@ export default function NFLApp() {
         request("/nfl/performance"),
       ]);
 
-      const gameResult = results[0];
-      const predictionResult = results[1];
-      const performanceResult = results[2];
-
-      if (gameResult.status === "fulfilled") {
-        setGames(Array.isArray(gameResult.value?.games)
-          ? gameResult.value.games
-          : []);
-      } else {
-        throw gameResult.reason;
+      if (results[0].status === "rejected") {
+        throw results[0].reason;
       }
 
-      if (predictionResult.status === "fulfilled") {
-        setPredictions(Array.isArray(predictionResult.value?.predictions)
-          ? predictionResult.value.predictions
-          : []);
-      } else {
-        setPredictions([]);
-      }
+      setGames(
+        Array.isArray(results[0].value?.games)
+          ? results[0].value.games
+          : []
+      );
 
-      if (performanceResult.status === "fulfilled") {
-        setPerformance(performanceResult.value);
-      } else {
-        setPerformance(null);
-      }
+      setPredictions(
+        results[1].status === "fulfilled" &&
+        Array.isArray(results[1].value?.predictions)
+          ? results[1].value.predictions
+          : []
+      );
+
+      setPerformance(
+        results[2].status === "fulfilled"
+          ? results[2].value
+          : null
+      );
     } catch (e: any) {
       setError(e?.message || "No se pudo cargar el calendario NFL.");
     } finally {
@@ -164,8 +206,6 @@ export default function NFLApp() {
   const predictionByGame = useMemo(() => {
     const map = new Map<string, AnyRecord>();
 
-    // La API ordena por created_at descendente. Conservamos
-    // la primera fila encontrada para cada partido.
     for (const row of predictions) {
       const id = String(row?.event_id ?? "");
       if (id && !map.has(id)) map.set(id, row);
@@ -182,15 +222,11 @@ export default function NFLApp() {
       if (id) map.set(id, game);
     }
 
-    // Los partidos guardados se mantienen visibles aunque ya
-    // no pertenezcan al calendario de próximos encuentros.
     for (const row of predictions) {
-      const game = getPredictionGame(row);
-      const id = String(row?.event_id ?? game?.game_id ?? "");
-      if (!id) continue;
-
-      if (!map.has(id)) {
-        map.set(id, { ...game, game_id: id });
+      const storedGame = getPredictionGame(row);
+      const id = String(row?.event_id ?? storedGame?.game_id ?? "");
+      if (id && !map.has(id)) {
+        map.set(id, { ...storedGame, game_id: id });
       }
     }
 
@@ -207,7 +243,8 @@ export default function NFLApp() {
     return mergedGames.filter((game) => {
       const row = predictionByGame.get(String(game?.game_id ?? ""));
       const storedGame = getPredictionGame(row || {});
-      const kickoff = game?.kickoff ||
+      const kickoff =
+        game?.kickoff ||
         game?.gameday ||
         storedGame?.kickoff ||
         storedGame?.gameday;
@@ -216,9 +253,8 @@ export default function NFLApp() {
     });
   }, [mergedGames, date, allUpcoming, predictionByGame]);
 
-  const selectedGame = mergedGames.find(
-    (g) => String(g?.game_id) === selectedGameId
-  ) || null;
+  const selectedGame =
+    mergedGames.find((g) => String(g?.game_id) === selectedGameId) || null;
 
   const selectedPrediction = selectedGameId
     ? predictionByGame.get(selectedGameId)
@@ -227,7 +263,8 @@ export default function NFLApp() {
   const summary = performance?.summary || {};
   const detailGame = detail?.game || selectedGame || {};
   const predictionDetail = detail?.prediction || selectedPrediction || {};
-  const factors = detail?.factors || getPredictionFactors(selectedPrediction || {});
+  const factors =
+    detail?.factors || getPredictionFactors(selectedPrediction || {});
   const homeHistory = factors?.home || {};
   const awayHistory = factors?.away || {};
   const rest = factors?.rest || {};
@@ -239,7 +276,9 @@ export default function NFLApp() {
     const existing = predictionByGame.get(gameId);
 
     if (existing?.result_status === "SETTLED") {
-      setError("Esta proyección ya fue liquidada. Su resultado original no se puede recalcular.");
+      setError(
+        "Esta proyección ya fue liquidada. Su resultado original no se puede recalcular."
+      );
       return;
     }
 
@@ -260,8 +299,6 @@ export default function NFLApp() {
         );
       }
 
-      // Si el servidor devolvió el snapshot existente, mostramos
-      // ese snapshot. No solicitamos otro análisis para sustituirlo.
       if (saved?.persistence?.existing && saved?.persistence?.data) {
         const row = saved.persistence.data;
 
@@ -278,6 +315,7 @@ export default function NFLApp() {
             data_quality: row?.data_quality,
           },
           factors: getPredictionFactors(row),
+          storedPrediction: row,
         });
 
         setNotice("Se conservó y mostró la proyección original guardada.");
@@ -286,12 +324,18 @@ export default function NFLApp() {
           `/nfl/analyze/${encodeURIComponent(gameId)}`
         );
 
-        setDetail(analysis?.success ? analysis : {
-          success: true,
-          game: mergedGames.find((g) => String(g.game_id) === gameId),
-          prediction: saved?.prediction || {},
-          factors: {},
-        });
+        setDetail(
+          analysis?.success
+            ? analysis
+            : {
+                success: true,
+                game: mergedGames.find(
+                  (g) => String(g.game_id) === gameId
+                ),
+                prediction: saved?.prediction || {},
+                factors: {},
+              }
+        );
 
         setNotice("Proyección NFL generada y guardada correctamente.");
       }
@@ -362,15 +406,7 @@ export default function NFLApp() {
       if (result?.status === "PENDING") {
         setNotice(
           result?.message ||
-          "Todavía no se puede confirmar el resultado. La proyección sigue pendiente."
-        );
-        return;
-      }
-
-      if (result?.status === "UNRESOLVED") {
-        setNotice(
-          result?.message ||
-          "No se pudo determinar un ganador. La proyección no se ha liquidado."
+            "Todavía no se puede confirmar el resultado. La proyección sigue pendiente."
         );
         return;
       }
@@ -378,25 +414,28 @@ export default function NFLApp() {
       if (!result?.success || !result?.settlement?.success) {
         throw new Error(
           result?.settlement?.message ||
-          result?.message ||
-          "No se pudo liquidar la proyección."
+            result?.message ||
+            "No se pudo liquidar la proyección."
         );
       }
 
       const settlement = result.settlement;
-      const correct = settlement?.prediction_result === "CORRECT";
+      const outcome = settlement?.prediction_result;
+      const label = resultLabel(outcome);
 
       setNotice(
-        `Proyección liquidada: ${correct ? "CORRECTA" : "INCORRECTA"}. ` +
-        `Marcador final registrado: ${result.away} ${result.away_score} - ` +
-        `${result.home_score} ${result.home}.`
+        `Proyección liquidada: ${label}. ` +
+          `Marcador registrado: ${result.away} ${result.away_score} - ` +
+          `${result.home_score} ${result.home}.`
       );
 
       await loadAll(false);
-      openStoredPrediction(
+
+      const game =
         mergedGames.find((g) => String(g?.game_id) === gameId) ||
-        getPredictionGame(stored)
-      );
+        getPredictionGame(stored);
+
+      openStoredPrediction(game);
     } catch (e: any) {
       setError(e?.message || "No fue posible liquidar la proyección.");
     } finally {
@@ -414,16 +453,20 @@ export default function NFLApp() {
         method: "POST",
       });
 
-      const summaryResult = result?.summary || {};
+      const resultSummary = result?.summary || {};
+
       setNotice(
-        `Revisión terminada. Liquidadas: ${summaryResult.settled ?? 0}; ` +
-        `pendientes: ${summaryResult.still_pending ?? 0}; ` +
-        `con incidencias: ${summaryResult.failed ?? 0}.`
+        `Revisión terminada. Liquidadas: ${resultSummary.settled ?? 0}; ` +
+          `pendientes: ${resultSummary.still_pending ?? 0}; ` +
+          `con incidencias: ${resultSummary.failed ?? 0}; ` +
+          `empates: ${resultSummary.push ?? 0}.`
       );
 
       await loadAll(false);
     } catch (e: any) {
-      setError(e?.message || "No fue posible revisar las proyecciones pendientes.");
+      setError(
+        e?.message || "No fue posible revisar las proyecciones pendientes."
+      );
     } finally {
       setActionLoading("");
     }
@@ -437,17 +480,31 @@ export default function NFLApp() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <div className="eyebrow">SPORTS PREDICTOR · FÚTBOL AMERICANO</div>
+          <div className="eyebrow">
+            SPORTS PREDICTOR · FÚTBOL AMERICANO
+          </div>
           <h1>NFL Predictor</h1>
-          <p>Proyecciones pregame con historial, forma reciente y descanso.</p>
+          <p>
+            Proyecciones pregame con historial, forma reciente y descanso.
+          </p>
         </div>
+
         <div className="model-pill">
           Modelo oficial <b>{MODEL_VERSION}</b>
         </div>
       </header>
 
-      {error && <div className="message error" role="alert">{error}</div>}
-      {notice && <div className="message notice" role="status">{notice}</div>}
+      {error && (
+        <div className="message error" role="alert">
+          {error}
+        </div>
+      )}
+
+      {notice && (
+        <div className="message notice" role="status">
+          {notice}
+        </div>
+      )}
 
       <section className="metrics-grid">
         <div className="metric">
@@ -455,34 +512,53 @@ export default function NFLApp() {
           <strong>{summary.total_predictions ?? predictions.length}</strong>
           <small>Modelo {MODEL_VERSION}</small>
         </div>
+
         <div className="metric">
           <span>Pendientes</span>
           <strong>
             {summary.pending_predictions ??
               predictions.filter((p) => p?.result_status === "PENDING").length}
           </strong>
-          <small>Esperando resultado final</small>
+          <small>Esperando resultado liquidable</small>
         </div>
+
         <div className="metric">
           <span>Liquidadas</span>
           <strong>
             {summary.settled_predictions ??
               predictions.filter((p) => p?.result_status === "SETTLED").length}
           </strong>
-          <small>Con resultado registrado</small>
+          <small>Incluye empates</small>
         </div>
+
         <div className="metric">
           <span>Precisión observada</span>
           <strong>
-            {summary.settled_predictions
+            {Number(summary.decisive_predictions ?? 0) > 0
               ? `${number(summary.accuracy_percentage, 1)}%`
               : "—"}
           </strong>
           <small>
-            {summary.settled_predictions
-              ? "Basada en partidos liquidados"
-              : "Sin resultados liquidados"}
+            Excluye empates; solo CORRECT e INCORRECT
           </small>
+        </div>
+
+        <div className="metric">
+          <span>Aciertos</span>
+          <strong>{summary.correct_predictions ?? 0}</strong>
+          <small>CORRECT</small>
+        </div>
+
+        <div className="metric">
+          <span>Fallos</span>
+          <strong>{summary.incorrect_predictions ?? 0}</strong>
+          <small>INCORRECT</small>
+        </div>
+
+        <div className="metric">
+          <span>Empates</span>
+          <strong>{summary.push_predictions ?? 0}</strong>
+          <small>PUSH · no suma ni resta precisión</small>
         </div>
       </section>
 
@@ -512,7 +588,9 @@ export default function NFLApp() {
             type="button"
             onClick={() => setAllUpcoming((value) => !value)}
           >
-            {allUpcoming ? "Filtrar por fecha" : "Todos los partidos guardados"}
+            {allUpcoming
+              ? "Filtrar por fecha"
+              : "Todos los partidos guardados"}
           </button>
 
           <button
@@ -555,7 +633,9 @@ export default function NFLApp() {
             <div className="panel empty">Cargando calendario NFL…</div>
           ) : filteredGames.length === 0 ? (
             <div className="panel empty">
-              <b>No hay partidos para esta fecha dentro de los datos cargados.</b>
+              <b>
+                No hay partidos para esta fecha dentro de los datos cargados.
+              </b>
               <p>
                 Puedes mostrar todos los partidos guardados o elegir otra fecha.
               </p>
@@ -573,10 +653,7 @@ export default function NFLApp() {
                 const id = String(game?.game_id || "");
                 const stored = predictionByGame.get(id);
                 const storedGame = getPredictionGame(stored || {});
-                const displayGame = {
-                  ...storedGame,
-                  ...game,
-                };
+                const displayGame = { ...storedGame, ...game };
 
                 const storedWinner = stored ? getPredictedWinner(stored) : "";
                 const home = String(displayGame?.home || "Local");
@@ -590,6 +667,15 @@ export default function NFLApp() {
                 const actualHomeScore = stored?.actual_home_score;
                 const actualAwayScore = stored?.actual_away_score;
 
+                const resultClass =
+                  storedResult === "CORRECT"
+                    ? "correct"
+                    : storedResult === "PUSH"
+                      ? "pending"
+                      : storedResult === "INCORRECT"
+                        ? "pending"
+                        : "";
+
                 return (
                   <article
                     className={`game-card${isSelected ? " selected" : ""}`}
@@ -599,22 +685,20 @@ export default function NFLApp() {
                       <span className="status">
                         {displayGame?.game_type === "REG"
                           ? `Semana ${displayGame?.week ?? "—"}`
-                          : (displayGame?.game_type || "NFL")}
+                          : displayGame?.game_type || "NFL"}
                       </span>
 
-                      <span className={`status ${
-                        isSettled
-                          ? storedResult === "CORRECT"
-                            ? "correct"
-                            : "pending"
-                          : stored
-                            ? "pending"
-                            : ""
-                      }`}>
+                      <span
+                        className={`status ${
+                          isSettled
+                            ? resultClass
+                            : stored
+                              ? "pending"
+                              : ""
+                        }`}
+                      >
                         {isSettled
-                          ? storedResult === "CORRECT"
-                            ? "CORRECTA"
-                            : "INCORRECTA"
+                          ? resultLabel(storedResult)
                           : stored
                             ? "Pendiente de liquidación"
                             : "Sin predecir"}
@@ -639,7 +723,9 @@ export default function NFLApp() {
                           displayGame?.kickoff || displayGame?.gameday
                         )}
                       </span>
-                      <span>{displayGame?.stadium || "Estadio por confirmar"}</span>
+                      <span>
+                        {displayGame?.stadium || "Estadio por confirmar"}
+                      </span>
                     </div>
 
                     {stored && (
@@ -667,11 +753,13 @@ export default function NFLApp() {
                       <div className="prediction-strip">
                         <div>
                           <span>Marcador real</span>
-                          <b>{away} {actualAwayScore} - {actualHomeScore} {home}</b>
+                          <b>
+                            {away} {actualAwayScore} - {actualHomeScore} {home}
+                          </b>
                         </div>
                         <div>
                           <span>Resultado del modelo</span>
-                          <b>{storedResult}</b>
+                          <b>{resultLabel(storedResult)}</b>
                         </div>
                       </div>
                     )}
@@ -700,7 +788,10 @@ export default function NFLApp() {
                         <button
                           className="primary"
                           type="button"
-                          disabled={actionLoading === `settle:${id}` || actionLoading === "settle-all"}
+                          disabled={
+                            actionLoading === `settle:${id}` ||
+                            actionLoading === "settle-all"
+                          }
                           onClick={() => settlePrediction(id)}
                         >
                           {actionLoading === `settle:${id}`
@@ -751,9 +842,10 @@ export default function NFLApp() {
                       "—"}
                   </strong>
                   <b>
-                    Confianza {pct(
+                    Confianza{" "}
+                    {pct(
                       predictionDetail?.confidence ??
-                      selectedPrediction?.confidence
+                        selectedPrediction?.confidence
                     )}
                   </b>
                 </div>
@@ -790,19 +882,25 @@ export default function NFLApp() {
 
                 {detailIsSettled && (
                   <div className="message notice">
-                    <b>Proyección liquidada: {detailResult}</b>
+                    <b>
+                      Proyección liquidada: {resultLabel(detailResult)}
+                    </b>
                     <p>
-                      Marcador real: {detail?.storedPrediction?.actual_away_score}
-                      {" - "}
+                      Marcador real:{" "}
+                      {detail?.storedPrediction?.actual_away_score} -{" "}
                       {detail?.storedPrediction?.actual_home_score}
                     </p>
                     <p>
-                      Ganador real: {detail?.storedPrediction?.actual_winner || "—"}
+                      Ganador real:{" "}
+                      {String(
+                        detail?.storedPrediction?.actual_winner || ""
+                      ).toUpperCase() === "TIE"
+                        ? "Empate"
+                        : detail?.storedPrediction?.actual_winner || "—"}
                     </p>
                     <p>
-                      Liquidación: {formatKickoff(
-                        detail?.storedPrediction?.settled_at
-                      )}
+                      Liquidación:{" "}
+                      {formatKickoff(detail?.storedPrediction?.settled_at)}
                     </p>
                   </div>
                 )}
@@ -852,7 +950,7 @@ export default function NFLApp() {
                 </div>
 
                 <h3 className="detail-heading">
-                  Forma reciente (últimos partidos disponibles)
+                  Forma reciente y descanso
                 </h3>
                 <div className="factor-grid">
                   <TeamFactor
@@ -895,15 +993,17 @@ export default function NFLApp() {
                   />
                   <TeamFactor
                     label="Temperatura"
-                    value={weather?.temperature != null
-                      ? `${weather.temperature}°`
-                      : "—"}
+                    value={
+                      weather?.temperature != null
+                        ? `${weather.temperature}°`
+                        : "—"
+                    }
                   />
                   <TeamFactor
                     label="Viento"
-                    value={weather?.wind != null
-                      ? `${weather.wind} mph`
-                      : "—"}
+                    value={
+                      weather?.wind != null ? `${weather.wind} mph` : "—"
+                    }
                   />
                   <TeamFactor
                     label="Techo"
@@ -924,16 +1024,16 @@ export default function NFLApp() {
                 </div>
 
                 <p className="model-note">
-                  Las probabilidades mostradas corresponden al snapshot
-                  guardado. La liquidación agrega el resultado real, pero no
-                  recalcula el pronóstico original.
+                  Las probabilidades corresponden al snapshot original. La
+                  liquidación registra el resultado real, pero no recalcula
+                  el pronóstico.
                 </p>
               </>
             ) : (
               <div className="empty detail-empty">
                 Elige un partido guardado para ver su proyección original.
-                Para un partido sin proyección, pulsa <b>Analizar partido</b>
-                antes del inicio.
+                Para un partido sin proyección, pulsa{" "}
+                <b>Analizar partido</b> antes del inicio.
               </div>
             )}
           </section>
@@ -942,7 +1042,8 @@ export default function NFLApp() {
 
       <footer className="model-note">
         Sports Predictor · NFL-1.0.0 · La confianza no garantiza un resultado.
-        La calibración es observacional y no modifica automáticamente el modelo.
+        Los empates no cuentan como aciertos ni fallos. La calibración es
+        observacional y no modifica automáticamente el modelo.
       </footer>
     </main>
   );
