@@ -9,6 +9,7 @@ from pending_predictions import router as pending_router
 
 from analyzer import analyze_mlb_game
 from nfl_api import router as nfl_router
+from nba_api import router as nba_router
 from repository import (
     save_analysis,
     settle_prediction,
@@ -27,8 +28,8 @@ app = FastAPI(
     title="Sports Predictor API",
     version="2.0.0",
     description=(
-        "API de proyecciones deportivas con análisis MLB, "
-        "NFL, forma histórica, análisis diario y liquidación automática."
+        "API de proyecciones deportivas con análisis MLB, NFL y NBA, "
+        "forma histórica, análisis pregame y liquidación de resultados."
     ),
 )
 
@@ -41,6 +42,9 @@ app.include_router(pending_router)
 app.include_router(
     nfl_router
 )
+
+# NBA router: módulo independiente con modelo oficial NBA-1.0.0.
+app.include_router(nba_router)
 
 
 # =========================================================
@@ -72,6 +76,7 @@ def health():
         "sports": [
             "MLB",
             "NFL",
+            "NBA",
         ],
     }
 
