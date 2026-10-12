@@ -1,4 +1,4 @@
-name: Validate NBA 1.0.0
+name: Validate NBA 1.0.0 Backend and Frontend
 
 on:
   push:
