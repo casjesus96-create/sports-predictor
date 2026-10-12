@@ -6,7 +6,6 @@ se hacen por mes y se filtran localmente al intervalo solicitado.
 """
 from datetime import datetime, timedelta, timezone
 import logging
-import calendar
 
 import requests
 
