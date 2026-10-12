@@ -1,11 +1,12 @@
 import { useState } from "react";
 import MLBApp from "./MLBApp";
 import NFLApp from "./NFLApp";
+import NBAApp from "./NBAApp";
 
-type Sport = "MLB" | "NFL";
+type Sport = "MLB" | "NFL" | "NBA";
 
 export default function App() {
-  const [sport, setSport] = useState<Sport>("MLB");
+  const [sport, setSport] = useState<Sport>("NBA");
 
   const buttonStyle = (selected: boolean): React.CSSProperties => ({
     padding: "10px 20px",
@@ -48,9 +49,18 @@ export default function App() {
         >
           🏈 NFL
         </button>
+
+        <button
+          type="button"
+          aria-pressed={sport === "NBA"}
+          onClick={() => setSport("NBA")}
+          style={buttonStyle(sport === "NBA")}
+        >
+          🏀 NBA
+        </button>
       </nav>
 
-      {sport === "MLB" ? <MLBApp /> : <NFLApp />}
+      {sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : <NBAApp />}
     </>
   );
 }
