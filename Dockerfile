@@ -11,6 +11,7 @@ COPY package.json ./
 COPY App.tsx ./
 COPY MLBApp.tsx ./
 COPY NFLApp.tsx ./
+COPY NBAApp.tsx ./
 COPY main.tsx ./
 COPY index.html ./
 COPY styles.css ./
