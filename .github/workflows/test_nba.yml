@@ -20,6 +20,7 @@ on:
       - "App.tsx"
       - "main.py"
       - "test_nba_prediction.py"
+      - "test_nba_client.py"
   workflow_dispatch:
 
 jobs:
