@@ -14,22 +14,104 @@ MLB_HEADERS = {
     "Accept": "application/json",
 }
 
+REQUEST_TIMEOUT = 20
+
+
+def utc_now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def normalized_text(value):
+    if value is None:
+        return ""
+    return str(value).strip().casefold()
+
+
+def get_game_status(feed):
+    game_data = feed.get("gameData") or {}
+    status_data = game_data.get("status") or {}
+
+    return {
+        "abstract": status_data.get("abstractGameState"),
+        "detailed": status_data.get("detailedState"),
+        "coded": status_data.get("codedGameState"),
+        "status_data": status_data,
+    }
+
+
+def mark_cancelled(supabase, record, item, detailed_status):
+    """
+    Marca un partido como CANCELLED únicamente cuando MLB
+    informa explícitamente que fue cancelado.
+
+    No asigna CORRECT ni INCORRECT y no modifica
+    la predicción original.
+    """
+    prediction_id = record.get("id")
+    features = dict(record.get("features") or {})
+
+    features["settlement"] = {
+        **(features.get("settlement") or {}),
+        "status": "CANCELLED",
+        "reason": detailed_status or "Cancelled",
+        "checked_at": utc_now(),
+    }
+
+    update_data = {
+        "result_status": "CANCELLED",
+        "prediction_result": None,
+        "actual_winner": None,
+        "actual_home_score": None,
+        "actual_away_score": None,
+        "settled_at": utc_now(),
+        "features": features,
+    }
+
+    response = (
+        supabase.table("prediction_snapshots")
+        .update(update_data)
+        .eq("id", prediction_id)
+        .eq("result_status", "PENDING")
+        .execute()
+    )
+
+    if not response.data:
+        item.update({
+            "status": "SKIPPED",
+            "reason": "La predicción ya cambió de estado.",
+        })
+        return
+
+    item.update({
+        "status": "CANCELLED",
+        "game_status": detailed_status,
+        "reason": (
+            "MLB confirmó la cancelación. "
+            "La predicción no cuenta como acierto ni como fallo."
+        ),
+    })
+
 
 @router.get("/api/v1/predictions/pending")
 def pending_predictions():
     try:
         records = get_pending_predictions()
+
         return {
             "success": True,
             "total": len(records),
             "predictions": records,
         }
+
     except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail={
                 "error": "PENDING_PREDICTIONS_ERROR",
-                "message": "No se pudieron obtener las predicciones pendientes.",
+                "message": (
+                    "No se pudieron obtener las "
+                    "predicciones pendientes."
+                ),
                 "details": str(exc),
             },
         )
@@ -52,7 +134,7 @@ def settle_pending_predictions():
         results = []
 
         for record in records:
-            event_id = str(record.get("event_id", ""))
+            event_id = str(record.get("event_id") or "")
             prediction_id = record.get("id")
 
             item = {
@@ -65,22 +147,29 @@ def settle_pending_predictions():
                 if not event_id or not prediction_id:
                     item.update({
                         "status": "SKIPPED",
-                        "reason": "Falta el ID del partido o de la predicción.",
+                        "reason": (
+                            "Falta el ID del partido "
+                            "o de la predicción."
+                        ),
                     })
                     results.append(item)
                     continue
 
                 url = f"{MLB_GAME_URL}/{event_id}/feed/live"
+
                 api_response = requests.get(
                     url,
                     headers=MLB_HEADERS,
-                    timeout=20,
+                    timeout=REQUEST_TIMEOUT,
                 )
 
                 if api_response.status_code == 404:
                     item.update({
                         "status": "SKIPPED",
-                        "reason": "MLB no encontró el feed de este partido.",
+                        "reason": (
+                            "MLB no encontró el feed de este partido. "
+                            "Se conserva la predicción pendiente."
+                        ),
                     })
                     results.append(item)
                     continue
@@ -90,24 +179,66 @@ def settle_pending_predictions():
 
                 game_data = feed.get("gameData") or {}
                 live_data = feed.get("liveData") or {}
-                status_data = game_data.get("status") or {}
-                status = status_data.get("abstractGameState")
+                status_info = get_game_status(feed)
 
-                if status != "Final":
+                abstract_status = status_info["abstract"]
+                detailed_status = status_info["detailed"] or ""
+
+                item["game_status"] = detailed_status or abstract_status
+
+                # -------------------------------------------------
+                # CANCELACIÓN OFICIAL
+                # -------------------------------------------------
+                # "Final" por sí solo no garantiza que haya marcador.
+                # Solo se marca CANCELLED cuando el estado detallado
+                # de MLB confirma explícitamente la cancelación.
+                # -------------------------------------------------
+
+                detailed_normalized = normalized_text(detailed_status)
+
+                if detailed_normalized in {
+                    "cancelled",
+                    "canceled",
+                    "game cancelled",
+                    "game canceled",
+                }:
+                    mark_cancelled(
+                        supabase,
+                        record,
+                        item,
+                        detailed_status,
+                    )
+                    results.append(item)
+                    continue
+
+                # -------------------------------------------------
+                # PARTIDO NO FINALIZADO
+                # -------------------------------------------------
+
+                if abstract_status != "Final":
                     item.update({
                         "status": "NOT_FINAL",
-                        "game_status": status,
-                        "reason": "MLB todavía no confirma el partido como finalizado.",
+                        "reason": (
+                            "El partido sigue pendiente, suspendido, "
+                            "aplazado o en curso. No se liquidará "
+                            "hasta que MLB confirme el resultado final."
+                        ),
                     })
                     results.append(item)
                     continue
 
+                # -------------------------------------------------
+                # RECUPERAR MARCADOR FINAL OFICIAL
+                # -------------------------------------------------
+
                 teams = game_data.get("teams") or {}
+
                 home_team = (teams.get("home") or {}).get("name")
                 away_team = (teams.get("away") or {}).get("name")
 
                 linescore = live_data.get("linescore") or {}
                 score_teams = linescore.get("teams") or {}
+
                 home_score = (score_teams.get("home") or {}).get("runs")
                 away_score = (score_teams.get("away") or {}).get("runs")
 
@@ -116,39 +247,78 @@ def settle_pending_predictions():
                     or not away_team
                     or home_score is None
                     or away_score is None
-                    or home_score == away_score
                 ):
                     item.update({
                         "status": "SKIPPED",
-                        "reason": "El feed final no contiene un marcador válido.",
+                        "reason": (
+                            "MLB indica estado Final, pero el feed "
+                            "no contiene ambos marcadores. No se "
+                            "modificó la predicción."
+                        ),
+                    })
+                    results.append(item)
+                    continue
+
+                try:
+                    home_score = int(home_score)
+                    away_score = int(away_score)
+                except (TypeError, ValueError):
+                    item.update({
+                        "status": "SKIPPED",
+                        "reason": (
+                            "El marcador devuelto por MLB no es válido."
+                        ),
+                    })
+                    results.append(item)
+                    continue
+
+                # En béisbol, un empate no es un resultado final
+                # válido para decidir el ganador.
+                if home_score == away_score:
+                    item.update({
+                        "status": "SKIPPED",
+                        "reason": (
+                            "El marcador está empatado. Se requiere "
+                            "un resultado oficial definitivo."
+                        ),
                     })
                     results.append(item)
                     continue
 
                 actual_winner = (
-                    home_team if int(home_score) > int(away_score)
-                    else away_team
+                    home_team if home_score > away_score else away_team
                 )
+
+                # -------------------------------------------------
+                # RECUPERAR PRONÓSTICO ORIGINAL
+                # -------------------------------------------------
 
                 features = record.get("features") or {}
                 predicted_winner = features.get("predicted_winner")
 
                 if predicted_winner:
-                    normalized = str(predicted_winner).strip().casefold()
-                    if normalized == home_team.casefold():
+                    predicted_normalized = normalized_text(
+                        predicted_winner
+                    )
+
+                    if predicted_normalized == normalized_text(home_team):
                         predicted_winner = home_team
-                    elif normalized == away_team.casefold():
+                    elif predicted_normalized == normalized_text(away_team):
                         predicted_winner = away_team
                     else:
                         predicted_winner = None
 
-                # Si falta el ganador guardado, utilizar únicamente
-                # las probabilidades originales de la predicción.
+                # Si falta el ganador guardado, se reconstruye
+                # exclusivamente con las probabilidades originales.
                 if not predicted_winner:
                     try:
-                        home_probability = float(record["home_probability"])
-                        away_probability = float(record["away_probability"])
-                    except (KeyError, TypeError, ValueError):
+                        home_probability = float(
+                            record.get("home_probability")
+                        )
+                        away_probability = float(
+                            record.get("away_probability")
+                        )
+                    except (TypeError, ValueError):
                         home_probability = None
                         away_probability = None
 
@@ -159,22 +329,28 @@ def settle_pending_predictions():
                     ):
                         item.update({
                             "status": "SKIPPED",
-                            "reason": "No se puede reconstruir el pronóstico original con seguridad.",
+                            "reason": (
+                                "No se puede reconstruir con seguridad "
+                                "el pronóstico original."
+                            ),
                         })
                         results.append(item)
                         continue
 
                     predicted_winner = (
-                        home_team if home_probability > away_probability
+                        home_team
+                        if home_probability > away_probability
                         else away_team
                     )
 
                 prediction_result = (
                     "CORRECT"
-                    if predicted_winner.casefold() == actual_winner.casefold()
+                    if normalized_text(predicted_winner)
+                    == normalized_text(actual_winner)
                     else "INCORRECT"
                 )
 
+                # Conservar las características originales.
                 updated_features = dict(features)
                 updated_features["predicted_winner"] = predicted_winner
                 updated_features["game"] = {
@@ -182,14 +358,20 @@ def settle_pending_predictions():
                     "home": home_team,
                     "away": away_team,
                 }
+                updated_features["settlement"] = {
+                    **(features.get("settlement") or {}),
+                    "status": "SETTLED",
+                    "checked_at": utc_now(),
+                    "source": "MLB Stats API live feed",
+                }
 
                 update_data = {
                     "result_status": "SETTLED",
                     "prediction_result": prediction_result,
                     "actual_winner": actual_winner,
-                    "actual_home_score": int(home_score),
-                    "actual_away_score": int(away_score),
-                    "settled_at": datetime.now(timezone.utc).isoformat(),
+                    "actual_home_score": home_score,
+                    "actual_away_score": away_score,
+                    "settled_at": utc_now(),
                     "features": updated_features,
                 }
 
@@ -204,7 +386,10 @@ def settle_pending_predictions():
                 if not saved.data:
                     item.update({
                         "status": "SKIPPED",
-                        "reason": "La predicción ya cambió de estado.",
+                        "reason": (
+                            "La predicción ya cambió de estado "
+                            "o fue procesada por otra solicitud."
+                        ),
                     })
                     results.append(item)
                     continue
@@ -213,8 +398,8 @@ def settle_pending_predictions():
                     "status": "SETTLED",
                     "home": home_team,
                     "away": away_team,
-                    "home_score": int(home_score),
-                    "away_score": int(away_score),
+                    "home_score": home_score,
+                    "away_score": away_score,
                     "predicted_winner": predicted_winner,
                     "actual_winner": actual_winner,
                     "prediction_result": prediction_result,
@@ -227,6 +412,7 @@ def settle_pending_predictions():
                     "reason": f"Error consultando MLB: {str(exc)}",
                 })
                 results.append(item)
+
             except Exception as exc:
                 item.update({
                     "status": "ERROR",
@@ -237,10 +423,26 @@ def settle_pending_predictions():
         return {
             "success": True,
             "checked": len(records),
-            "settled": sum(r["status"] == "SETTLED" for r in results),
-            "not_final": sum(r["status"] == "NOT_FINAL" for r in results),
-            "skipped": sum(r["status"] == "SKIPPED" for r in results),
-            "errors": sum(r["status"] == "ERROR" for r in results),
+            "settled": sum(
+                result["status"] == "SETTLED"
+                for result in results
+            ),
+            "cancelled": sum(
+                result["status"] == "CANCELLED"
+                for result in results
+            ),
+            "not_final": sum(
+                result["status"] == "NOT_FINAL"
+                for result in results
+            ),
+            "skipped": sum(
+                result["status"] == "SKIPPED"
+                for result in results
+            ),
+            "errors": sum(
+                result["status"] == "ERROR"
+                for result in results
+            ),
             "results": results,
         }
 
@@ -249,7 +451,10 @@ def settle_pending_predictions():
             status_code=500,
             detail={
                 "error": "BATCH_SETTLEMENT_ERROR",
-                "message": "No se pudieron procesar las predicciones pendientes.",
+                "message": (
+                    "No se pudieron procesar las "
+                    "predicciones pendientes."
+                ),
                 "details": str(exc),
             },
         )
