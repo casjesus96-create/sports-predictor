@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - feature/nba-1.0.0
+      - fix/nba-espn-date-range
     paths:
       - "nba_*.py"
       - "NBAApp.tsx"
       - "App.tsx"
       - "main.py"
       - "test_nba_prediction.py"
+      - "test_nba_client.py"
       - ".github/workflows/test_nba.yml"
   pull_request:
     paths:
@@ -18,6 +20,7 @@ on:
       - "App.tsx"
       - "main.py"
       - "test_nba_prediction.py"
+      - "test_nba_client.py"
   workflow_dispatch:
 
 jobs:
@@ -35,7 +38,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Run NBA model tests
-        run: pytest -q test_nba_prediction.py
+        run: pytest -q test_nba_prediction.py test_nba_client.py
       - name: Compile NBA Python modules
         run: python -m py_compile nba_client.py nba_prediction.py nba_analyzer.py nba_repository.py nba_api.py
 

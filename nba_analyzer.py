@@ -1,14 +1,13 @@
 """Análisis pregame NBA. No usa el marcador del partido que se proyecta."""
 from datetime import datetime, timezone
 
-from nba_client import get_game, get_team_history
+from nba_client import get_game, get_team_histories
 from nba_prediction import MODEL_VERSION, predict_winner
 
 UTC = timezone.utc
 
 
-def _team_metrics(team_id, cutoff):
-    games = get_team_history(team_id, cutoff)
+def _team_metrics(team_id, games):
     wins = losses = 0
     points_for = points_against = 0.0
     detail = []
@@ -71,8 +70,11 @@ def analyze_nba_game(game_id):
         return {"success": False, "sport": "NBA", "game_id": str(game_id), "message": "Faltan identificadores de los equipos."}
 
     cutoff = kickoff.isoformat()
-    home_history = _team_metrics(game["home_team_id"], cutoff)
-    away_history = _team_metrics(game["away_team_id"], cutoff)
+    histories = get_team_histories(
+        [game["home_team_id"], game["away_team_id"]], cutoff
+    )
+    home_history = _team_metrics(game["home_team_id"], histories.get(str(game["home_team_id"]), []))
+    away_history = _team_metrics(game["away_team_id"], histories.get(str(game["away_team_id"]), []))
     prediction = predict_winner(home_history, away_history, game.get("neutral_site", False))
     total_samples = home_history["games"] + away_history["games"]
     generated_at = now.isoformat()
