@@ -7,7 +7,7 @@ from nba_client import get_game, get_upcoming_games
 from nba_analyzer import analyze_nba_game
 from nba_prediction import MODEL_VERSION
 from nba_repository import (
-    save_nba_analysis, get_nba_predictions, settle_nba_prediction,
+    save_nba_analysis, refresh_nba_analysis, get_nba_predictions, settle_nba_prediction,
     get_nba_performance,
 )
 
@@ -38,6 +38,25 @@ def nba_analyze(game_id: str):
     except Exception as exc:
         logger.exception("Error analizando NBA game_id=%s", game_id)
         raise HTTPException(status_code=502, detail={"error": "NBA_ANALYSIS_ERROR", "message": "No fue posible analizar el partido NBA.", "details": str(exc)}) from exc
+
+
+@router.post("/refresh/{game_id}")
+def nba_refresh_analysis(game_id: str):
+    """Reconsulta datos pregame y actualiza el detalle de una proyección pendiente."""
+    try:
+        analysis = analyze_nba_game(game_id)
+        if not analysis.get("success"):
+            return analysis
+        persistence = refresh_nba_analysis(analysis)
+        return {"success": True, "sport": "NBA", "league": "NBA", "model_version": MODEL_VERSION,
+            "game_id": str(game_id), "prediction": analysis.get("prediction"),
+            "projections": analysis.get("projections") or {}, "factors": analysis.get("factors") or {},
+            "data_cutoff": analysis.get("data_cutoff"), "persistence": persistence,
+            "refreshed": bool(persistence.get("refreshed"))}
+    except Exception as exc:
+        logger.exception("Error actualizando análisis NBA game_id=%s", game_id)
+        raise HTTPException(status_code=500, detail={"error": "NBA_ANALYSIS_REFRESH_ERROR",
+            "message": "No fue posible actualizar el análisis estadístico NBA.", "details": str(exc)}) from exc
 
 
 @router.post("/predict/{game_id}")

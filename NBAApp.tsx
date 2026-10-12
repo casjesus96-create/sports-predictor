@@ -177,12 +177,20 @@ export default function NBAApp() {
     setError("");
     setMessage("");
     try {
-      const result = await api<{ success?: boolean; message?: string; prediction?: { winner?: string; confidence?: number }; projections?: any; factors?: any; persistence?: { existing?: boolean } }>(
-        `/predict/${encodeURIComponent(game.game_id)}`,
+      const alreadyStored = predictionByGame.has(String(game.game_id));
+      const endpoint = alreadyStored ? "refresh" : "predict";
+      const result = await api<{ success?: boolean; message?: string; prediction?: { winner?: string; confidence?: number }; projections?: any; factors?: any; persistence?: { existing?: boolean; refreshed?: boolean } }>(
+        `/${endpoint}/${encodeURIComponent(game.game_id)}`,
         { method: "POST" },
       );
       if (!result.success) throw new Error(result.message || "No se pudo generar la proyección.");
-      setMessage(`Proyección guardada con NBA-1.1.0. Ganador proyectado: ${result.prediction?.winner || "—"}; confianza: ${pct(result.prediction?.confidence)}.`);
+      const projection = result.projections || {};
+      const hasPoints = typeof projection.home_points === "number" || typeof projection.away_points === "number";
+      const hasHistory = Number(result.factors?.historical_games_used || 0) > 0;
+      const detail = hasPoints || hasHistory
+        ? ` Datos históricos: ${result.factors?.historical_games_used ?? 0} equipo-partidos; puntos local/visitante: ${numberLabel(projection.home_points)} / ${numberLabel(projection.away_points)}.`
+        : " La fuente no devolvió suficientes partidos históricos para calcular cifras; revisaremos la consulta de datos.";
+      setMessage(`${endpoint === "refresh" ? "Análisis actualizado" : "Proyección guardada"} con NBA-1.1.0. Ganador proyectado: ${result.prediction?.winner || "—"}; confianza: ${pct(result.prediction?.confidence)}.${detail}`);
       await refresh();
     } catch (err) {
       setError(errorText(err));
@@ -385,7 +393,7 @@ export default function NBAApp() {
                       </>
                     )}
                     <div className="card-actions">
-                      {!stored && <button className="primary" type="button" disabled={!!busy} onClick={() => void analyze(game)}>{busy === game.game_id ? "Analizando…" : "Analizar partido"}</button>}
+                      <button className="primary" type="button" disabled={!!busy} onClick={() => void analyze(game)}>{busy === game.game_id ? "Analizando…" : stored ? "Actualizar análisis estadístico" : "Analizar partido"}</button>
                       {pending && <button className="secondary" type="button" disabled={!!busy} onClick={() => stored && void settle(stored)}>{busy === `settle:${game.game_id}` ? "Liquidando…" : "Liquidar resultado"}</button>}
                     </div>
                   </article>
