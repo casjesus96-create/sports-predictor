@@ -1,0 +1,30 @@
+name: MLB probability metrics
+
+on:
+  pull_request:
+    paths:
+      - "probability_metrics.py"
+      - "test_probability_metrics.py"
+      - "repository.py"
+      - ".github/workflows/test_probability_metrics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "probability_metrics.py"
+      - "test_probability_metrics.py"
+      - "repository.py"
+      - ".github/workflows/test_probability_metrics.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run metric tests
+        run: |
+          python -m pip install pytest
+          pytest -q test_probability_metrics.py
