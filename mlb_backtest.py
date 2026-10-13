@@ -51,7 +51,7 @@ def _run_projection(row):
     features = row.get("features") or {}
     factors = features.get("factors") or {}
     projection = factors.get("run_projection") or {}
-    if projection.get("available") is not True:
+    if not isinstance(projection, dict) or projection.get("available") is not True:
         return None
     home = _finite_number((projection.get("home") or {}).get("expected_runs"))
     away = _finite_number((projection.get("away") or {}).get("expected_runs"))
@@ -61,6 +61,77 @@ def _run_projection(row):
     if tie_probability is not None and not 0 <= tie_probability <= 1:
         tie_probability = None
     return {"home": home, "away": away, "tie_probability": tie_probability}
+
+
+def snapshot_has_valid_run_projection(row):
+    """Whether the canonical stored location contains a usable run projection."""
+    return _run_projection(row) is not None
+
+
+def snapshot_needs_tie_observation(row):
+    """Avoid MLB feed requests unless a valid pregame projection needs tie scoring."""
+    if not snapshot_pregame_eligible(row):
+        return False
+    projection = _run_projection(row)
+    if projection is None or projection["tie_probability"] is None:
+        return False
+    home_actual = _finite_number(row.get("actual_home_score"))
+    away_actual = _finite_number(row.get("actual_away_score"))
+    return (
+        home_actual is not None and away_actual is not None
+        and home_actual >= 0 and away_actual >= 0
+        and bool(str(row.get("event_id") or "").strip())
+    )
+
+
+def diagnose_projection_storage(rows):
+    """Summarize where saved projections live without exposing full feature payloads."""
+    rows = rows or []
+    counts = {
+        "queried_snapshots": len(rows),
+        "official_settled_pregame_snapshots": 0,
+        "valid_run_projection_at_canonical_path": 0,
+        "missing_or_invalid_run_projection_at_canonical_path": 0,
+        "projection_at_alternate_top_level_path": 0,
+        "projection_components_at_factors_top_level": 0,
+        "valid_tie_probability": 0,
+    }
+    examples = []
+    for row in rows:
+        if snapshot_pregame_eligible(row):
+            counts["official_settled_pregame_snapshots"] += 1
+        projection = _run_projection(row)
+        if projection is not None:
+            counts["valid_run_projection_at_canonical_path"] += 1
+            if projection["tie_probability"] is not None:
+                counts["valid_tie_probability"] += 1
+        else:
+            counts["missing_or_invalid_run_projection_at_canonical_path"] += 1
+
+        features = row.get("features") if isinstance(row, dict) else {}
+        features = features if isinstance(features, dict) else {}
+        factors = features.get("factors")
+        factors = factors if isinstance(factors, dict) else {}
+        alternate = features.get("run_projection")
+        if isinstance(alternate, dict):
+            counts["projection_at_alternate_top_level_path"] += 1
+        if any(key in factors for key in ("home_expected_runs", "away_expected_runs", "expected_runs")):
+            counts["projection_components_at_factors_top_level"] += 1
+
+        if projection is None and len(examples) < 5:
+            game = features.get("game")
+            game = game if isinstance(game, dict) else {}
+            examples.append({
+                "id": row.get("id"),
+                "event_id": row.get("event_id"),
+                "created_at": row.get("created_at"),
+                "game_date": game.get("date"),
+                "feature_keys": sorted(features.keys()),
+                "factor_keys": sorted(factors.keys()),
+                "alternate_run_projection_present": isinstance(alternate, dict),
+            })
+    counts["missing_examples"] = examples
+    return counts
 
 
 def calculate_mlb_backtest_metrics(rows, tie_observations=None):
@@ -82,12 +153,10 @@ def calculate_mlb_backtest_metrics(rows, tie_observations=None):
         if not snapshot_pregame_eligible(row):
             exclusions["not_official_settled_pregame_snapshot"] += 1
             continue
-
         projection = _run_projection(row)
         if projection is None:
             exclusions["missing_or_invalid_run_projection"] += 1
             continue
-
         home_actual = _finite_number(row.get("actual_home_score"))
         away_actual = _finite_number(row.get("actual_away_score"))
         if (
@@ -96,7 +165,6 @@ def calculate_mlb_backtest_metrics(rows, tie_observations=None):
         ):
             exclusions["missing_or_invalid_final_score"] += 1
             continue
-
         eligible.append({
             "event_id": str(row.get("event_id") or ""),
             "home_expected": projection["home"],
@@ -178,16 +246,13 @@ def actual_tie_after_nine(feed):
     game_status = (feed.get("gameData") or {}).get("status") or {}
     if str(game_status.get("abstractGameState") or "").lower() != "final":
         return None
-
     linescore = ((feed.get("liveData") or {}).get("linescore") or {})
     scheduled = _finite_number(linescore.get("scheduledInnings"))
     if scheduled is not None and scheduled < 9:
         return None
-
     innings = linescore.get("innings")
     if not isinstance(innings, list) or len(innings) < 9:
         return None
-
     home_total = 0
     away_total = 0
     for inning in innings[:9]:
@@ -199,5 +264,4 @@ def actual_tie_after_nine(feed):
             return None
         home_total += home
         away_total += away
-
     return home_total == away_total
