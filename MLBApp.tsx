@@ -1440,6 +1440,23 @@ function GameDetail({
   const prediction =
     p?.prediction;
 
+  const dataCoverage =
+    f?.data_coverage &&
+    typeof f.data_coverage === "object"
+      ? f.data_coverage
+      : null;
+
+  const coverageLabels: Record<string, string> = {
+    home_team_ops: "OPS ofensivo · local",
+    away_team_ops: "OPS ofensivo · visitante",
+    home_team_era: "ERA del equipo · local",
+    away_team_era: "ERA del equipo · visitante",
+    home_starter_stats: "Estadísticas del abridor · local",
+    away_starter_stats: "Estadísticas del abridor · visitante",
+    home_recent_form: "Forma reciente · local",
+    away_recent_form: "Forma reciente · visitante",
+  };
+
   /*
    * =======================================================
    * DATOS TRADICIONALES
@@ -1729,6 +1746,68 @@ function GameDetail({
             )}
 
           </div>
+
+          <h3 className="detail-heading">
+            Cobertura de datos del análisis
+          </h3>
+
+          {dataCoverage ? (
+            <>
+              <div className="quality">
+                <span>
+                  Cobertura disponible
+                </span>
+                <b>
+                  {stat(dataCoverage.score, 1)}%
+                </b>
+              </div>
+
+              <p className="muted" style={{ marginTop: 8 }}>
+                {dataCoverage.available_components ?? "—"} de{" "}
+                {dataCoverage.total_components ?? "—"} componentes disponibles.
+                Esta medida describe la cobertura de entradas, no la probabilidad
+                de acierto.
+              </p>
+
+              <div className="factor-grid">
+                {Object.entries(
+                  dataCoverage.components || {}
+                ).map(([key, component]: [string, any]) => {
+                  const isForm = key.endsWith("_recent_form");
+                  const available = Boolean(component?.available);
+                  const formGames = component?.games;
+                  const value = isForm
+                    ? `${formGames ?? 0}/${component?.target_games ?? 15} partidos`
+                    : available
+                      ? "Disponible"
+                      : "No disponible";
+
+                  return (
+                    <Factor
+                      key={key}
+                      label={coverageLabels[key] || key}
+                      value={value}
+                    />
+                  );
+                })}
+              </div>
+
+              {Array.isArray(dataCoverage.missing_fields) &&
+                dataCoverage.missing_fields.length > 0 && (
+                  <p className="muted" style={{ marginTop: 8 }}>
+                    Datos incompletos:{" "}
+                    {dataCoverage.missing_fields
+                      .map((key: string) => coverageLabels[key] || key)
+                      .join(", ")}.
+                  </p>
+                )}
+            </>
+          ) : (
+            <p className="muted">
+              Este análisis no incluye el desglose de cobertura. Puede tratarse
+              de una predicción histórica creada antes de esta mejora.
+            </p>
+          )}
 
           {p?.result
             ?.status ===
