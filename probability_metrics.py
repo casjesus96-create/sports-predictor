@@ -86,9 +86,38 @@ def calculate_probability_metrics(rows):
         log_losses.append(-math.log(clipped if actual_home_win else 1 - clipped))
 
     count = len(brier_scores)
+    calibration_bins = calculate_calibration_bins(rows)
+    populated_bins = [
+        bucket for bucket in calibration_bins
+        if bucket["sample_size"] > 0
+    ]
+    calibration_gaps = [
+        abs(
+            bucket["mean_predicted_probability"]
+            - bucket["observed_home_win_rate"]
+        )
+        for bucket in populated_bins
+    ]
+    expected_calibration_error = (
+        sum(
+            bucket["sample_size"] * gap
+            for bucket, gap in zip(populated_bins, calibration_gaps)
+        ) / count
+        if count else None
+    )
+    maximum_calibration_error = max(calibration_gaps) if calibration_gaps else None
+
     return {
         "sample_size": count,
         "brier_score": round(sum(brier_scores) / count, 6) if count else None,
         "log_loss": round(sum(log_losses) / count, 6) if count else None,
-        "calibration_bins": calculate_calibration_bins(rows),
+        "expected_calibration_error": (
+            round(expected_calibration_error, 6)
+            if expected_calibration_error is not None else None
+        ),
+        "maximum_calibration_error": (
+            round(maximum_calibration_error, 6)
+            if maximum_calibration_error is not None else None
+        ),
+        "calibration_bins": calibration_bins,
     }
