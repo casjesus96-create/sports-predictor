@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pending_predictions import router as pending_router
+from mlb_backtest_api import router as mlb_backtest_router
 
 from analyzer import analyze_mlb_game
 from nfl_api import router as nfl_router
@@ -34,6 +35,7 @@ app = FastAPI(
 )
 
 app.include_router(pending_router)
+app.include_router(mlb_backtest_router)
 
 # =========================================================
 # NFL ROUTER
