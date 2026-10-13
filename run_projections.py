@@ -130,8 +130,10 @@ def poisson_probability_at_least(threshold, expected_value):
     lam = _number(expected_value)
     if not isinstance(threshold, int) or threshold < 0 or lam is None or lam < 0:
         return None
+    if threshold == 0:
+        return 1.0
     if lam == 0:
-        return 1.0 if threshold == 0 else 0.0
+        return 0.0
 
     probability = math.exp(-lam)
     cumulative = probability
