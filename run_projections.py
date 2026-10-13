@@ -125,6 +125,43 @@ def _blend_run_estimate(offense_rate, opponent_allowed_rate, recent_scored, rece
     }
 
 
+def poisson_probability_exact(runs, expected_value):
+    """Poisson probability of exactly `runs` runs for a nonnegative mean."""
+    lam = _number(expected_value)
+    if not isinstance(runs, int) or runs < 0 or lam is None or lam < 0:
+        return None
+    if lam == 0:
+        return 1.0 if runs == 0 else 0.0
+
+    probability = math.exp(-lam)
+    for k in range(1, runs + 1):
+        probability *= lam / k
+    return probability
+
+
+def estimate_tie_after_nine_probability(home_expected_runs, away_expected_runs):
+    """Approximate P(tied after nine) using independent Poisson run totals.
+
+    This is a descriptive baseline only: it ignores inning-by-inning scoring,
+    home-team walk-off/shortened ninth-inning effects, and extra-inning rules.
+    """
+    home_lam = _number(home_expected_runs)
+    away_lam = _number(away_expected_runs)
+    if (
+        home_lam is None or away_lam is None
+        or home_lam < 0 or away_lam < 0
+    ):
+        return None
+
+    # A 0..30 range captures effectively all probability mass for ordinary MLB means.
+    tie_probability = sum(
+        poisson_probability_exact(runs, home_lam)
+        * poisson_probability_exact(runs, away_lam)
+        for runs in range(31)
+    )
+    return min(1.0, max(0.0, tie_probability))
+
+
 def poisson_probability_at_least(threshold, expected_value):
     """Poisson tail P(X >= threshold), with stable recurrence for small MLB counts."""
     lam = _number(expected_value)
@@ -270,14 +307,25 @@ def calculate_game_projections(
             "home": home_runs,
             "away": away_runs,
             "total_expected_runs": total_runs,
+            # Keep expected values decimal: rounded integer scorelines can imply
+            # an impossible tie as if it were an exact final-score prediction.
             "projected_score": (
-                f'{int(round(away_runs["expected_runs"]))}-'
-                f'{int(round(home_runs["expected_runs"]))}'
+                f'{away_runs["expected_runs"]:.1f}-'
+                f'{home_runs["expected_runs"]:.1f}'
                 if home_runs["available"] and away_runs["available"] else None
             ),
+            "probability_tied_after_nine": (
+                estimate_tie_after_nine_probability(
+                    home_runs["expected_runs"], away_runs["expected_runs"]
+                )
+                if home_runs["available"] and away_runs["available"] else None
+            ),
+            "probability_method": "independent Poisson totals; approximate, not yet backtested",
             "note": (
-                "Descriptive estimate from season run rates and recent last-15 form; "
-                "not part of the official win-probability model."
+                "Descriptive expected runs from season rates and recent form. "
+                "The decimal score is a pair of expected values, not an exact score prediction. "
+                "Tie-after-nine probability is an unvalidated independent-Poisson approximation; "
+                "neither projection changes the official win-probability model."
             ),
         },
         "pitcher_strikeout_projection": {

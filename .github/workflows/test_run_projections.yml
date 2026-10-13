@@ -5,6 +5,7 @@ on:
     paths:
       - "analyzer.py"
       - "run_projections.py"
+      - "MLBApp.tsx"
       - "test_run_projections.py"
       - ".github/workflows/test_run_projections.yml"
   push:

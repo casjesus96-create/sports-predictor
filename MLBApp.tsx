@@ -1945,13 +1945,18 @@ function GameDetail({
                   value={num(runProjection.total_expected_runs, 1)}
                 />
                 <Factor
-                  label="Marcador estimado · visitante-local"
+                  label="Carreras esperadas · visitante-local (no marcador exacto)"
                   value={runProjection.projected_score || "—"}
+                />
+                <Factor
+                  label="Probabilidad aproximada de empate tras 9 entradas"
+                  value={pct(runProjection.probability_tied_after_nine)}
                 />
               </div>
               <p className="muted" style={{ marginTop: 8 }}>
-                Método: {runProjection.home?.method || "—"}. Estas estimaciones son descriptivas
-                y no modifican la probabilidad oficial de victoria.
+                Método de carreras: {runProjection.home?.method || "—"}. Los valores decimales son medias esperadas,
+                no un marcador final. La probabilidad de empate tras nueve entradas usa una aproximación Poisson
+                independiente aún no validada con resultados históricos; sirve como orientación y no modifica la probabilidad oficial de victoria.
               </p>
             </>
           ) : (

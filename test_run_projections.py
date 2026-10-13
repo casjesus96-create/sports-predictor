@@ -5,6 +5,8 @@ from run_projections import (
     estimate_pitcher_strikeouts,
     parse_innings_pitched,
     poisson_probability_at_least,
+    poisson_probability_exact,
+    estimate_tie_after_nine_probability,
 )
 
 
@@ -80,3 +82,37 @@ def test_pitcher_projection_reports_opponent_k_rate_as_context_only():
     assert result["available"] is True
     assert result["opponent_strikeout_rate"] == 0.225
     assert "not used to adjust" in result["opponent_strikeout_rate_note"]
+
+
+def test_poisson_exact_score_probabilities_are_valid():
+    assert poisson_probability_exact(0, 0) == 1.0
+    assert poisson_probability_exact(4, 0) == 0.0
+    assert math.isclose(poisson_probability_exact(0, 4), math.exp(-4))
+    assert poisson_probability_exact(-1, 4) is None
+
+
+def test_tie_after_nine_probability_is_valid_and_symmetric():
+    p_equal = estimate_tie_after_nine_probability(4.2, 4.2)
+    p_swapped = estimate_tie_after_nine_probability(4.2, 3.8)
+    p_reverse = estimate_tie_after_nine_probability(3.8, 4.2)
+    assert 0 < p_equal < 1
+    assert math.isclose(p_swapped, p_reverse, rel_tol=1e-12)
+    assert estimate_tie_after_nine_probability(None, 4.0) is None
+    assert estimate_tie_after_nine_probability(-1, 4.0) is None
+
+
+def test_projected_score_keeps_decimal_expected_runs_and_tie_probability():
+    result = calculate_game_projections(
+        home_hitting={"runs": 704, "gamesPlayed": 160},
+        away_hitting={"runs": 720, "gamesPlayed": 160},
+        home_pitching={"runs": 688, "gamesPlayed": 160},
+        away_pitching={"runs": 672, "gamesPlayed": 160},
+        home_form={},
+        away_form={},
+        home_pitcher_stats={},
+        away_pitcher_stats={},
+    )
+    runs = result["run_projection"]
+    assert runs["projected_score"] == "4.4-4.3"
+    assert 0 < runs["probability_tied_after_nine"] < 1
+    assert "not an exact score prediction" in runs["note"]
