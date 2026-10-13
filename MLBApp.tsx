@@ -873,18 +873,18 @@ export default function MLBApp() {
         <Metric
           title="Brier Score"
           value={
-            performance?.summary?.probability_metrics?.brier_score != null
-              ? num(performance.summary.probability_metrics.brier_score, 4)
+            performance?.models?.[MODEL_VERSION]?.probability_metrics?.brier_score != null
+              ? num(performance.models?.[MODEL_VERSION]?.probability_metrics.brier_score, 4)
               : "—"
           }
-          detail={\`\${performance?.summary?.probability_metrics?.sample_size || 0} evaluadas · menor es mejor\`}
+          detail={\`\${performance?.models?.[MODEL_VERSION]?.probability_metrics?.sample_size || 0} evaluadas · menor es mejor\`}
         />
 
         <Metric
           title="Log Loss"
           value={
-            performance?.summary?.probability_metrics?.log_loss != null
-              ? num(performance.summary.probability_metrics.log_loss, 4)
+            performance?.models?.[MODEL_VERSION]?.probability_metrics?.log_loss != null
+              ? num(performance.models?.[MODEL_VERSION]?.probability_metrics.log_loss, 4)
               : "—"
           }
           detail="Calidad de probabilidades · menor es mejor"
