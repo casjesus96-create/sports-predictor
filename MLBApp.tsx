@@ -2222,12 +2222,12 @@ function GameDetail({
           {[
             {
               key: "home",
-              title: `Ofensiva local vs ${awayBatterMatchup?.opposing_pitcher?.name || "abridor visitante"}`,
+              title: `Ofensiva local vs ${homeBatterMatchup?.opposing_pitcher?.name || "abridor visitante"}`,
               data: homeBatterMatchup,
             },
             {
               key: "away",
-              title: `Ofensiva visitante vs ${homeBatterMatchup?.opposing_pitcher?.name || "abridor local"}`,
+              title: `Ofensiva visitante vs ${awayBatterMatchup?.opposing_pitcher?.name || "abridor local"}`,
               data: awayBatterMatchup,
             },
           ].map((group: any) => (
