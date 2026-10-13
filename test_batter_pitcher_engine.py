@@ -191,3 +191,51 @@ def test_previous_game_lineup_is_marked_as_reference_not_confirmed(monkeypatch):
     assert home["lineup_source_game_date"] == "2026-10-12"
     assert home["hitters"][0]["player_name"] == "Returning Batter"
     assert "no está confirmada" in home["reason"]
+
+
+def test_active_roster_is_normalized_separately_from_game_lineup(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "roster": [
+                    {
+                        "person": {"id": 123, "fullName": "Roster Player"},
+                        "position": {"abbreviation": "CF", "name": "Center Fielder"},
+                        "jerseyNumber": "7",
+                        "status": {"description": "Active"},
+                    },
+                    {
+                        "person": {"id": 456, "fullName": "Bench Player"},
+                        "position": {"abbreviation": "C"},
+                    },
+                ]
+            }
+
+    monkeypatch.setattr(
+        batter_pitcher_engine.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+
+    result = batter_pitcher_engine._fetch_active_roster(10)
+
+    assert result["available"] is True
+    assert len(result["players"]) == 2
+    assert result["players"][0] == {
+        "player_id": 123,
+        "player_name": "Roster Player",
+        "position": "CF",
+        "status": "Active",
+        "jersey_number": "7",
+    }
+    assert result["source"] == "MLB Stats API · roster activo"
+
+
+def test_active_roster_failure_does_not_raise_for_missing_team_id():
+    result = batter_pitcher_engine._fetch_active_roster(None)
+    assert result["available"] is False
+    assert result["players"] == []
+    assert result["reason"] == "No se identificó el equipo."

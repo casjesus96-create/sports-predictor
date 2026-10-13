@@ -288,6 +288,43 @@ def _team_matchup(
 
 
 
+
+def _fetch_active_roster(team_id):
+    """Fetch the team's current active roster independently of game lineup publication."""
+    if not team_id:
+        return {"available": False, "players": [], "source": "MLB Stats API", "reason": "No se identificó el equipo."}
+    response = requests.get(
+        f"{MLB_API}/teams/{int(team_id)}/roster",
+        params={"rosterType": "active"},
+        timeout=TIMEOUT_SECONDS,
+        headers=HEADERS,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    players = []
+    for entry in payload.get("roster") or []:
+        person = entry.get("person") or {}
+        player_id = _safe_int(person.get("id"))
+        name = person.get("fullName") or person.get("name")
+        if not player_id or not name:
+            continue
+        position = entry.get("position") or {}
+        players.append({
+            "player_id": player_id,
+            "player_name": name,
+            "position": position.get("abbreviation") or position.get("name"),
+            "status": (entry.get("status") or {}).get("description"),
+            "jersey_number": entry.get("jerseyNumber"),
+        })
+    return {
+        "available": bool(players),
+        "players": players,
+        "source": "MLB Stats API · roster activo",
+        "reason": None if players else "MLB no devolvió jugadores para la plantilla activa.",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def _fetch_previous_game_lineup(team_id, target_game_datetime):
     """Return a prior completed-game batting order for reference, never as confirmed."""
     target_dt = datetime.fromisoformat(str(target_game_datetime).replace("Z", "+00:00"))
@@ -426,8 +463,25 @@ def get_batter_pitcher_matchups(
         "description": "Historial directo del bateador frente al abridor rival; no equivale al split por mano.",
         "home_team": {},
         "away_team": {},
+        "team_rosters": {"home": {}, "away": {}},
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+    # Plantillas activas independientes del orden al bate del partido.
+    # Un fallo aquí no debe impedir consultar las alineaciones ni el historial BvP.
+    target_teams = ((feed.get("gameData") or {}).get("teams") or {})
+    for side in ("home", "away"):
+        team_id = _safe_int((target_teams.get(side) or {}).get("id"))
+        try:
+            result["team_rosters"][side] = _fetch_active_roster(team_id)
+        except Exception as exc:
+            result["team_rosters"][side] = {
+                "available": False,
+                "players": [],
+                "source": "MLB Stats API",
+                "reason": "No fue posible consultar la plantilla activa.",
+                "error_type": type(exc).__name__,
+            }
 
     for key, side, pitcher, opposing_team_name in (
         ("home_team", "home", away_pitcher, away_team_name),

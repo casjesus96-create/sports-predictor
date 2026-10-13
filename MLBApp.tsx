@@ -2026,6 +2026,63 @@ function GameDetail({
           )}
 
           <h3 className="detail-heading">
+            Alineación del equipo · plantilla activa
+          </h3>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Plantilla activa consultada por separado en MLB. Incluye jugadores del roster, no significa que todos estén convocados ni que vayan a jugar este encuentro.
+          </p>
+          {[
+            { key: "home", title: game?.home || p?.game?.home || "Equipo local", data: batterPitcherMatchups?.team_rosters?.home },
+            { key: "away", title: game?.away || p?.game?.away || "Equipo visitante", data: batterPitcherMatchups?.team_rosters?.away },
+          ].map((group: any) => (
+            <section key={group.key} style={{ marginBottom: 14 }}>
+              <h4 style={{ marginBottom: 8 }}>{group.title}</h4>
+              {Array.isArray(group.data?.players) && group.data.players.length > 0 ? (
+                <div style={{ overflowX: "auto", width: "100%" }}>
+                  <table style={{ width: "100%", minWidth: "360px", borderCollapse: "collapse" }}>
+                    <thead><tr>
+                      <th scope="col" style={{ textAlign: "left", padding: "7px 6px" }}>Jugador</th>
+                      <th scope="col" style={{ textAlign: "left", padding: "7px 6px" }}>Posición</th>
+                      <th scope="col" style={{ textAlign: "right", padding: "7px 6px" }}>N.º</th>
+                    </tr></thead>
+                    <tbody>{group.data.players.map((player: any) => (
+                      <tr key={player.player_id}>
+                        <td style={{ padding: "7px 6px" }}>{player.player_name}</td>
+                        <td style={{ padding: "7px 6px" }}>{player.position || "—"}</td>
+                        <td style={{ textAlign: "right", padding: "7px 6px" }}>{player.jersey_number || "—"}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="muted">{group.data?.reason || "La plantilla activa no está disponible en este momento."}</p>
+              )}
+            </section>
+          ))}
+
+          <h3 className="detail-heading">
+            Alineación oficial del encuentro
+          </h3>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Solo se marca como oficial cuando MLB publica el orden al bate del partido. La plantilla activa y la alineación de un juego anterior nunca se presentan como confirmadas para este encuentro.
+          </p>
+          {[
+            { key: "home", title: game?.home || p?.game?.home || "Equipo local", data: homeBatterMatchup },
+            { key: "away", title: game?.away || p?.game?.away || "Equipo visitante", data: awayBatterMatchup },
+          ].map((group: any) => (
+            <section key={group.key} style={{ marginBottom: 12 }}>
+              <h4 style={{ marginBottom: 6 }}>{group.title}</h4>
+              {group.data?.lineup_confirmed && Array.isArray(group.data?.hitters) && group.data.hitters.length > 0 ? (
+                <ol>{group.data.hitters.map((hitter: any) => (
+                  <li key={hitter.player_id}>{hitter.player_name}{hitter.position ? ` · ${hitter.position}` : ""}</li>
+                ))}</ol>
+              ) : (
+                <p className="muted">Pendiente de publicación por MLB. {group.data?.lineup_lookup_error ? `Consulta de alineación: ${group.data.lineup_lookup_error}.` : ""}</p>
+              )}
+            </section>
+          ))}
+
+          <h3 className="detail-heading">
             Bateadores frente al pitcher abridor
           </h3>
 
