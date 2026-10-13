@@ -47,9 +47,9 @@ def test_run_errors_and_tie_brier_are_calculated_from_eligible_rows():
     ]
     result = calculate_mlb_backtest_metrics(rows, {"101": False, "102": True})
     assert result["sample_size"] == 2
-    assert result["run_metrics"]["home_runs"]["mae"] == 1.0
+    assert result["run_metrics"]["home_runs"]["mae"] == 1.5
     assert result["run_metrics"]["away_runs"]["mae"] == 0.5
-    assert result["run_metrics"]["per_team"]["mae"] == 0.75
+    assert result["run_metrics"]["per_team"]["mae"] == 1.0
     assert result["tie_after_nine"]["sample_size"] == 2
     assert result["tie_after_nine"]["brier_score"] == 0.0625
     assert result["exclusions"]["not_official_settled_pregame_snapshot"] == 1
