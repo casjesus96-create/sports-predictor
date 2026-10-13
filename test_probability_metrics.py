@@ -26,9 +26,11 @@ def test_brier_and_log_loss_for_settled_predictions():
     assert result["brier_score"] == 0.04
     assert result["log_loss"] == round(-math.log(0.8), 6)
     assert len(result["calibration_bins"]) == 5
-    assert result["calibration_bins"][0]["sample_size"] == 1
-    assert result["calibration_bins"][0]["mean_predicted_probability"] == 0.2
-    assert result["calibration_bins"][0]["observed_home_win_rate"] == 0.0
+
+    # Bins are [0.00, 0.20), [0.20, 0.40), ... [0.80, 1.00].
+    assert result["calibration_bins"][1]["sample_size"] == 1
+    assert result["calibration_bins"][1]["mean_predicted_probability"] == 0.2
+    assert result["calibration_bins"][1]["observed_home_win_rate"] == 0.0
     assert result["calibration_bins"][4]["sample_size"] == 1
     assert result["calibration_bins"][4]["observed_home_win_rate"] == 1.0
 
