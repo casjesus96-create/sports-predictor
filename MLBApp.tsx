@@ -864,10 +864,10 @@ export default function MLBApp() {
               ?.summary
               ?.average_confidence
           )}
-          detail={\`Calidad \${num(
+          detail={`Calidad ${num(
             performance?.summary?.average_data_quality,
             1
-          )}%\`}
+          )}%`}
         />
 
         <Metric
@@ -877,7 +877,7 @@ export default function MLBApp() {
               ? num(performance.models?.[MODEL_VERSION]?.probability_metrics.brier_score, 4)
               : "—"
           }
-          detail={\`\${performance?.models?.[MODEL_VERSION]?.probability_metrics?.sample_size || 0} evaluadas · menor es mejor\`}
+          detail={`${performance?.models?.[MODEL_VERSION]?.probability_metrics?.sample_size || 0} evaluadas · menor es mejor`}
         />
 
         <Metric
