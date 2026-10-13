@@ -1,0 +1,29 @@
+name: MLB run and starter strikeout projections
+
+on:
+  pull_request:
+    paths:
+      - "analyzer.py"
+      - "run_projections.py"
+      - "test_run_projections.py"
+      - ".github/workflows/test_run_projections.yml"
+  push:
+    branches: [main]
+    paths:
+      - "analyzer.py"
+      - "run_projections.py"
+      - "test_run_projections.py"
+      - ".github/workflows/test_run_projections.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test MLB run and starter strikeout projections
+        run: pytest -q test_run_projections.py
