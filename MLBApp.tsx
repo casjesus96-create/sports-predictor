@@ -892,6 +892,63 @@ export default function MLBApp() {
 
       </section>
 
+      {(() => {
+        const bins =
+          performance?.models?.[MODEL_VERSION]?.probability_metrics?.calibration_bins || [];
+        const calibrationSample =
+          performance?.models?.[MODEL_VERSION]?.probability_metrics?.sample_size || 0;
+
+        return (
+          <section className="panel" aria-labelledby="calibration-heading" style={{ marginTop: "20px" }}>
+            <div className="section-heading">
+              <div>
+                <span className="section-kicker">VALIDACIÓN DEL MODELO</span>
+                <h2 id="calibration-heading">Calibración de probabilidades</h2>
+              </div>
+              <span className="muted">{calibrationSample} resultados liquidados</span>
+            </div>
+
+            <p className="muted" style={{ marginTop: 0 }}>
+              Compara la probabilidad media pronosticada con la frecuencia real de victorias locales en cada rango.
+              Es un diagnóstico descriptivo; con pocas predicciones liquidadas no se deben ajustar los pesos del modelo.
+            </p>
+
+            {bins.length === 0 ? (
+              <div className="empty">
+                Todavía no hay datos de calibración disponibles.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto", width: "100%" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "420px" }}>
+                  <thead>
+                    <tr>
+                      <th scope="col" style={{ textAlign: "left", padding: "10px 8px" }}>Rango</th>
+                      <th scope="col" style={{ textAlign: "right", padding: "10px 8px" }}>Muestra</th>
+                      <th scope="col" style={{ textAlign: "right", padding: "10px 8px" }}>Prob. media</th>
+                      <th scope="col" style={{ textAlign: "right", padding: "10px 8px" }}>Victorias reales</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bins.map((bin: any) => (
+                      <tr key={bin.range}>
+                        <td style={{ padding: "10px 8px" }}>{bin.range}</td>
+                        <td style={{ textAlign: "right", padding: "10px 8px" }}>{bin.sample_size}</td>
+                        <td style={{ textAlign: "right", padding: "10px 8px" }}>
+                          {bin.mean_predicted_probability == null ? "—" : pct(bin.mean_predicted_probability)}
+                        </td>
+                        <td style={{ textAlign: "right", padding: "10px 8px" }}>
+                          {bin.observed_home_win_rate == null ? "—" : pct(bin.observed_home_win_rate)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        );
+      })()}
+
       <section className="content-grid">
 
         <div>
