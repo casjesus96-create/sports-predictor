@@ -840,32 +840,23 @@ export default function MLBApp() {
         />
 
         <Metric
-          title="Precisión histórica"
+          title="Precisión del modelo oficial"
           value={pct(
             (
-              performance
-                ?.summary
-                ?.accuracy_percentage ||
+              performance?.models?.[MODEL_VERSION]?.accuracy_percentage ??
               0
             ) / 100
           )}
-          detail={`${
-            performance
-              ?.summary
-              ?.settled_predictions ||
-            0
-          } liquidadas`}
+          detail={`${performance?.models?.[MODEL_VERSION]?.correct_predictions ?? 0} aciertos · ${performance?.models?.[MODEL_VERSION]?.settled_predictions ?? 0} liquidadas`}
         />
 
         <Metric
-          title="Confianza media"
+          title="Confianza media del modelo"
           value={pct(
-            performance
-              ?.summary
-              ?.average_confidence
+            performance?.models?.[MODEL_VERSION]?.average_confidence
           )}
-          detail={`Calidad ${num(
-            performance?.summary?.average_data_quality,
+          detail={`Calidad de datos ${num(
+            performance?.models?.[MODEL_VERSION]?.average_data_quality,
             1
           )}%`}
         />
