@@ -1,6 +1,8 @@
 from mlb_backtest import (
     actual_tie_after_nine,
     calculate_mlb_backtest_metrics,
+    diagnose_projection_storage,
+    snapshot_needs_tie_observation,
     snapshot_pregame_eligible,
 )
 
@@ -9,6 +11,7 @@ def snapshot(event_id="101", cutoff="2026-06-01T12:00:00Z", start="2026-06-01T17
              home_expected=4.2, away_expected=3.8, tie_probability=0.18,
              home_actual=5, away_actual=3, model="2.0.0-matchup", status="SETTLED"):
     return {
+        "id": f"snapshot-{event_id}",
         "event_id": event_id,
         "model_version": model,
         "result_status": status,
@@ -65,6 +68,39 @@ def test_missing_projection_or_score_is_excluded_not_fabricated():
     assert result["exclusions"]["missing_or_invalid_final_score"] == 1
     assert result["run_metrics"]["per_team"]["mae"] is None
     assert result["tie_after_nine"]["brier_score"] is None
+
+
+def test_storage_diagnostics_identify_missing_projection_and_alternate_paths():
+    canonical = snapshot(event_id="301")
+    missing = snapshot(event_id="302")
+    del missing["features"]["factors"]["run_projection"]
+    alternate = snapshot(event_id="303")
+    alternate["features"]["run_projection"] = alternate["features"]["factors"].pop("run_projection")
+    flat = snapshot(event_id="304")
+    flat["features"]["factors"]["home_expected_runs"] = 4.0
+    flat["features"]["factors"]["away_expected_runs"] = 3.0
+    result = diagnose_projection_storage([canonical, missing, alternate, flat])
+    assert result["queried_snapshots"] == 4
+    assert result["valid_run_projection_at_canonical_path"] == 2
+    assert result["missing_or_invalid_run_projection_at_canonical_path"] == 2
+    assert result["projection_at_alternate_top_level_path"] == 1
+    assert result["projection_components_at_factors_top_level"] == 1
+    assert len(result["missing_examples"]) == 2
+    assert result["missing_examples"][0]["event_id"] == "302"
+
+
+def test_tie_feed_candidates_require_valid_pregame_projection_probability_and_score():
+    valid = snapshot()
+    assert snapshot_needs_tie_observation(valid)
+    no_projection = snapshot(event_id="401")
+    no_projection["features"]["factors"].pop("run_projection")
+    assert not snapshot_needs_tie_observation(no_projection)
+    no_probability = snapshot(event_id="402", tie_probability=None)
+    assert not snapshot_needs_tie_observation(no_probability)
+    no_score = snapshot(event_id="403", home_actual=None)
+    assert not snapshot_needs_tie_observation(no_score)
+    late_cutoff = snapshot(event_id="404", cutoff="2026-06-01T17:00:00Z")
+    assert not snapshot_needs_tie_observation(late_cutoff)
 
 
 def test_tie_observation_uses_first_nine_innings_only():
