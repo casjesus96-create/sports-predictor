@@ -1689,6 +1689,12 @@ function GameDetail({
   const matchup =
     f?.matchup || {};
 
+  const runProjection =
+    f?.run_projection || {};
+
+  const strikeoutProjection =
+    f?.pitcher_strikeout_projection || {};
+
   const h2h =
     matchup?.h2h || {};
 
@@ -1918,6 +1924,92 @@ function GameDetail({
             />
 
           </div>
+
+          <h3 className="detail-heading">
+            Carreras pronosticadas
+          </h3>
+
+          {runProjection.available ? (
+            <>
+              <div className="factor-grid">
+                <Factor
+                  label={`Carreras esperadas · ${game.home?.name || "Local"}`}
+                  value={num(runProjection.home?.expected_runs, 1)}
+                />
+                <Factor
+                  label={`Carreras esperadas · ${game.away?.name || "Visitante"}`}
+                  value={num(runProjection.away?.expected_runs, 1)}
+                />
+                <Factor
+                  label="Total esperado de carreras"
+                  value={num(runProjection.total_expected_runs, 1)}
+                />
+                <Factor
+                  label="Marcador estimado · visitante-local"
+                  value={runProjection.projected_score || "—"}
+                />
+              </div>
+              <p className="muted" style={{ marginTop: 8 }}>
+                Método: {runProjection.home?.method || "—"}. Estas estimaciones son descriptivas
+                y no modifican la probabilidad oficial de victoria.
+              </p>
+            </>
+          ) : (
+            <p className="muted">
+              No hay suficientes datos de temporada o forma reciente para estimar las carreras de ambos equipos.
+            </p>
+          )}
+
+          <h3 className="detail-heading">
+            Ponches esperados del pitcher abridor (K)
+          </h3>
+
+          {strikeoutProjection.available ? (
+            <>
+              <div className="factor-grid">
+                <Factor
+                  label={`K esperados · local · ${strikeoutProjection.home_pitcher?.pitcher_name || "Abridor no confirmado"}`}
+                  value={num(strikeoutProjection.home_pitcher?.expected_strikeouts, 1)}
+                />
+                <Factor
+                  label="Prob. local · 5+ K"
+                  value={strikeoutProjection.home_pitcher?.probability_5_plus == null ? "—" : pct(strikeoutProjection.home_pitcher.probability_5_plus)}
+                />
+                <Factor
+                  label="Prob. local · 6+ K"
+                  value={strikeoutProjection.home_pitcher?.probability_6_plus == null ? "—" : pct(strikeoutProjection.home_pitcher.probability_6_plus)}
+                />
+                <Factor
+                  label="Prob. local · 7+ K"
+                  value={strikeoutProjection.home_pitcher?.probability_7_plus == null ? "—" : pct(strikeoutProjection.home_pitcher.probability_7_plus)}
+                />
+                <Factor
+                  label={`K esperados · visitante · ${strikeoutProjection.away_pitcher?.pitcher_name || "Abridor no confirmado"}`}
+                  value={num(strikeoutProjection.away_pitcher?.expected_strikeouts, 1)}
+                />
+                <Factor
+                  label="Prob. visitante · 5+ K"
+                  value={strikeoutProjection.away_pitcher?.probability_5_plus == null ? "—" : pct(strikeoutProjection.away_pitcher.probability_5_plus)}
+                />
+                <Factor
+                  label="Prob. visitante · 6+ K"
+                  value={strikeoutProjection.away_pitcher?.probability_6_plus == null ? "—" : pct(strikeoutProjection.away_pitcher.probability_6_plus)}
+                />
+                <Factor
+                  label="Prob. visitante · 7+ K"
+                  value={strikeoutProjection.away_pitcher?.probability_7_plus == null ? "—" : pct(strikeoutProjection.away_pitcher.probability_7_plus)}
+                />
+              </div>
+              <p className="muted" style={{ marginTop: 8 }}>
+                Estimación mediante K/9, entradas por apertura y aproximación de Poisson.
+                El K% del rival se muestra como contexto y no ajusta la probabilidad hasta validar una referencia de liga.
+              </p>
+            </>
+          ) : (
+            <p className="muted">
+              No hay estadísticas suficientes del abridor para estimar de forma responsable sus ponches. Se mostrarán cuando estén disponibles.
+            </p>
+          )}
 
           <h3 className="detail-heading">
             Ofensiva de temporada
