@@ -553,11 +553,15 @@ export default function MLBApp() {
       ]);
 
       setGames(
-        gamesData.games || []
+        Array.isArray(gamesData?.games)
+          ? gamesData.games
+          : []
       );
 
       setPredictions(
-        predictionsData.predictions || []
+        Array.isArray(predictionsData?.predictions)
+          ? predictionsData.predictions
+          : []
       );
 
       setPerformance(
@@ -1064,8 +1068,14 @@ export default function MLBApp() {
                       game.game_id
                     );
 
-                  const prediction =
-                    p?.prediction;
+                  // The predictions endpoint can return either a nested
+                  // prediction payload or a flat persisted snapshot.
+                  // Merge both shapes so rendering a saved row never crashes.
+                  const prediction = {
+                    ...(p || {}),
+                    ...(p?.features || {}),
+                    ...(p?.prediction || {}),
+                  };
 
                   const result =
                     effectiveResult(p);
@@ -1196,11 +1206,11 @@ export default function MLBApp() {
 
                             <b>
                               {pct(
-                                prediction.home_probability
+                                prediction?.home_probability
                               )}{" "}
                               /{" "}
                               {pct(
-                                prediction.away_probability
+                                prediction?.away_probability
                               )}
                             </b>
                           </div>
@@ -1212,7 +1222,7 @@ export default function MLBApp() {
 
                             <b>
                               {pct(
-                                prediction.confidence
+                                prediction?.confidence
                               )}
                             </b>
                           </div>
@@ -1560,10 +1570,16 @@ function GameDetail({
 }) {
 
   const f =
-    p?.factors || {};
+    p?.factors ||
+    p?.features?.factors ||
+    {};
 
-  const prediction =
-    p?.prediction;
+  // Support both the API's nested prediction response and flat database rows.
+  const prediction = {
+    ...(p || {}),
+    ...(p?.features || {}),
+    ...(p?.prediction || {}),
+  };
 
   const dataCoverage =
     f?.data_coverage &&
