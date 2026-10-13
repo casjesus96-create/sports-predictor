@@ -6,12 +6,22 @@ type Prediction = any;
 /** Prevents a detail-panel rendering error from blanking the entire app. */
 class AnalysisErrorBoundary extends Component<
   { children: ReactNode },
-  { hasError: boolean }
+  { hasError: boolean; errorMessage: string }
 > {
-  state = { hasError: false };
+  state = { hasError: false, errorMessage: "" };
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      errorMessage:
+        error instanceof Error ? error.message : String(error ?? "Error desconocido"),
+    };
+  }
+
+  componentDidCatch(error: Error, info: { componentStack?: string }) {
+    // Preserve the actual rendering exception so it can be diagnosed instead
+    // of hiding the cause behind a generic fallback card.
+    console.error("Sports Predictor MLB detail rendering failed", error, info.componentStack);
   }
 
   render() {
@@ -22,8 +32,13 @@ class AnalysisErrorBoundary extends Component<
           <h2>No se pudo mostrar el detalle</h2>
           <p className="muted">
             La solicitud terminó, pero hubo un problema al presentar algunos datos.
-            La pantalla principal sigue disponible y la predicción guardada no se elimina.
+            La predicción guardada no se elimina.
           </p>
+          {this.state.errorMessage ? (
+            <p className="muted" style={{ overflowWrap: "anywhere" }}>
+              Detalle técnico: {this.state.errorMessage}
+            </p>
+          ) : null}
           <button
             type="button"
             className="secondary"
