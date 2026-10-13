@@ -292,7 +292,7 @@ def _fetch_previous_game_lineup(team_id, target_game_datetime):
     """Return a prior completed-game batting order for reference, never as confirmed."""
     target_dt = datetime.fromisoformat(str(target_game_datetime).replace("Z", "+00:00"))
     target_day = target_dt.date()
-    start_day = target_day - timedelta(days=7)
+    start_day = target_day - timedelta(days=30)
     response = requests.get(
         f"{MLB_API}/schedule",
         params={
@@ -311,7 +311,13 @@ def _fetch_previous_game_lineup(team_id, target_game_datetime):
     for date_entry in payload.get("dates") or []:
         for game in date_entry.get("games") or []:
             status = game.get("status") or {}
-            if status.get("abstractGameState") != "Final":
+            detailed_state = str(status.get("detailedState") or "").lower()
+            is_final = (
+                status.get("abstractGameState") == "Final"
+                or status.get("statusCode") == "F"
+                or detailed_state.startswith("final")
+            )
+            if not is_final:
                 continue
             game_pk = _safe_int(game.get("gamePk"))
             if game_pk:

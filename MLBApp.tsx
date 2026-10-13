@@ -2052,7 +2052,8 @@ function GameDetail({
 
               {!group.data?.lineup_confirmed && !(Array.isArray(group.data?.hitters) && group.data.hitters.length > 0) ? (
                 <p className="muted">
-                  La alineación todavía no está confirmada por MLB y no hay una alineación anterior utilizable como referencia. Las estadísticas individuales aparecerán cuando se publique el orden al bate.
+                  La alineación todavía no está confirmada por MLB y no se encontró una alineación anterior utilizable como referencia. Las estadísticas individuales aparecerán cuando se publique el orden al bate.
+                  {group.data?.lineup_lookup_error ? ` Error al consultar datos de MLB: ${group.data.lineup_lookup_error}.` : ""}
                 </p>
               ) : (
                 <>
