@@ -2,6 +2,7 @@ import requests
 from datetime import datetime, timezone
 
 from form_engine import get_matchup_form
+from data_coverage import calculate_data_coverage
 from matchup_engine import get_matchup_data
 from prediction import (
     MODEL_VERSION,
@@ -315,17 +316,22 @@ def analyze_mlb_game(game_id):
         else away_name
     )
 
-    home_form_games = home_form.get("last_15", {}).get("games", 0)
-    away_form_games = away_form.get("last_15", {}).get("games", 0)
-    if home_form_games >= 15 and away_form_games >= 15:
-        data_quality = 100
-    elif home_form_games >= 10 and away_form_games >= 10:
-        data_quality = 90
-    elif home_form_games >= 5 and away_form_games >= 5:
-        data_quality = 80
-    else:
-        data_quality = 65
+    data_coverage = calculate_data_coverage(
+        home_hitting=home_hitting,
+        away_hitting=away_hitting,
+        home_pitching=home_pitching,
+        away_pitching=away_pitching,
+        home_pitcher_id=home_pitcher_id,
+        away_pitcher_id=away_pitcher_id,
+        home_pitcher_stats=home_pitcher_stats,
+        away_pitcher_stats=away_pitcher_stats,
+        home_form=home_form,
+        away_form=away_form,
+    )
+    factors["data_coverage"] = data_coverage
 
+    # La calidad mide cobertura real de entradas; no altera el modelo.
+    data_quality = data_coverage["score"]
     if form_error or matchup_error:
         data_quality = min(data_quality, 70)
 
