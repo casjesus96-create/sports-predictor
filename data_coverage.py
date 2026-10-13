@@ -107,6 +107,8 @@ def calculate_data_coverage(
     for name, component in components.items():
         if name.endswith("_recent_form"):
             score += component["weight"] * component["coverage"]
+            if component["coverage"] < 1.0:
+                missing_fields.append(name)
         elif component["available"]:
             score += component["weight"]
         else:
