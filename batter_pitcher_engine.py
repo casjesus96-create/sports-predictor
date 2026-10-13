@@ -1,7 +1,8 @@
 """Batter-versus-pitcher pregame context using MLB Stats API.
 
-Only confirmed batting orders are used. This module is descriptive and does not
-change the official MLB 2.0.0-matchup win probabilities.
+Official lineups are preferred; a prior-game batting order may be shown only as
+an explicitly unconfirmed reference. This module never changes the official
+MLB 2.0.0-matchup win probabilities.
 """
 from datetime import datetime, timedelta, timezone
 
