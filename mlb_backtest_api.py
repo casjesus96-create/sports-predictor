@@ -6,7 +6,8 @@ from mlb_backtest import (
     OFFICIAL_MLB_MODEL,
     actual_tie_after_nine,
     calculate_mlb_backtest_metrics,
-    snapshot_pregame_eligible,
+    diagnose_projection_storage,
+    snapshot_needs_tie_observation,
 )
 from repository import get_supabase_client
 
@@ -17,7 +18,7 @@ HEADERS = {"User-Agent": "Sports-Predictor/1.0", "Accept": "application/json"}
 
 @router.get("/backtest")
 def mlb_backtest(limit: int = Query(default=100, ge=1, le=200)):
-    """Evaluate settled, immutable, pregame snapshots; this endpoint never writes."""
+    """Evaluate saved snapshots and diagnose projection storage; this endpoint never writes."""
     try:
         supabase = get_supabase_client()
         response = (
@@ -44,13 +45,16 @@ def mlb_backtest(limit: int = Query(default=100, ge=1, le=200)):
             },
         )
 
+    # Diagnose the persisted JSON shape without changing any historical row.
+    storage_diagnostics = diagnose_projection_storage(rows)
+
+    # Only call the MLB feed for records with valid saved projections, final scores,
+    # and a saved tie probability. Legacy snapshots cannot benefit from this request.
     tie_observations = {}
     feed_errors = []
-    candidates = [row for row in rows if snapshot_pregame_eligible(row)]
+    candidates = [row for row in rows if snapshot_needs_tie_observation(row)]
     for row in candidates:
         event_id = str(row.get("event_id") or "")
-        if not event_id:
-            continue
         try:
             response = requests.get(
                 f"{MLB_GAME_API}/{event_id}/feed/live",
@@ -66,13 +70,16 @@ def mlb_backtest(limit: int = Query(default=100, ge=1, le=200)):
 
     result = calculate_mlb_backtest_metrics(rows, tie_observations)
     result["queried_snapshots"] = len(rows)
+    result["storage_diagnostics"] = storage_diagnostics
+    result["tie_feed_candidates"] = len(candidates)
     result["tie_feed_errors"] = len(feed_errors)
     result["tie_feed_error_details"] = feed_errors[:10]
     result["limit"] = limit
     if result["sample_size"] == 0:
         result["message"] = (
-            "Todavía no hay snapshots liquidados elegibles con proyecciones de carreras. "
-            "Las predicciones nuevas se podrán evaluar cuando los partidos terminen "
-            "y se liquiden; no se inventarán datos para completar la muestra."
+            "No hay snapshots liquidados evaluables en esta muestra. "
+            "Consulta storage_diagnostics para distinguir snapshots históricos sin "
+            "proyecciones de posibles diferencias en la ruta de almacenamiento. "
+            "No se reconstruyen ni modifican predicciones históricas."
         )
     return result
