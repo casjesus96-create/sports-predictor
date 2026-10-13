@@ -94,6 +94,26 @@ function stat(value: any, digits = 0) {
     : String(value);
 }
 
+function teamName(value: any, fallback: string) {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const name =
+      value.name ??
+      value.team_name ??
+      value.teamName ??
+      value.abbreviation;
+
+    if (typeof name === "string" && name.trim()) {
+      return name.trim();
+    }
+  }
+
+  return fallback;
+}
+
 function statusLabel(status: string) {
   if (status === "Final") return "Finalizado";
   if (status === "Live") return "En vivo";
@@ -2117,8 +2137,8 @@ function GameDetail({
             Plantilla activa consultada por separado en MLB. Incluye jugadores del roster, no significa que todos estén convocados ni que vayan a jugar este encuentro.
           </p>
           {[
-            { key: "home", title: game?.home || p?.game?.home || "Equipo local", data: batterPitcherMatchups?.team_rosters?.home },
-            { key: "away", title: game?.away || p?.game?.away || "Equipo visitante", data: batterPitcherMatchups?.team_rosters?.away },
+            { key: "home", title: teamName(game?.home ?? p?.game?.home, "Equipo local"), data: batterPitcherMatchups?.team_rosters?.home },
+            { key: "away", title: teamName(game?.away ?? p?.game?.away, "Equipo visitante"), data: batterPitcherMatchups?.team_rosters?.away },
           ].map((group: any) => (
             <section key={group.key} style={{ marginBottom: 14 }}>
               <h4 style={{ marginBottom: 8 }}>{group.title}</h4>
@@ -2152,8 +2172,8 @@ function GameDetail({
             La alineación se identifica como confirmada únicamente cuando MLB publica el orden al bate de este partido. Si aún no está disponible, mostramos la referencia del último encuentro por separado y sin presentarla como oficial.
           </p>
           {[
-            { key: "home", title: game?.home || p?.game?.home || "Equipo local", data: homeBatterMatchup },
-            { key: "away", title: game?.away || p?.game?.away || "Equipo visitante", data: awayBatterMatchup },
+            { key: "home", title: teamName(game?.home ?? p?.game?.home, "Equipo local"), data: homeBatterMatchup },
+            { key: "away", title: teamName(game?.away ?? p?.game?.away, "Equipo visitante"), data: awayBatterMatchup },
           ].map((group: any) => (
             <section key={group.key} style={{ marginBottom: 12 }}>
               <h4 style={{ marginBottom: 6 }}>{group.title}</h4>
