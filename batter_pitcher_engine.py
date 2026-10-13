@@ -290,37 +290,66 @@ def _team_matchup(
 
 
 def _fetch_active_roster(team_id):
-    """Fetch the team's current active roster independently of game lineup publication."""
+    """Fetch active roster; fall back to the 40-man roster without mislabeling it."""
     if not team_id:
-        return {"available": False, "players": [], "source": "MLB Stats API", "reason": "No se identificó el equipo."}
-    response = requests.get(
-        f"{MLB_API}/teams/{int(team_id)}/roster",
-        params={"rosterType": "active"},
-        timeout=TIMEOUT_SECONDS,
-        headers=HEADERS,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    players = []
-    for entry in payload.get("roster") or []:
-        person = entry.get("person") or {}
-        player_id = _safe_int(person.get("id"))
-        name = person.get("fullName") or person.get("name")
-        if not player_id or not name:
-            continue
-        position = entry.get("position") or {}
-        players.append({
-            "player_id": player_id,
-            "player_name": name,
-            "position": position.get("abbreviation") or position.get("name"),
-            "status": (entry.get("status") or {}).get("description"),
-            "jersey_number": entry.get("jerseyNumber"),
-        })
+        return {
+            "available": False,
+            "players": [],
+            "source": "MLB Stats API",
+            "reason": "No se identificó el equipo.",
+        }
+
+    errors = []
+    for roster_type in ("active", "40Man"):
+        try:
+            response = requests.get(
+                f"{MLB_API}/teams/{int(team_id)}/roster",
+                params={"rosterType": roster_type},
+                timeout=TIMEOUT_SECONDS,
+                headers=HEADERS,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            players = []
+            for entry in payload.get("roster") or []:
+                person = entry.get("person") or {}
+                player_id = _safe_int(person.get("id"))
+                name = person.get("fullName") or person.get("name")
+                if not player_id or not name:
+                    continue
+                position = entry.get("position") or {}
+                players.append({
+                    "player_id": player_id,
+                    "player_name": name,
+                    "position": position.get("abbreviation") or position.get("name"),
+                    "status": (entry.get("status") or {}).get("description"),
+                    "jersey_number": entry.get("jerseyNumber"),
+                })
+
+            if players:
+                is_active = roster_type == "active"
+                return {
+                    "available": True,
+                    "players": players,
+                    "roster_scope": "active" if is_active else "40Man",
+                    "source": (
+                        "MLB Stats API · roster activo"
+                        if is_active
+                        else "MLB Stats API · roster de 40 jugadores (alternativa)"
+                    ),
+                    "reason": None,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            errors.append(f"{roster_type}: respuesta sin jugadores")
+        except Exception as exc:
+            errors.append(f"{roster_type}: {type(exc).__name__}")
+
     return {
-        "available": bool(players),
-        "players": players,
-        "source": "MLB Stats API · roster activo",
-        "reason": None if players else "MLB no devolvió jugadores para la plantilla activa.",
+        "available": False,
+        "players": [],
+        "source": "MLB Stats API",
+        "reason": "No fue posible recuperar la plantilla activa ni el roster de 40 jugadores.",
+        "error_type": "; ".join(errors),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -377,8 +406,54 @@ def _fetch_previous_game_lineup(team_id, target_game_datetime):
             None,
         )
         if not prior_side:
+            # Fallback team identity from the schedule if the feed lacks gameData.
+            prior_game = next(
+                (
+                    item
+                    for date_entry in payload.get("dates") or []
+                    for item in date_entry.get("games") or []
+                    if _safe_int(item.get("gamePk")) == game_pk
+                ),
+                {},
+            )
+            schedule_teams = prior_game.get("teams") or {}
+            prior_side = next(
+                (
+                    side for side in ("home", "away")
+                    if _safe_int(((schedule_teams.get(side) or {}).get("team") or {}).get("id")) == int(team_id)
+                ),
+                None,
+            )
+        if not prior_side:
             continue
+
         lineup = extract_confirmed_lineup(prior_feed, prior_side)
+        if not lineup:
+            # Some completed-game feeds omit the batting order while boxscore has it.
+            boxscore_response = requests.get(
+                f"{MLB_API}/game/{game_pk}/boxscore",
+                timeout=TIMEOUT_SECONDS,
+                headers=HEADERS,
+            )
+            boxscore_response.raise_for_status()
+            boxscore = boxscore_response.json()
+            boxscore_team = (boxscore.get("teams") or {}).get(prior_side) or {}
+            if boxscore_team.get("battingOrder") and boxscore_team.get("players"):
+                prior_feed = {
+                    **prior_feed,
+                    "liveData": {
+                        **(prior_feed.get("liveData") or {}),
+                        "boxscore": {
+                            **((prior_feed.get("liveData") or {}).get("boxscore") or {}),
+                            "teams": {
+                                **(((prior_feed.get("liveData") or {}).get("boxscore") or {}).get("teams") or {}),
+                                prior_side: boxscore_team,
+                            },
+                        },
+                    },
+                }
+                lineup = extract_confirmed_lineup(prior_feed, prior_side)
+
         if lineup:
             return lineup, game_date or None
 
