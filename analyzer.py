@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from form_engine import get_matchup_form
 from data_coverage import calculate_data_coverage
+from run_projections import calculate_game_projections
 from matchup_engine import get_matchup_data
 from prediction import (
     MODEL_VERSION,
@@ -329,6 +330,21 @@ def analyze_mlb_game(game_id):
         away_form=away_form,
     )
     factors["data_coverage"] = data_coverage
+
+    # Proyecciones descriptivas independientes; no modifican probabilidades oficiales.
+    projections = calculate_game_projections(
+        home_hitting=home_hitting,
+        away_hitting=away_hitting,
+        home_pitching=home_pitching,
+        away_pitching=away_pitching,
+        home_form=home_form,
+        away_form=away_form,
+        home_pitcher_stats=home_pitcher_stats,
+        away_pitcher_stats=away_pitcher_stats,
+        home_pitcher_name=home_pitcher_name,
+        away_pitcher_name=away_pitcher_name,
+    )
+    factors.update(projections)
 
     # La calidad mide cobertura real de entradas; no altera el modelo.
     data_quality = data_coverage["score"]
