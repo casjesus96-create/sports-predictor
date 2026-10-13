@@ -95,9 +95,12 @@ def diagnose_projection_storage(rows):
         "projection_at_alternate_top_level_path": 0,
         "projection_components_at_factors_top_level": 0,
         "valid_tie_probability": 0,
+        "status_counts": {},
     }
     examples = []
     for row in rows:
+        status = str(row.get("result_status") or "UNKNOWN").upper()
+        counts["status_counts"][status] = counts["status_counts"].get(status, 0) + 1
         if snapshot_pregame_eligible(row):
             counts["official_settled_pregame_snapshots"] += 1
         projection = _run_projection(row)
