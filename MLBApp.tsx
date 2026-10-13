@@ -1,7 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
+import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 
 type Game = any;
 type Prediction = any;
+
+/** Prevents a detail-panel rendering error from blanking the entire app. */
+class AnalysisErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="panel side-panel" role="alert">
+          <div className="section-kicker">ANÁLISIS</div>
+          <h2>No se pudo mostrar el detalle</h2>
+          <p className="muted">
+            La solicitud terminó, pero hubo un problema al presentar algunos datos.
+            La pantalla principal sigue disponible y la predicción guardada no se elimina.
+          </p>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => window.location.reload()}
+          >
+            Recargar Sports Predictor
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const API = "/api/v1";
 const MODEL_VERSION = "2.0.0-matchup";
@@ -631,8 +666,28 @@ export default function MLBApp() {
 
       await loadAll(false);
 
-      if (game) {
-        setSelected(game);
+      // Read the persisted prediction again instead of opening the detail panel
+      // against stale React state. Some API responses can be successful without
+      // producing a prediction (for example, a game that is already in progress).
+      if (result?.success !== false && game) {
+        const refreshed = await request("/predictions");
+        const latestPredictions = Array.isArray(refreshed?.predictions)
+          ? refreshed.predictions
+          : [];
+        setPredictions(latestPredictions);
+        const savedPrediction = findPrediction(latestPredictions, eventId);
+
+        if (savedPrediction) {
+          setSelected(game);
+        } else {
+          setSelected(null);
+          setNotice(
+            result?.message ||
+            "La API respondió, pero no se encontró una predicción guardada para este partido. Revisa el estado del encuentro y vuelve a intentarlo si sigue antes del inicio."
+          );
+        }
+      } else {
+        setSelected(null);
       }
     } catch (e: any) {
       setError(
@@ -1261,16 +1316,18 @@ export default function MLBApp() {
 
           {selected ? (
 
-            <GameDetail
-              game={selected}
-              prediction={findPrediction(
-                predictions,
-                selected.game_id
-              )}
-              onClose={() =>
-                setSelected(null)
-              }
-            />
+            <AnalysisErrorBoundary key={selected.game_id}>
+              <GameDetail
+                game={selected}
+                prediction={findPrediction(
+                  predictions,
+                  selected.game_id
+                )}
+                onClose={() =>
+                  setSelected(null)
+                }
+              />
+            </AnalysisErrorBoundary>
 
           ) : (
 
