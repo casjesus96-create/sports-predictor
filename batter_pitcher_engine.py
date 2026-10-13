@@ -271,7 +271,16 @@ def _team_matchup(
 
     base["hitters"] = hitters
     base["available"] = any(hitter["vs_pitcher"].get("available") for hitter in hitters)
-    base["reason"] = None if base["available"] else "Alineación confirmada, pero no hay historial directo suficiente disponible para los bateadores."
+    if base["available"]:
+        base["reason"] = None
+    elif lineup_confirmed:
+        base["reason"] = "Alineación confirmada, pero no hay historial directo suficiente disponible para los bateadores."
+    else:
+        base["reason"] = (
+            "Alineación de referencia basada en el último partido anterior disponible; "
+            "no está confirmada ni proyectada oficialmente para este encuentro y puede cambiar. "
+            "No hay historial directo suficiente disponible para los bateadores."
+        )
     base["scope"] = "career_vs_pitcher"
     base["generated_at"] = datetime.now(timezone.utc).isoformat()
     return base
