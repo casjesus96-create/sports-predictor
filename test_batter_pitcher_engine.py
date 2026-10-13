@@ -132,3 +132,62 @@ def test_boxscore_fallback_finds_lineups_missing_from_pregame_feed(monkeypatch):
     assert result["away_team"]["lineup_source"] == "game_boxscore"
     assert result["home_team"]["hitters"][0]["player_name"] == "Home Batter"
     assert result["away_team"]["hitters"][0]["player_name"] == "Away Batter"
+
+
+
+def test_previous_game_lineup_is_marked_as_reference_not_confirmed(monkeypatch):
+    reference_lineup = [
+        {
+            "player_id": 123,
+            "player_name": "Returning Batter",
+            "batting_order": 1,
+            "position": "CF",
+        }
+    ]
+    monkeypatch.setattr(
+        batter_pitcher_engine,
+        "_fetch_previous_game_lineup",
+        lambda team_id, target_game_datetime: (reference_lineup, "2026-10-12"),
+    )
+    monkeypatch.setattr(
+        batter_pitcher_engine.requests,
+        "get",
+        lambda *args, **kwargs: type(
+            "FakeResponse",
+            (),
+            {
+                "raise_for_status": lambda self: None,
+                "json": lambda self: {"teams": {}},
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        batter_pitcher_engine,
+        "_fetch_vs_pitcher_stats",
+        lambda player_ids, pitcher_id: {},
+    )
+    feed = {
+        "gameData": {
+            "datetime": {"dateTime": "2026-10-13T23:00:00Z"},
+            "teams": {
+                "home": {"id": 10, "name": "Home"},
+                "away": {"id": 20, "name": "Away"},
+            },
+        },
+        "liveData": {"boxscore": {"teams": {}}},
+    }
+    result = get_batter_pitcher_matchups(
+        feed=feed,
+        home_pitcher={"pitcher_id": 900, "pitcher_name": "Home Starter"},
+        away_pitcher={"pitcher_id": 901, "pitcher_name": "Away Starter"},
+        home_team_name="Home",
+        away_team_name="Away",
+        game_id=12345,
+    )
+    home = result["home_team"]
+    assert home["lineup_confirmed"] is False
+    assert home["lineup_status"] == "estimated_from_previous_game"
+    assert home["lineup_source"] == "previous_game_reference"
+    assert home["lineup_source_game_date"] == "2026-10-12"
+    assert home["hitters"][0]["player_name"] == "Returning Batter"
+    assert "no está confirmada" in home["reason"]

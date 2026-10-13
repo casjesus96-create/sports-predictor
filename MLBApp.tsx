@@ -2050,12 +2050,20 @@ function GameDetail({
             <section key={group.key} style={{ marginBottom: 16 }}>
               <h4 style={{ marginBottom: 8 }}>{group.title}</h4>
 
-              {!group.data?.lineup_confirmed ? (
+              {!group.data?.lineup_confirmed && !(Array.isArray(group.data?.hitters) && group.data.hitters.length > 0) ? (
                 <p className="muted">
-                  La alineación todavía no está confirmada por MLB. Las estadísticas individuales aparecerán cuando se publique el orden al bate.
+                  La alineación todavía no está confirmada por MLB y no hay una alineación anterior utilizable como referencia. Las estadísticas individuales aparecerán cuando se publique el orden al bate.
                 </p>
               ) : (
                 <>
+                  {!group.data?.lineup_confirmed && group.data?.lineup_status === "estimated_from_previous_game" && (
+                    <p className="muted" role="note">
+                      <strong>Alineación de referencia, no confirmada:</strong> basada en el último orden al bate disponible ({group.data?.lineup_source_game_date || "fecha no disponible"}). No es una proyección oficial para este partido; puede cambiar antes del primer lanzamiento. Fuente: MLB Stats API, partido anterior.
+                    </p>
+                  )}
+                  {group.data?.lineup_confirmed && (
+                    <p className="muted">Alineación publicada por MLB.</p>
+                  )}
                   {group.data?.reason && (
                     <p className="muted">{group.data.reason}</p>
                   )}

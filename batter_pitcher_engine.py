@@ -1,9 +1,10 @@
 """Batter-versus-pitcher pregame context using MLB Stats API.
 
-Only confirmed batting orders are used. This module is descriptive and does not
-change the official MLB 2.0.0-matchup win probabilities.
+Official lineups are preferred; a prior-game batting order may be shown only as
+an explicitly unconfirmed reference. This module never changes the official
+MLB 2.0.0-matchup win probabilities.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -210,14 +211,24 @@ def _fetch_vs_pitcher_stats(player_ids, pitcher_id):
     return result
 
 
-def _team_matchup(feed, batting_side, opposing_pitcher, opposing_team_name, lineup_source="game_feed"):
-    lineup = extract_confirmed_lineup(feed, batting_side)
+def _team_matchup(
+    feed,
+    batting_side,
+    opposing_pitcher,
+    opposing_team_name,
+    lineup_source="game_feed",
+    lineup_override=None,
+    lineup_source_game_date=None,
+):
+    lineup = lineup_override if lineup_override is not None else extract_confirmed_lineup(feed, batting_side)
+    lineup_confirmed = bool(lineup) and lineup_source != "previous_game_reference"
     pitcher_id = _safe_int((opposing_pitcher or {}).get("pitcher_id") or (opposing_pitcher or {}).get("id"))
     pitcher_name = (opposing_pitcher or {}).get("pitcher_name") or (opposing_pitcher or {}).get("name")
 
     base = {
         "available": False,
-        "lineup_confirmed": bool(lineup),
+        "lineup_confirmed": lineup_confirmed,
+        "lineup_status": "confirmed" if lineup_confirmed else ("estimated_from_previous_game" if lineup else "not_found"),
         "batting_side": batting_side,
         "opposing_pitcher": {
             "player_id": pitcher_id,
@@ -227,14 +238,21 @@ def _team_matchup(feed, batting_side, opposing_pitcher, opposing_team_name, line
         "hitters": [],
         "lineup_source": lineup_source,
     }
+    if lineup_source_game_date:
+        base["lineup_source_game_date"] = lineup_source_game_date
 
     if not lineup:
-        base["lineup_status"] = "not_found"
         base["reason"] = (
-            "No se encontró el orden al bate en el feed ni en el boxscore de MLB. "
-            "Puede que la alineación aún no se haya publicado o que MLB todavía no la exponga en la API."
+            "No se encontró el orden al bate en el feed ni en el boxscore de MLB, "
+            "y no hubo una alineación reciente utilizable como referencia."
         )
         return base
+
+    if not lineup_confirmed:
+        base["reason"] = (
+            "Alineación de referencia basada en el último partido anterior disponible; "
+            "no está confirmada ni proyectada oficialmente para este encuentro y puede cambiar."
+        )
 
     if not pitcher_id:
         base["hitters"] = [
@@ -254,10 +272,74 @@ def _team_matchup(feed, batting_side, opposing_pitcher, opposing_team_name, line
 
     base["hitters"] = hitters
     base["available"] = any(hitter["vs_pitcher"].get("available") for hitter in hitters)
-    base["reason"] = None if base["available"] else "Alineación confirmada, pero no hay historial directo suficiente disponible para los bateadores."
+    if base["available"]:
+        base["reason"] = None
+    elif lineup_confirmed:
+        base["reason"] = "Alineación confirmada, pero no hay historial directo suficiente disponible para los bateadores."
+    else:
+        base["reason"] = (
+            "Alineación de referencia basada en el último partido anterior disponible; "
+            "no está confirmada ni proyectada oficialmente para este encuentro y puede cambiar. "
+            "No hay historial directo suficiente disponible para los bateadores."
+        )
     base["scope"] = "career_vs_pitcher"
     base["generated_at"] = datetime.now(timezone.utc).isoformat()
     return base
+
+
+
+def _fetch_previous_game_lineup(team_id, target_game_datetime):
+    """Return a prior completed-game batting order for reference, never as confirmed."""
+    target_dt = datetime.fromisoformat(str(target_game_datetime).replace("Z", "+00:00"))
+    target_day = target_dt.date()
+    start_day = target_day - timedelta(days=7)
+    response = requests.get(
+        f"{MLB_API}/schedule",
+        params={
+            "sportId": 1,
+            "teamId": int(team_id),
+            "startDate": start_day.isoformat(),
+            "endDate": (target_day - timedelta(days=1)).isoformat(),
+        },
+        timeout=TIMEOUT_SECONDS,
+        headers=HEADERS,
+    )
+    response.raise_for_status()
+    payload = response.json()
+
+    games = []
+    for date_entry in payload.get("dates") or []:
+        for game in date_entry.get("games") or []:
+            status = game.get("status") or {}
+            if status.get("abstractGameState") != "Final":
+                continue
+            game_pk = _safe_int(game.get("gamePk"))
+            if game_pk:
+                games.append((str(game.get("officialDate") or date_entry.get("date") or ""), game_pk))
+
+    for game_date, game_pk in sorted(games, reverse=True):
+        game_response = requests.get(
+            f"{MLB_API}/game/{game_pk}/feed/live",
+            timeout=TIMEOUT_SECONDS,
+            headers=HEADERS,
+        )
+        game_response.raise_for_status()
+        prior_feed = game_response.json()
+        prior_teams = ((prior_feed.get("gameData") or {}).get("teams") or {})
+        prior_side = next(
+            (
+                side for side in ("home", "away")
+                if _safe_int((prior_teams.get(side) or {}).get("id")) == int(team_id)
+            ),
+            None,
+        )
+        if not prior_side:
+            continue
+        lineup = extract_confirmed_lineup(prior_feed, prior_side)
+        if lineup:
+            return lineup, game_date or None
+
+    return [], None
 
 
 def get_batter_pitcher_matchups(
@@ -271,6 +353,8 @@ def get_batter_pitcher_matchups(
     """Build direct batter-vs-starter context, retrying lineups via MLB boxscore."""
     lineup_feed = feed
     lineup_sources = {"home": "game_feed", "away": "game_feed"}
+    lineup_overrides = {"home": None, "away": None}
+    lineup_source_dates = {"home": None, "away": None}
     lineup_lookup_error = None
 
     # Pregame live feeds can omit boxscore batting orders. Query the dedicated
@@ -308,6 +392,28 @@ def get_batter_pitcher_matchups(
         except Exception as exc:
             lineup_lookup_error = type(exc).__name__
 
+    # If MLB has not published the target game's batting order, use the most
+    # recent completed-game order as a clearly marked reference only. This is
+    # not represented as an official or model-generated projected lineup.
+    game_data = feed.get("gameData") or {}
+    target_datetime = (game_data.get("datetime") or {}).get("dateTime")
+    target_teams = game_data.get("teams") or {}
+    for side in ("home", "away"):
+        if extract_confirmed_lineup(lineup_feed, side):
+            continue
+        team_id = _safe_int((target_teams.get(side) or {}).get("id"))
+        if not team_id or not target_datetime:
+            continue
+        try:
+            previous_lineup, previous_game_date = _fetch_previous_game_lineup(team_id, target_datetime)
+            if previous_lineup:
+                lineup_overrides[side] = previous_lineup
+                lineup_sources[side] = "previous_game_reference"
+                lineup_source_dates[side] = previous_game_date
+        except Exception as exc:
+            if not lineup_lookup_error:
+                lineup_lookup_error = type(exc).__name__
+
     result = {
         "source": "MLB Stats API",
         "scope": "career_vs_pitcher",
@@ -328,6 +434,8 @@ def get_batter_pitcher_matchups(
                 opposing_pitcher=pitcher,
                 opposing_team_name=opposing_team_name,
                 lineup_source=lineup_sources[side],
+                lineup_override=lineup_overrides[side],
+                lineup_source_game_date=lineup_source_dates[side],
             )
             if lineup_lookup_error:
                 result[key]["lineup_lookup_error"] = lineup_lookup_error
