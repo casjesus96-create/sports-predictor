@@ -864,14 +864,30 @@ export default function MLBApp() {
               ?.summary
               ?.average_confidence
           )}
-          detail={`Calidad ${
-            num(
-              performance
-                ?.summary
-                ?.average_data_quality,
-              1
-            )
-          }%`}
+          detail={`Calidad ${num(
+            performance?.summary?.average_data_quality,
+            1
+          )}%`}
+        />
+
+        <Metric
+          title="Brier Score"
+          value={
+            performance?.models?.[MODEL_VERSION]?.probability_metrics?.brier_score != null
+              ? num(performance.models?.[MODEL_VERSION]?.probability_metrics.brier_score, 4)
+              : "—"
+          }
+          detail={`${performance?.models?.[MODEL_VERSION]?.probability_metrics?.sample_size || 0} evaluadas · menor es mejor`}
+        />
+
+        <Metric
+          title="Log Loss"
+          value={
+            performance?.models?.[MODEL_VERSION]?.probability_metrics?.log_loss != null
+              ? num(performance.models?.[MODEL_VERSION]?.probability_metrics.log_loss, 4)
+              : "—"
+          }
+          detail="Calidad de probabilidades · menor es mejor"
         />
 
       </section>

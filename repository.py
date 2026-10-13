@@ -2,6 +2,8 @@
 from datetime import datetime, timezone
 import os
 
+from probability_metrics import calculate_probability_metrics
+
 from supabase import create_client, Client
 
 
@@ -493,6 +495,8 @@ def get_performance():
             if data_qualities else 0
         )
 
+        probability_metrics = calculate_probability_metrics(model_rows)
+
         return {
             "total_predictions": total,
             "pending_predictions": pending,
@@ -503,6 +507,7 @@ def get_performance():
             "accuracy_percentage": round(accuracy, 2),
             "average_confidence": round(average_confidence, 4),
             "average_data_quality": round(average_data_quality, 2),
+            "probability_metrics": probability_metrics,
         }
 
     overall = calculate_stats(rows)
