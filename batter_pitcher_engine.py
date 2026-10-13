@@ -390,13 +390,18 @@ def _fetch_previous_game_lineup(team_id, target_game_datetime):
                 games.append((str(game.get("officialDate") or date_entry.get("date") or ""), game_pk))
 
     for game_date, game_pk in sorted(games, reverse=True):
-        game_response = requests.get(
-            f"{MLB_API}/game/{game_pk}/feed/live",
-            timeout=TIMEOUT_SECONDS,
-            headers=HEADERS,
-        )
-        game_response.raise_for_status()
-        prior_feed = game_response.json()
+        # Un partido anterior puede no tener feed accesible; no abortar toda
+        # la búsqueda por un único 404/HTTPError. Probar el siguiente partido.
+        try:
+            game_response = requests.get(
+                f"{MLB_API}/game/{game_pk}/feed/live",
+                timeout=TIMEOUT_SECONDS,
+                headers=HEADERS,
+            )
+            game_response.raise_for_status()
+            prior_feed = game_response.json()
+        except requests.RequestException:
+            continue
         prior_teams = ((prior_feed.get("gameData") or {}).get("teams") or {})
         prior_side = next(
             (
@@ -430,29 +435,34 @@ def _fetch_previous_game_lineup(team_id, target_game_datetime):
         lineup = extract_confirmed_lineup(prior_feed, prior_side)
         if not lineup:
             # Some completed-game feeds omit the batting order while boxscore has it.
-            boxscore_response = requests.get(
-                f"{MLB_API}/game/{game_pk}/boxscore",
-                timeout=TIMEOUT_SECONDS,
-                headers=HEADERS,
-            )
-            boxscore_response.raise_for_status()
-            boxscore = boxscore_response.json()
-            boxscore_team = (boxscore.get("teams") or {}).get(prior_side) or {}
-            if boxscore_team.get("battingOrder") and boxscore_team.get("players"):
-                prior_feed = {
-                    **prior_feed,
-                    "liveData": {
-                        **(prior_feed.get("liveData") or {}),
-                        "boxscore": {
-                            **((prior_feed.get("liveData") or {}).get("boxscore") or {}),
-                            "teams": {
-                                **(((prior_feed.get("liveData") or {}).get("boxscore") or {}).get("teams") or {}),
-                                prior_side: boxscore_team,
+            # A failure for this one game must not prevent trying older games.
+            try:
+                boxscore_response = requests.get(
+                    f"{MLB_API}/game/{game_pk}/boxscore",
+                    timeout=TIMEOUT_SECONDS,
+                    headers=HEADERS,
+                )
+                boxscore_response.raise_for_status()
+                boxscore = boxscore_response.json()
+                boxscore_team = (boxscore.get("teams") or {}).get(prior_side) or {}
+                if boxscore_team.get("battingOrder") and boxscore_team.get("players"):
+                    prior_feed = {
+                        **prior_feed,
+                        "liveData": {
+                            **(prior_feed.get("liveData") or {}),
+                            "boxscore": {
+                                **((prior_feed.get("liveData") or {}).get("boxscore") or {}),
+                                "teams": {
+                                    **(((prior_feed.get("liveData") or {}).get("boxscore") or {}).get("teams") or {}),
+                                    prior_side: boxscore_team,
+                                },
                             },
                         },
-                    },
-                }
-                lineup = extract_confirmed_lineup(prior_feed, prior_side)
+                    }
+                    lineup = extract_confirmed_lineup(prior_feed, prior_side)
+            except (requests.RequestException, ValueError):
+                # Continue through older completed games instead of returning empty.
+                continue
 
         if lineup:
             return lineup, game_date or None
