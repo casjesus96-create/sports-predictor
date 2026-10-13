@@ -1,5 +1,7 @@
+import batter_pitcher_engine
 from batter_pitcher_engine import (
     extract_confirmed_lineup,
+    get_batter_pitcher_matchups,
     normalize_batter_pitcher_stats,
 )
 
@@ -72,3 +74,61 @@ def test_only_batters_in_published_order_are_returned():
 def test_unpublished_lineup_returns_empty_list():
     feed = {"liveData": {"boxscore": {"teams": {}}}}
     assert extract_confirmed_lineup(feed, "home") == []
+
+
+
+def test_boxscore_fallback_finds_lineups_missing_from_pregame_feed(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "teams": {
+                    "home": {
+                        "battingOrder": [123],
+                        "players": {
+                            "ID123": {
+                                "person": {"id": 123, "fullName": "Home Batter"},
+                                "position": {"abbreviation": "CF"},
+                            }
+                        },
+                    },
+                    "away": {
+                        "battingOrder": [456],
+                        "players": {
+                            "ID456": {
+                                "person": {"id": 456, "fullName": "Away Batter"},
+                                "position": {"abbreviation": "1B"},
+                            }
+                        },
+                    },
+                }
+            }
+
+    monkeypatch.setattr(
+        batter_pitcher_engine.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+    monkeypatch.setattr(
+        batter_pitcher_engine,
+        "_fetch_vs_pitcher_stats",
+        lambda player_ids, pitcher_id: {},
+    )
+
+    result = get_batter_pitcher_matchups(
+        feed={"liveData": {"boxscore": {"teams": {}}}},
+        home_pitcher={"pitcher_id": 900, "pitcher_name": "Home Starter"},
+        away_pitcher={"pitcher_id": 901, "pitcher_name": "Away Starter"},
+        home_team_name="Home",
+        away_team_name="Away",
+        game_id=12345,
+    )
+
+    assert result["home_team"]["lineup_confirmed"] is True
+    assert result["away_team"]["lineup_confirmed"] is True
+    assert result["home_team"]["lineup_source"] == "game_boxscore"
+    assert result["away_team"]["lineup_source"] == "game_boxscore"
+    assert result["home_team"]["hitters"][0]["player_name"] == "Home Batter"
+    assert result["away_team"]["hitters"][0]["player_name"] == "Away Batter"
