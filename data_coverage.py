@@ -114,7 +114,7 @@ def calculate_data_coverage(
         else:
             missing_fields.append(name)
 
-    score = round(max(0.0, min(100.0, score)), 2)
+    score = int(round(max(0.0, min(100.0, score))))
     available_count = sum(
         1 for component in components.values()
         if component["available"]
