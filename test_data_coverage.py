@@ -20,7 +20,8 @@ def coverage(**overrides):
 
 def test_complete_data_has_full_coverage_and_zero_is_valid():
     result = coverage()
-    assert result["score"] == 100.0
+    assert result["score"] == 100
+    assert isinstance(result["score"], int)
     assert result["complete"] is True
     assert result["missing_fields"] == []
     assert result["components"]["home_team_ops"]["available"] is True
