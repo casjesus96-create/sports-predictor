@@ -1689,6 +1689,15 @@ function GameDetail({
   const matchup =
     f?.matchup || {};
 
+  const batterPitcherMatchups =
+    f?.batter_pitcher_matchups || {};
+
+  const homeBatterMatchup =
+    batterPitcherMatchups?.home_team || {};
+
+  const awayBatterMatchup =
+    batterPitcherMatchups?.away_team || {};
+
   const runProjection =
     f?.run_projection || {};
 
@@ -2015,6 +2024,91 @@ function GameDetail({
               No hay estadísticas suficientes del abridor para estimar de forma responsable sus ponches. Se mostrarán cuando estén disponibles.
             </p>
           )}
+
+          <h3 className="detail-heading">
+            Bateadores frente al pitcher abridor
+          </h3>
+
+          <p className="muted" style={{ marginTop: 0 }}>
+            AVG, SLG, OPS y HR corresponden al historial directo de cada bateador contra el abridor rival.
+            PA indica apariciones al plato; una muestra pequeña no debe interpretarse como una ventaja fiable.
+            Este bloque es informativo y no modifica la probabilidad oficial del modelo.
+          </p>
+
+          {[
+            {
+              key: "home",
+              title: `Ofensiva local vs ${awayBatterMatchup?.opposing_pitcher?.name || "abridor visitante"}`,
+              data: homeBatterMatchup,
+            },
+            {
+              key: "away",
+              title: `Ofensiva visitante vs ${homeBatterMatchup?.opposing_pitcher?.name || "abridor local"}`,
+              data: awayBatterMatchup,
+            },
+          ].map((group: any) => (
+            <section key={group.key} style={{ marginBottom: 16 }}>
+              <h4 style={{ marginBottom: 8 }}>{group.title}</h4>
+
+              {!group.data?.lineup_confirmed ? (
+                <p className="muted">
+                  La alineación todavía no está confirmada por MLB. Las estadísticas individuales aparecerán cuando se publique el orden al bate.
+                </p>
+              ) : (
+                <>
+                  {group.data?.reason && (
+                    <p className="muted">{group.data.reason}</p>
+                  )}
+
+                  {Array.isArray(group.data?.hitters) && group.data.hitters.length > 0 ? (
+                    <div style={{ overflowX: "auto", width: "100%" }}>
+                      <table style={{ width: "100%", minWidth: "560px", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr>
+                            <th scope="col" style={{ textAlign: "left", padding: "8px 6px" }}>Bateador</th>
+                            <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>PA</th>
+                            <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>AB</th>
+                            <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>AVG</th>
+                            <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>SLG</th>
+                            <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>OPS</th>
+                            <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>HR</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.data.hitters.map((hitter: any) => {
+                            const stats = hitter?.vs_pitcher || {};
+                            const sample = Number(stats?.sample_size || stats?.plate_appearances || 0);
+
+                            return (
+                              <tr key={hitter.player_id}>
+                                <td style={{ padding: "8px 6px", whiteSpace: "nowrap" }}>
+                                  <strong>{hitter.player_name}</strong>
+                                  <div className="muted" style={{ fontSize: 12 }}>
+                                    {hitter.batting_order ? `Orden ${hitter.batting_order}` : ""}
+                                    {hitter.position ? ` · ${hitter.position}` : ""}
+                                  </div>
+                                </td>
+                                <td style={{ textAlign: "right", padding: "8px 6px" }}>{sample || "—"}</td>
+                                <td style={{ textAlign: "right", padding: "8px 6px" }}>{stats?.at_bats ?? "—"}</td>
+                                <td style={{ textAlign: "right", padding: "8px 6px" }}>{stats?.avg == null ? "—" : stat(stats.avg, 3)}</td>
+                                <td style={{ textAlign: "right", padding: "8px 6px" }}>{stats?.slg == null ? "—" : stat(stats.slg, 3)}</td>
+                                <td style={{ textAlign: "right", padding: "8px 6px" }}>{stats?.ops == null ? "—" : stat(stats.ops, 3)}</td>
+                                <td style={{ textAlign: "right", padding: "8px 6px" }}>{stats?.home_runs ?? "—"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="muted">
+                      No hay bateadores disponibles en el orden al bate de MLB.
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
+          ))}
 
           <h3 className="detail-heading">
             Ofensiva de temporada
