@@ -87,9 +87,11 @@ def save_prediction(
 
 def save_analysis(analysis):
     """
-    Guarda un análisis generado por analyzer.py.
-    Conserva probabilidades, ganador proyectado, confianza,
-    calidad de datos, factores e información del partido.
+    Guarda un snapshot inmutable de la predicción oficial MLB.
+
+    Si ya existe una predicción PENDING para el mismo partido y modelo,
+    se conserva exactamente como fue registrada: no se reemplazan la
+    probabilidad, ganador, confianza, fecha ni factores históricos.
     """
     if not analysis.get("success"):
         return {
@@ -101,26 +103,19 @@ def save_analysis(analysis):
     game = analysis.get("game") or {}
     prediction = analysis.get("prediction") or {}
     factors = analysis.get("factors") or {}
-
     event_id = game.get("game_id")
 
     if not event_id:
         raise ValueError("El análisis no contiene game_id.")
 
     supabase = get_supabase_client()
-
-    model_version = analysis.get(
-        "model_version",
-        CURRENT_MODEL_VERSION
-    )
-
+    model_version = analysis.get("model_version", CURRENT_MODEL_VERSION)
     generated_at = analysis.get("generated_at")
 
     if not generated_at:
         generated_at = datetime.now(timezone.utc).isoformat()
 
     data_quality = prediction.get("data_quality")
-
     if data_quality is None:
         data_quality = 0
 
@@ -150,11 +145,10 @@ def save_analysis(analysis):
         "prediction_result": None,
     }
 
-    # Reutilizar la predicción pendiente de ese partido y versión.
     existing_response = (
         supabase
         .table("prediction_snapshots")
-        .select("id")
+        .select("*")
         .eq("event_id", str(event_id))
         .eq("model_version", model_version)
         .eq("result_status", "PENDING")
@@ -162,30 +156,35 @@ def save_analysis(analysis):
         .limit(1)
         .execute()
     )
-
     existing_rows = existing_response.data or []
 
     if existing_rows:
-        existing_id = existing_rows[0].get("id")
-        response = (
-            supabase
-            .table("prediction_snapshots")
-            .update(payload)
-            .eq("id", existing_id)
-            .execute()
-        )
-    else:
-        response = (
-            supabase
-            .table("prediction_snapshots")
-            .insert(payload)
-            .execute()
-        )
+        # No actualizar ni reescribir un pronóstico ya emitido.
+        return {
+            "success": True,
+            "saved": True,
+            "updated_existing": False,
+            "existing_prediction_preserved": True,
+            "message": (
+                "Ya existe una predicción pendiente para este partido y modelo. "
+                "Se conservó el snapshot original sin modificar sus probabilidades."
+            ),
+            "data": existing_rows,
+        }
+
+    response = (
+        supabase
+        .table("prediction_snapshots")
+        .insert(payload)
+        .execute()
+    )
 
     return {
         "success": True,
         "saved": True,
-        "updated_existing": bool(existing_rows),
+        "updated_existing": False,
+        "existing_prediction_preserved": False,
+        "message": "Predicción guardada como un nuevo snapshot.",
         "data": response.data,
     }
 
