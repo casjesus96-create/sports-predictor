@@ -890,6 +890,26 @@ export default function MLBApp() {
           detail="Calidad de probabilidades · menor es mejor"
         />
 
+        <Metric
+          title="Error de calibración (ECE)"
+          value={
+            performance?.models?.[MODEL_VERSION]?.probability_metrics?.expected_calibration_error != null
+              ? pct(performance.models?.[MODEL_VERSION]?.probability_metrics.expected_calibration_error)
+              : "—"
+          }
+          detail="Error medio ponderado · menor es mejor"
+        />
+
+        <Metric
+          title="Error máximo (MCE)"
+          value={
+            performance?.models?.[MODEL_VERSION]?.probability_metrics?.maximum_calibration_error != null
+              ? pct(performance.models?.[MODEL_VERSION]?.probability_metrics.maximum_calibration_error)
+              : "—"
+          }
+          detail="Mayor diferencia en un rango · menor es mejor"
+        />
+
       </section>
 
       {(() => {
