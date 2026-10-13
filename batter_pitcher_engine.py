@@ -210,7 +210,7 @@ def _fetch_vs_pitcher_stats(player_ids, pitcher_id):
     return result
 
 
-def _team_matchup(feed, batting_side, opposing_pitcher, opposing_team_name):
+def _team_matchup(feed, batting_side, opposing_pitcher, opposing_team_name, lineup_source="game_feed"):
     lineup = extract_confirmed_lineup(feed, batting_side)
     pitcher_id = _safe_int((opposing_pitcher or {}).get("pitcher_id") or (opposing_pitcher or {}).get("id"))
     pitcher_name = (opposing_pitcher or {}).get("pitcher_name") or (opposing_pitcher or {}).get("name")
@@ -225,10 +225,15 @@ def _team_matchup(feed, batting_side, opposing_pitcher, opposing_team_name):
             "team": opposing_team_name,
         },
         "hitters": [],
+        "lineup_source": lineup_source,
     }
 
     if not lineup:
-        base["reason"] = "MLB todavía no ha publicado una alineación confirmada para este equipo."
+        base["lineup_status"] = "not_found"
+        base["reason"] = (
+            "No se encontró el orden al bate en el feed ni en el boxscore de MLB. "
+            "Puede que la alineación aún no se haya publicado o que MLB todavía no la exponga en la API."
+        )
         return base
 
     if not pitcher_id:
@@ -255,8 +260,54 @@ def _team_matchup(feed, batting_side, opposing_pitcher, opposing_team_name):
     return base
 
 
-def get_batter_pitcher_matchups(feed, home_pitcher, away_pitcher, home_team_name=None, away_team_name=None):
-    """Build home hitters vs away starter and away hitters vs home starter."""
+def get_batter_pitcher_matchups(
+    feed,
+    home_pitcher,
+    away_pitcher,
+    home_team_name=None,
+    away_team_name=None,
+    game_id=None,
+):
+    """Build direct batter-vs-starter context, retrying lineups via MLB boxscore."""
+    lineup_feed = feed
+    lineup_sources = {"home": "game_feed", "away": "game_feed"}
+    lineup_lookup_error = None
+
+    # Pregame live feeds can omit boxscore batting orders. Query the dedicated
+    # boxscore endpoint once before concluding that lineups are unavailable.
+    if game_id and any(not extract_confirmed_lineup(feed, side) for side in ("home", "away")):
+        try:
+            response = requests.get(
+                f"{MLB_API}/game/{int(game_id)}/boxscore",
+                timeout=TIMEOUT_SECONDS,
+                headers=HEADERS,
+            )
+            response.raise_for_status()
+            boxscore_data = response.json()
+            boxscore_teams = boxscore_data.get("teams") or {}
+            current_teams = (
+                ((feed.get("liveData") or {}).get("boxscore") or {}).get("teams") or {}
+            )
+            merged_teams = dict(current_teams)
+            for side in ("home", "away"):
+                if not extract_confirmed_lineup(feed, side):
+                    fallback_team = boxscore_teams.get(side) or {}
+                    if fallback_team.get("battingOrder") and fallback_team.get("players"):
+                        merged_teams[side] = fallback_team
+                        lineup_sources[side] = "game_boxscore"
+            lineup_feed = {
+                **feed,
+                "liveData": {
+                    **(feed.get("liveData") or {}),
+                    "boxscore": {
+                        **((feed.get("liveData") or {}).get("boxscore") or {}),
+                        "teams": merged_teams,
+                    },
+                },
+            }
+        except Exception as exc:
+            lineup_lookup_error = type(exc).__name__
+
     result = {
         "source": "MLB Stats API",
         "scope": "career_vs_pitcher",
@@ -272,11 +323,14 @@ def get_batter_pitcher_matchups(feed, home_pitcher, away_pitcher, home_team_name
     ):
         try:
             result[key] = _team_matchup(
-                feed=feed,
+                feed=lineup_feed,
                 batting_side=side,
                 opposing_pitcher=pitcher,
                 opposing_team_name=opposing_team_name,
+                lineup_source=lineup_sources[side],
             )
+            if lineup_lookup_error:
+                result[key]["lineup_lookup_error"] = lineup_lookup_error
         except Exception as exc:
             result[key] = {
                 "available": False,
@@ -288,9 +342,12 @@ def get_batter_pitcher_matchups(feed, home_pitcher, away_pitcher, home_team_name
                     "team": opposing_team_name,
                 },
                 "hitters": [],
+                "lineup_source": lineup_sources[side],
                 "reason": "No fue posible consultar el historial directo de bateadores contra el abridor.",
                 "error_type": type(exc).__name__,
             }
+            if lineup_lookup_error:
+                result[key]["lineup_lookup_error"] = lineup_lookup_error
 
     result["available"] = bool(
         result["home_team"].get("available")

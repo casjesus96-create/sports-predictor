@@ -203,6 +203,7 @@ def analyze_mlb_game(game_id):
         },
         home_team_name=home_name,
         away_team_name=away_name,
+        game_id=game_id,
     )
 
     home_hitting = home_stats.get("hitting") or {}
