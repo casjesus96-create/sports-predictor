@@ -25,6 +25,8 @@ def test_brier_and_log_loss_for_settled_predictions():
     assert result["sample_size"] == 2
     assert result["brier_score"] == 0.04
     assert result["log_loss"] == round(-math.log(0.8), 6)
+    assert result["expected_calibration_error"] == 0.2
+    assert result["maximum_calibration_error"] == 0.2
     assert len(result["calibration_bins"]) == 5
 
     # Bins are [0.00, 0.20), [0.20, 0.40), ... [0.80, 1.00].
@@ -40,6 +42,8 @@ def test_pending_predictions_are_not_evaluated():
     assert result["sample_size"] == 0
     assert result["brier_score"] is None
     assert result["log_loss"] is None
+    assert result["expected_calibration_error"] is None
+    assert result["maximum_calibration_error"] is None
     assert all(bucket["sample_size"] == 0 for bucket in result["calibration_bins"])
     assert all(bucket["mean_predicted_probability"] is None for bucket in result["calibration_bins"])
 
@@ -80,3 +84,16 @@ def test_calibration_ignores_unsettled_and_unknown_results():
 def test_invalid_bin_count_is_rejected():
     with pytest.raises(ValueError):
         calculate_calibration_bins([], bin_count=0)
+
+
+def test_calibration_error_is_weighted_by_bucket_sample_size():
+    result = calculate_probability_metrics([
+        row("SETTLED", 0.21, "Home"),
+        row("SETTLED", 0.22, "Home"),
+        row("SETTLED", 0.23, "Home"),
+        row("SETTLED", 0.81, "Away"),
+    ])
+    # First populated bucket: mean 0.22 vs observed 1.0 (gap 0.78).
+    # Second populated bucket: mean 0.81 vs observed 0.0 (gap 0.81).
+    assert result["expected_calibration_error"] == round((3 * 0.78 + 0.81) / 4, 6)
+    assert result["maximum_calibration_error"] == 0.81
