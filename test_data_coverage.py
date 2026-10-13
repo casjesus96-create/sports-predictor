@@ -1,4 +1,10 @@
 from data_coverage import calculate_data_coverage
+from test_batter_pitcher_engine import (
+    test_missing_batter_pitcher_history_is_not_invented as test_batter_pitcher_missing_history,
+    test_direct_batter_pitcher_rates_are_calculated_from_counts as test_batter_pitcher_rate_calculation,
+    test_only_batters_in_published_order_are_returned as test_batter_pitcher_confirmed_lineup,
+    test_unpublished_lineup_returns_empty_list as test_batter_pitcher_missing_lineup,
+)
 
 
 def coverage(**overrides):
