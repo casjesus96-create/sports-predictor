@@ -132,3 +132,15 @@ def test_tie_observation_skips_live_shortened_and_incomplete_games():
         "gameData": {"status": {"abstractGameState": "Final"}},
         "liveData": {"linescore": {"scheduledInnings": 9, "innings": []}},
     }) is None
+
+
+def test_storage_diagnostics_count_snapshot_statuses_for_pending_audit():
+    pending_a = snapshot(event_id="501", status="PENDING")
+    pending_b = snapshot(event_id="502", status="PENDING")
+    missing = snapshot(event_id="503", status="PENDING")
+    del missing["features"]["factors"]["run_projection"]
+    result = diagnose_projection_storage([pending_a, pending_b, missing])
+    assert result["status_counts"] == {"PENDING": 3}
+    assert result["valid_run_projection_at_canonical_path"] == 2
+    assert result["missing_or_invalid_run_projection_at_canonical_path"] == 1
+    assert result["official_settled_pregame_snapshots"] == 0
