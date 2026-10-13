@@ -2134,7 +2134,7 @@ function GameDetail({
             Alineación del equipo · plantilla activa
           </h3>
           <p className="muted" style={{ marginTop: 0 }}>
-            Plantilla activa consultada por separado en MLB. Incluye jugadores del roster, no significa que todos estén convocados ni que vayan a jugar este encuentro.
+            Consultamos el roster activo de MLB. Si MLB no lo devuelve, intentamos el roster de 40 jugadores y lo identificamos como alternativa; ninguno de los dos significa que todos estén convocados para este encuentro.
           </p>
           {[
             { key: "home", title: teamName(game?.home ?? p?.game?.home, "Equipo local"), data: batterPitcherMatchups?.team_rosters?.home },
@@ -2143,6 +2143,10 @@ function GameDetail({
             <section key={group.key} style={{ marginBottom: 14 }}>
               <h4 style={{ marginBottom: 8 }}>{group.title}</h4>
               {Array.isArray(group.data?.players) && group.data.players.length > 0 ? (
+                <>
+                {group.data?.roster_scope === "40Man" && (
+                  <p className="muted" role="note">MLB no devolvió el roster activo; se muestra el roster de 40 jugadores como alternativa, no como plantilla activa confirmada.</p>
+                )}
                 <div style={{ overflowX: "auto", width: "100%" }}>
                   <table style={{ width: "100%", minWidth: "360px", borderCollapse: "collapse" }}>
                     <thead><tr>
@@ -2159,8 +2163,12 @@ function GameDetail({
                     ))}</tbody>
                   </table>
                 </div>
+                </>
               ) : (
-                <p className="muted">{group.data?.reason || "La plantilla activa no está disponible en este momento."}</p>
+                <p className="muted">
+                  {group.data?.reason || "La plantilla activa no está disponible en este momento."}
+                  {group.data?.error_type ? ` Detalle técnico: ${group.data.error_type}.` : ""}
+                </p>
               )}
             </section>
           ))}
