@@ -5,6 +5,7 @@ from form_engine import get_matchup_form
 from data_coverage import calculate_data_coverage
 from run_projections import calculate_game_projections
 from matchup_engine import get_matchup_data
+from batter_pitcher_engine import get_batter_pitcher_matchups
 from prediction import (
     MODEL_VERSION,
     calculate_probability,
@@ -188,6 +189,22 @@ def analyze_mlb_game(game_id):
     home_pitcher_stats = get_player_pitching_stats(home_pitcher_id, 2026)
     away_pitcher_stats = get_player_pitching_stats(away_pitcher_id, 2026)
 
+    # Enfrentamientos directos de bateadores contra el abridor rival.
+    # Es contexto descriptivo: no altera las probabilidades oficiales.
+    batter_pitcher_matchups = get_batter_pitcher_matchups(
+        feed=game,
+        home_pitcher={
+            "pitcher_id": home_pitcher_id,
+            "pitcher_name": home_pitcher_name,
+        },
+        away_pitcher={
+            "pitcher_id": away_pitcher_id,
+            "pitcher_name": away_pitcher_name,
+        },
+        home_team_name=home_name,
+        away_team_name=away_name,
+    )
+
     home_hitting = home_stats.get("hitting") or {}
     away_hitting = away_stats.get("hitting") or {}
     home_pitching = home_stats.get("pitching") or {}
@@ -276,6 +293,7 @@ def analyze_mlb_game(game_id):
             },
         },
         "matchup": matchup_data,
+        "batter_pitcher_matchups": batter_pitcher_matchups,
         # El bullpen llega exclusivamente desde matchup_engine.py.
         "bullpen": matchup_data.get("bullpen", {
             "available": False,
