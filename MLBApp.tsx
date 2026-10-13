@@ -2134,10 +2134,10 @@ function GameDetail({
           ))}
 
           <h3 className="detail-heading">
-            Alineación del encuentro
+            Alineación oficial del encuentro
           </h3>
           <p className="muted" style={{ marginTop: 0 }}>
-            La alineación se identifica como confirmada únicamente cuando MLB publica el orden al bate de este partido. Si aún no está disponible, mostramos la referencia del último encuentro por separado y sin presentarla como oficial.
+            Solo se marca como oficial cuando MLB publica el orden al bate del partido. La plantilla activa y la alineación de un juego anterior nunca se presentan como confirmadas para este encuentro.
           </p>
           {[
             { key: "home", title: game?.home || p?.game?.home || "Equipo local", data: homeBatterMatchup },
@@ -2146,25 +2146,11 @@ function GameDetail({
             <section key={group.key} style={{ marginBottom: 12 }}>
               <h4 style={{ marginBottom: 6 }}>{group.title}</h4>
               {group.data?.lineup_confirmed && Array.isArray(group.data?.hitters) && group.data.hitters.length > 0 ? (
-                <>
-                  <p className="muted">Alineación confirmada por MLB.</p>
-                  <ol>{group.data.hitters.map((hitter: any) => (
-                    <li key={hitter.player_id}>{hitter.player_name}{hitter.position ? ` · ${hitter.position}` : ""}</li>
-                  ))}</ol>
-                </>
-              ) : Array.isArray(group.data?.hitters) && group.data.hitters.length > 0 ? (
-                <>
-                  <p className="muted" role="note">
-                    <strong>Alineación de referencia, no confirmada.</strong>
-                    {group.data?.lineup_source_game_date ? ` Último orden al bate encontrado: ${group.data.lineup_source_game_date}.` : ""}
-                    {" "}Puede cambiar antes del inicio del partido.
-                  </p>
-                  <ol>{group.data.hitters.map((hitter: any) => (
-                    <li key={hitter.player_id}>{hitter.player_name}{hitter.position ? ` · ${hitter.position}` : ""}</li>
-                  ))}</ol>
-                </>
+                <ol>{group.data.hitters.map((hitter: any) => (
+                  <li key={hitter.player_id}>{hitter.player_name}{hitter.position ? ` · ${hitter.position}` : ""}</li>
+                ))}</ol>
               ) : (
-                <p className="muted">MLB todavía no publica una alineación utilizable para este partido. {group.data?.lineup_lookup_error ? `Detalle de consulta: ${group.data.lineup_lookup_error}.` : ""}</p>
+                <p className="muted">Pendiente de publicación por MLB. {group.data?.lineup_lookup_error ? `Consulta de alineación: ${group.data.lineup_lookup_error}.` : ""}</p>
               )}
             </section>
           ))}
