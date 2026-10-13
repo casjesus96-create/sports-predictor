@@ -1,0 +1,27 @@
+name: MLB snapshot integrity
+
+on:
+  pull_request:
+    paths:
+      - "repository.py"
+      - "test_mlb_snapshot_immutability.py"
+      - ".github/workflows/test_mlb_snapshot_integrity.yml"
+  push:
+    branches: [main]
+    paths:
+      - "repository.py"
+      - "test_mlb_snapshot_immutability.py"
+      - ".github/workflows/test_mlb_snapshot_integrity.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test MLB snapshot integrity
+        run: pytest -q test_mlb_snapshot_immutability.py
