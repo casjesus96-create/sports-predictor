@@ -108,20 +108,37 @@ export default function NBAApp() {
   const refresh = useCallback(async () => {
     setLoading(true);
     setError("");
-    try {
-      const [gamesData, predictionData, performanceData] = await Promise.all([
-        api<{ games?: Game[] }>("/games?days=45&limit=100"),
-        api<{ predictions?: PredictionRow[] }>("/predictions?limit=500"),
-        api<Performance>("/performance"),
-      ]);
-      setGames(gamesData.games || []);
-      setPredictions(predictionData.predictions || []);
-      setPerformance(performanceData);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setLoading(false);
+
+    const results = await Promise.allSettled([
+      api<{ games?: Game[] }>("/games?days=45&limit=100"),
+      api<{ predictions?: PredictionRow[] }>("/predictions?limit=500"),
+      api<Performance>("/performance"),
+    ]);
+
+    const errors: string[] = [];
+    const [gamesResult, predictionsResult, performanceResult] = results;
+
+    if (gamesResult.status === "fulfilled") {
+      setGames(gamesResult.value.games || []);
+    } else {
+      errors.push(`Calendario: ${errorText(gamesResult.reason)}`);
     }
+
+    if (predictionsResult.status === "fulfilled") {
+      setPredictions(predictionsResult.value.predictions || []);
+    } else {
+      errors.push(`Proyecciones guardadas: ${errorText(predictionsResult.reason)}`);
+    }
+
+    if (performanceResult.status === "fulfilled") {
+      setPerformance(performanceResult.value);
+    } else {
+      setPerformance(null);
+      errors.push(`Rendimiento: ${errorText(performanceResult.reason)}`);
+    }
+
+    setError(errors.join(" "));
+    setLoading(false);
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
