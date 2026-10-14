@@ -93,11 +93,10 @@ def settle_nba_prediction(event_id, actual_home_score, actual_away_score, predic
         return {"success": False, "updated": False, "message": "Marcadores reales no válidos."}
     db = get_supabase_client()
     query = (db.table("prediction_snapshots").select("*").eq("event_id", str(event_id))
-        .eq("sport", SPORT).eq("league", LEAGUE).eq("result_status", "PENDING"))
+        .eq("sport", SPORT).eq("league", LEAGUE)
+        .eq("model_version", MODEL_VERSION).eq("result_status", "PENDING"))
     if prediction_id:
         query = query.eq("id", prediction_id)
-    else:
-        query = query.eq("model_version", MODEL_VERSION)
     rows = query.order("created_at", desc=False).limit(1).execute().data or []
     if not rows:
         return {"success": False, "updated": False, "message": "No existe una proyección NBA pendiente para este partido."}
