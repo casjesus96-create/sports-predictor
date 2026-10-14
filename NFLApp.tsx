@@ -86,6 +86,14 @@ function resultLabel(result: any) {
   }
 }
 
+function signedToneClass(label: string, value: unknown) {
+  if (!/diferencial|dif\. carreras/i.test(label)) return "";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "";
+  if (Math.abs(numeric) < 0.05) return "tone-neutral";
+  return numeric > 0 ? "tone-positive" : "tone-negative";
+}
+
 function TeamFactor({
   label,
   value,
@@ -96,7 +104,7 @@ function TeamFactor({
   return (
     <div className="factor">
       <span>{label}</span>
-      <b>
+      <b className={signedToneClass(label, value)}>
         {value === null || value === undefined || value === ""
           ? "—"
           : String(value)}
@@ -556,19 +564,19 @@ export default function NFLApp() {
 
         <div className="metric">
           <span>Aciertos</span>
-          <strong>{summary.correct_predictions ?? 0}</strong>
+          <strong className="tone-positive">{summary.correct_predictions ?? 0}</strong>
           <small>CORRECT</small>
         </div>
 
         <div className="metric">
           <span>Fallos</span>
-          <strong>{summary.incorrect_predictions ?? 0}</strong>
+          <strong className="tone-negative">{summary.incorrect_predictions ?? 0}</strong>
           <small>INCORRECT</small>
         </div>
 
         <div className="metric">
           <span>Empates</span>
-          <strong>{summary.push_predictions ?? 0}</strong>
+          <strong className="tone-neutral">{summary.push_predictions ?? 0}</strong>
           <small>PUSH · no suma ni resta precisión</small>
         </div>
       </section>
