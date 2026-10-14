@@ -1,0 +1,40 @@
+name: Frontend build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.tsx"
+      - "**/*.ts"
+      - "package.json"
+      - "tsconfig.json"
+      - "index.html"
+      - ".github/workflows/frontend-build.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**/*.tsx"
+      - "**/*.ts"
+      - "package.json"
+      - "tsconfig.json"
+      - "index.html"
+      - ".github/workflows/frontend-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: TypeScript and Vite build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Build frontend
+        run: npm run build
