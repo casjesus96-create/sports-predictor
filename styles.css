@@ -130,3 +130,73 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .metric strong.tone-positive,.metric strong.tone-negative,.metric strong.tone-neutral{font-variant-numeric:tabular-nums}
 .factor b.tone-positive,.factor b.tone-negative,.factor b.tone-neutral,
 .score-row b.tone-positive,.score-row b.tone-negative,.score-row b.tone-neutral{font-variant-numeric:tabular-nums}
+
+
+/* Accesibilidad y consistencia visual: mejora de bajo riesgo para escritorio y móvil. */
+:where(button, input, select, textarea, summary, a, [role="button"]):focus-visible {
+  outline: 2px solid #9cc9f3;
+  outline-offset: 3px;
+}
+
+:where(input, select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+:where(button, input, select, textarea) {
+  border-radius: 10px;
+}
+
+:where(.panel, .game-card, .metric, .factor, .prob-card) {
+  min-width: 0;
+}
+
+:where(.muted, .side-copy, .game-meta, .quality, .score-row) {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .app-shell {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .content-grid,
+  .games-list,
+  .side-column,
+  .side-panel,
+  .detail-panel {
+    min-width: 0;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .model-note {
+    flex-wrap: wrap;
+  }
+
+  .model-note span {
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .card-actions > button {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
