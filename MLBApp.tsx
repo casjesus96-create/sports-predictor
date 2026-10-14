@@ -566,44 +566,55 @@ export default function MLBApp() {
     setError("");
 
     try {
-      const [
-        gamesData,
-        predictionsData,
-        performanceData,
-      ] = await Promise.all([
+      const results = await Promise.allSettled([
         request(
           `/mlb/games?date=${date}`
         ),
-
         request(
           `/predictions`
         ),
-
         request(
           `/performance`
         ),
       ]);
 
-      setGames(
-        Array.isArray(gamesData?.games)
-          ? gamesData.games
-          : []
-      );
+      const errors: string[] = [];
+      const [gamesResult, predictionsResult, performanceResult] = results;
 
-      setPredictions(
-        Array.isArray(predictionsData?.predictions)
-          ? predictionsData.predictions
-          : []
-      );
+      if (gamesResult.status === "fulfilled") {
+        setGames(
+          Array.isArray(gamesResult.value?.games)
+            ? gamesResult.value.games
+            : []
+        );
+      } else {
+        errors.push(
+          `Calendario: ${gamesResult.reason?.message || "no se pudo cargar."}`
+        );
+      }
 
-      setPerformance(
-        performanceData
-      );
-    } catch (e: any) {
-      setError(
-        e.message ||
-        "No se pudo cargar la información."
-      );
+      if (predictionsResult.status === "fulfilled") {
+        setPredictions(
+          Array.isArray(predictionsResult.value?.predictions)
+            ? predictionsResult.value.predictions
+            : []
+        );
+      } else {
+        errors.push(
+          `Proyecciones guardadas: ${predictionsResult.reason?.message || "no se pudieron cargar."}`
+        );
+      }
+
+      if (performanceResult.status === "fulfilled") {
+        setPerformance(performanceResult.value);
+      } else {
+        setPerformance(null);
+        errors.push(
+          `Rendimiento: ${performanceResult.reason?.message || "no se pudo cargar."}`
+        );
+      }
+
+      setError(errors.join(" "));
     } finally {
       if (showSpinner) {
         setLoading(false);
