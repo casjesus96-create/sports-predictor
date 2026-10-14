@@ -117,7 +117,7 @@ def nba_settle(game_id: str, prediction_id: str = None):
 @router.post("/settle-pending")
 def nba_settle_pending():
     """Revisa y liquida las proyecciones NBA pendientes con las mismas validaciones individuales."""
-    rows = get_nba_predictions(status="PENDING", limit=500)
+    rows = get_nba_predictions(status="PENDING", limit=500, model_version=MODEL_VERSION)
     settled = 0
     still_pending = 0
     errors = 0
