@@ -169,31 +169,42 @@ export default function NFLApp() {
         request("/nfl/predictions?limit=100"),
         request("/nfl/performance"),
       ]);
+      const errors: string[] = [];
 
-      if (results[0].status === "rejected") {
-        throw results[0].reason;
+      if (results[0].status === "fulfilled") {
+        setGames(
+          Array.isArray(results[0].value?.games)
+            ? results[0].value.games
+            : []
+        );
+      } else {
+        errors.push(
+          `Calendario: ${results[0].reason?.message || "no se pudo cargar."}`
+        );
       }
 
-      setGames(
-        Array.isArray(results[0].value?.games)
-          ? results[0].value.games
-          : []
-      );
+      if (results[1].status === "fulfilled") {
+        setPredictions(
+          Array.isArray(results[1].value?.predictions)
+            ? results[1].value.predictions
+            : []
+        );
+      } else {
+        errors.push(
+          `Proyecciones guardadas: ${results[1].reason?.message || "no se pudieron cargar."}`
+        );
+      }
 
-      setPredictions(
-        results[1].status === "fulfilled" &&
-        Array.isArray(results[1].value?.predictions)
-          ? results[1].value.predictions
-          : []
-      );
+      if (results[2].status === "fulfilled") {
+        setPerformance(results[2].value);
+      } else {
+        setPerformance(null);
+        errors.push(
+          `Rendimiento: ${results[2].reason?.message || "no se pudo cargar."}`
+        );
+      }
 
-      setPerformance(
-        results[2].status === "fulfilled"
-          ? results[2].value
-          : null
-      );
-    } catch (e: any) {
-      setError(e?.message || "No se pudo cargar el calendario NFL.");
+      setError(errors.join(" "));
     } finally {
       if (showSpinner) setLoading(false);
     }
