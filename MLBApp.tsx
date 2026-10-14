@@ -1477,7 +1477,7 @@ function Performance({
           Acertadas
         </span>
 
-        <b>
+        <b className="tone-positive">
           {s?.correct_predictions ??
             0}
         </b>
@@ -1488,7 +1488,7 @@ function Performance({
           Incorrectas
         </span>
 
-        <b>
+        <b className="tone-negative">
           {s?.incorrect_predictions ??
             0}
         </b>
@@ -1499,7 +1499,7 @@ function Performance({
           Pendientes
         </span>
 
-        <b>
+        <b className="tone-neutral">
           {s?.pending_predictions ??
             0}
         </b>
@@ -3067,6 +3067,14 @@ function Probability({
  * =========================================================
  */
 
+function signedToneClass(label: string, value: unknown) {
+  if (!/diferencial|dif\. carreras/i.test(label)) return "";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "";
+  if (Math.abs(numeric) < 0.05) return "tone-neutral";
+  return numeric > 0 ? "tone-positive" : "tone-negative";
+}
+
 function Factor({
   label,
   value,
@@ -3081,7 +3089,7 @@ function Factor({
         {label}
       </span>
 
-      <b>
+      <b className={signedToneClass(label, value)}>
         {value ?? "—"}
       </b>
 

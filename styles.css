@@ -121,3 +121,12 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .analysis-teams .score-row b{text-align:right;white-space:nowrap}
 .analysis-teams small{display:block;margin-top:10px}
 @media(max-width:600px){.analysis-teams{grid-template-columns:1fr}.analysis-details{padding:10px}.analysis-teams>.panel{padding:10px}}
+
+
+/* Semántica corporativa para cifras: positiva, negativa y neutral/precaución. */
+.tone-positive{color:#4ade80!important}
+.tone-negative{color:#fb7185!important}
+.tone-neutral{color:#facc15!important}
+.metric strong.tone-positive,.metric strong.tone-negative,.metric strong.tone-neutral{font-variant-numeric:tabular-nums}
+.factor b.tone-positive,.factor b.tone-negative,.factor b.tone-neutral,
+.score-row b.tone-positive,.score-row b.tone-negative,.score-row b.tone-neutral{font-variant-numeric:tabular-nums}

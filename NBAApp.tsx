@@ -77,8 +77,15 @@ const statLabel = (value: unknown, percent = false) =>
     ? `${value.toFixed(1)}${percent ? "%" : ""}`
     : "—";
 
+function signedToneClass(label: string, value: unknown) {
+  if (!/diferencial|diferencia de puntos|point differential/i.test(label)) return "";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  if (Math.abs(value) < 0.05) return "tone-neutral";
+  return value > 0 ? "tone-positive" : "tone-negative";
+}
+
 function NBAStat({ label, value, percent = false }: { label: string; value: unknown; percent?: boolean }) {
-  return <div className="score-row"><span>{label}</span><b>{statLabel(value, percent)}</b></div>;
+  return <div className="score-row"><span>{label}</span><b className={signedToneClass(label, value)}>{statLabel(value, percent)}</b></div>;
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -250,9 +257,9 @@ export default function NBAApp() {
 
       <section className="metrics-grid" aria-label="Rendimiento NBA">
         <div className="metric panel"><span>Proyecciones</span><strong>{summary.total_predictions ?? "—"}</strong><small>Modelo NBA-1.1.0</small></div>
-        <div className="metric panel"><span>Pendientes</span><strong>{summary.pending_predictions ?? "—"}</strong><small>Esperando resultado final</small></div>
+        <div className="metric panel"><span>Pendientes</span><strong className="tone-neutral">{summary.pending_predictions ?? "—"}</strong><small>Esperando resultado final</small></div>
         <div className="metric panel"><span>Acierto decisivo</span><strong>{summary.accuracy_percentage != null ? `${summary.accuracy_percentage.toFixed(1)}%` : "—"}</strong><small>{summary.correct_predictions ?? 0} correctas · {summary.incorrect_predictions ?? 0} incorrectas</small></div>
-        <div className="metric panel"><span>Brier score</span><strong>{summary.brier_score != null ? summary.brier_score.toFixed(3) : "—"}</strong><small>Menor suele ser mejor; requiere muestra</small></div>
+        <div className="metric panel"><span>Brier score</span><strong className="tone-neutral">{summary.brier_score != null ? summary.brier_score.toFixed(3) : "—"}</strong><small>Menor suele ser mejor; requiere muestra</small></div>
       </section>
 
       {error && <div className="message error" role="alert">{error}</div>}
