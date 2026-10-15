@@ -127,5 +127,5 @@ def test_run_backtest_preserves_quality_counters_and_source_metadata(monkeypatch
     assert quality["matches_excluded_invalid"] == 1
     assert quality["rows_without_valid_date"] == 1
     assert quality["evaluation_matches"] == 1
-    assert quality["source"] == "Jeff Sackmann ATP historical match CSVs"
+    assert quality["source"] == "Jeff Sackmann ATP historical match CSVs (archival mirror)"
     assert quality["source_url"] == "https://github.com/JeffSackmann/tennis_atp"
