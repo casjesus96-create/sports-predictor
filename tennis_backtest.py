@@ -87,7 +87,14 @@ def evaluate_rows(
     # tournament dates (not exact match timestamps), same-date results cannot
     # influence another prediction assigned to that date.
     for match_date in sorted(by_date):
-        day_matches = by_date[match_date]
+        day_matches = sorted(
+            by_date[match_date],
+            key=lambda row: (
+                str(row.get("winner_name") or "").casefold(),
+                str(row.get("loser_name") or "").casefold(),
+                str(row.get("score") or ""),
+            ),
+        )
         forecasts = []
         for row in day_matches:
             winner = str(row["winner_name"]).strip()
@@ -112,11 +119,20 @@ def evaluate_rows(
                     "loser": loser,
                     "pre_match_probability_of_recorded_winner": round(probability, 6),
                 })
-        # Update only after all matches on the source date have been forecast.
+        # Compute every update from the same frozen pre-date ratings, then
+        # apply summed deltas. This avoids arbitrary row-order effects when a
+        # player appears more than once in a date batch.
+        deltas: dict[str, float] = defaultdict(float)
         for row in day_matches:
             winner = str(row["winner_name"]).strip()
             loser = str(row["loser_name"]).strip()
-            _elo_update(ratings, winner, loser, k_factor)
+            winner_rating = ratings.get(winner, DEFAULT_INITIAL_RATING)
+            loser_rating = ratings.get(loser, DEFAULT_INITIAL_RATING)
+            expected_winner = _elo_probability(winner_rating, loser_rating)
+            deltas[winner] += k_factor * (1.0 - expected_winner)
+            deltas[loser] -= k_factor * (1.0 - expected_winner)
+        for player, delta in deltas.items():
+            ratings[player] = ratings.get(player, DEFAULT_INITIAL_RATING) + delta
 
     if evaluation_count == 0:
         accuracy = brier_score = log_loss = None
