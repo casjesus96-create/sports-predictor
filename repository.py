@@ -168,22 +168,22 @@ def _pending_refresh_reason(existing, payload):
     ):
         return "Se actualizó la identificación del pitcher probable."
 
+    # A missing legacy quality score is unknown, not zero; do not treat it
+    # as evidence of improvement merely because the new score is populated.
     try:
-        old_quality = float(existing.get("data_quality") or 0)
-        new_quality = float(payload.get("data_quality") or 0)
-        if new_quality >= old_quality + 3:
-            return "Mejoró de forma material la cobertura de datos."
+        old_quality_raw = existing.get("data_quality")
+        new_quality_raw = payload.get("data_quality")
+        if old_quality_raw is not None and new_quality_raw is not None:
+            old_quality = float(old_quality_raw)
+            new_quality = float(new_quality_raw)
+            if new_quality >= old_quality + 3:
+                return "Mejoró de forma material la cobertura de datos."
     except (TypeError, ValueError):
         pass
 
-    # Probabilities are outputs of the single official model. If its actual
-    # pregame inputs changed, preserve the new output as a revision too.
-    for key in ("home_probability", "away_probability"):
-        try:
-            if abs(float(payload.get(key)) - float(existing.get(key))) >= 0.0001:
-                return "Cambió la salida del modelo oficial con datos pregame nuevos."
-        except (TypeError, ValueError):
-            continue
+    # The official model's probabilities are not changed just because an
+    # unrelated re-run differs. Refresh only when pregame evidence materially
+    # improves (lineups, batter-vs-pitcher history, probable pitcher, coverage).
 
     return None
 
