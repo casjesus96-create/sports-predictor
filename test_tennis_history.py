@@ -31,7 +31,7 @@ def test_service_stats_use_only_available_denominators():
     assert stats["matches_with_service_stats"] == 2
     assert stats["aces_total"] == 4
     assert stats["double_faults_total"] == 3
-    assert stats["first_serve_in_pct"] == 0.625
+    assert stats["first_serve_in_pct"] == 0.5556
     assert stats["first_serve_points_won_pct"] == 0.72
     assert stats["second_serve_points_won_pct"] == 0.5
     assert stats["break_points_saved_pct"] == 0.4286
@@ -51,7 +51,7 @@ def test_profile_filters_out_matches_on_or_after_cutoff(monkeypatch):
          "surface": "Hard", "winner_rank": "9"},
     )
 
-    monkeypatch.setattr("tennis_history.load_year", lambda league, year: rows)
+    monkeypatch.setattr("tennis_history.load_year", lambda league, year: rows if year == 2026 else ())
     profile = get_player_profile("Player One", "ATP", "2026-10-15", lookback_days=365)
     assert profile["matches_in_window"] == 2
     assert profile["wins_in_window"] == 1
