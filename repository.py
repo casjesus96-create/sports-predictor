@@ -275,6 +275,43 @@ def save_analysis(analysis):
         existing = existing_rows[0]
         refresh_reason = _pending_refresh_reason(existing, payload)
         if not refresh_reason:
+            # Backfill the research-only probability for pending snapshots created
+            # before the experimental model was added. Update ONLY the features
+            # JSON so the official probabilities, winner, confidence, cutoff and
+            # settlement fields remain unchanged.
+            existing_features = existing.get("features") or {}
+            new_experimental = features.get("experimental_probability")
+            old_experimental = existing_features.get("experimental_probability")
+
+            if (
+                isinstance(new_experimental, dict)
+                and new_experimental
+                and not old_experimental
+            ):
+                backfilled_features = dict(existing_features)
+                backfilled_features["experimental_probability"] = new_experimental
+                backfill_response = (
+                    supabase.table("prediction_snapshots")
+                    .update({"features": backfilled_features})
+                    .eq("id", existing.get("id"))
+                    .eq("result_status", "PENDING")
+                    .execute()
+                )
+                backfilled_rows = backfill_response.data or []
+                if backfilled_rows:
+                    return {
+                        "success": True,
+                        "saved": True,
+                        "updated_existing": True,
+                        "existing_prediction_preserved": True,
+                        "message": (
+                            "Se añadió la probabilidad experimental al snapshot pendiente "
+                            "sin modificar la predicción oficial."
+                        ),
+                        "refresh_reason": "experimental_probability_backfill",
+                        "data": backfilled_rows,
+                    }
+
             return {
                 "success": True,
                 "saved": True,
