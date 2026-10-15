@@ -68,10 +68,10 @@ def test_more_batter_pitcher_history_triggers_refresh():
     assert "historial directo" in reason.lower()
 
 
-def test_changed_official_model_output_triggers_refresh():
+def test_probability_difference_alone_does_not_refresh_without_evidence():
     existing = _snapshot(home_probability=0.51, away_probability=0.49)
     fresh = _analysis(home_probability=0.54, away_probability=0.46)
-    assert "salida del modelo oficial" in _pending_refresh_reason(existing, fresh).lower()
+    assert _pending_refresh_reason(existing, fresh) is None
 
 
 def test_material_data_quality_gain_triggers_refresh():
