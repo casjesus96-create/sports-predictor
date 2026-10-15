@@ -276,7 +276,7 @@ def get_player_profile(
             "annual_files_available": years_available,
             "matches_found": len(player_matches),
             "matches_with_service_stats": sum(
-                1 for _, row, side in recent_service if _integer(row.get(("w_" if side == "winner" else "l_") + "svpt")) is not None
+                1 for row, side in recent_service if _integer(row.get(("w_" if side == "winner" else "l_") + "svpt")) is not None
             ),
             "source": f"Jeff Sackmann {league} historical match CSVs",
             "source_url": BASE_URLS[league],
