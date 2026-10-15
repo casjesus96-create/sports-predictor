@@ -10,6 +10,7 @@ import requests
 from fastapi import APIRouter, HTTPException, Query
 
 from tennis_backtest import run_elo_backtest
+from tennis_surface_backtest import run_surface_elo_backtest
 from tennis_external_source import ExternalTennisSourceError, audit_external_coverage
 from tennis_history import HistoricalDataError, get_player_profile
 from tennis_reconciliation import audit_external_reconciliation
@@ -92,6 +93,47 @@ def tennis_historical_backtest(
         ) from exc
 
 
+@router.get("/surface-backtest")
+def tennis_surface_historical_backtest(
+    league: str = Query("ATP", pattern="^(?i:ATP|WTA)$"),
+    start_date: str = Query(..., description="Inicio inclusivo YYYY-MM-DD"),
+    end_date: str = Query(..., description="Fin inclusivo YYYY-MM-DD"),
+    warmup_years: int = Query(3, ge=1, le=10),
+    k_factor: float = Query(32.0, ge=4.0, le=64.0),
+    min_surface_matches: int = Query(10, ge=1, le=100),
+):
+    """Compare general and surface Elo on historical data; research-only."""
+    try:
+        return run_surface_elo_backtest(
+            league=league,
+            start_date=start_date,
+            end_date=end_date,
+            warmup_years=warmup_years,
+            k_factor=k_factor,
+            min_surface_matches=min_surface_matches,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HistoricalDataError as exc:
+        logger.warning("Historical tennis surface backtest unavailable: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "TENNIS_HISTORY_SOURCE_ERROR",
+                "message": str(exc),
+            },
+        ) from exc
+    except requests.RequestException as exc:
+        logger.exception("Upstream error for historical tennis surface backtest")
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "TENNIS_HISTORY_SOURCE_ERROR",
+                "message": "No fue posible consultar los históricos para el backtest por superficie.",
+            },
+        ) from exc
+
+
 @router.get("/source-audit")
 def tennis_external_source_audit(
     league: str = Query("ATP", pattern="^(?i:ATP|WTA)$"),
@@ -152,6 +194,7 @@ def historical_status():
         "leagues": ["ATP", "WTA"],
         "model_status": "not_available",
         "research_backtest": "available",
+        "surface_research_backtest": "available",
         "external_source_audit": "available",
         "external_source_reconciliation_audit": "available",
         "available_metrics": [
@@ -162,6 +205,7 @@ def historical_status():
             "recent_workload",
             "service_and_return_stats_when_reported",
             "chronological_elo_backtest_accuracy_brier_log_loss",
+            "general_vs_surface_elo_research_comparison",
             "independent_source_monthly_coverage",
             "read_only_source_reconciliation_candidates",
         ],
