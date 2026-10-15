@@ -95,12 +95,26 @@ export default function TennisApp() {
     void refresh();
   }, [refresh]);
 
+  // La aplicación usa un tema oscuro global; los paneles de tenis deben
+  // conservar contraste y no depender de variables CSS que no estén definidas.
   const panelStyle: React.CSSProperties = {
-    border: "1px solid var(--border, #d1d5db)",
+    border: "1px solid #29445b",
     borderRadius: 12,
     padding: 16,
-    background: "var(--panel, #fff)",
+    background: "linear-gradient(145deg, #0b1b2c, #091827)",
+    color: "#eaf1f8",
     minWidth: 0,
+  };
+
+  const secondaryButtonStyle: React.CSSProperties = {
+    minHeight: 44,
+    padding: "9px 16px",
+    borderRadius: 8,
+    border: "1px solid #34516b",
+    background: "#0d2032",
+    color: "#eaf1f8",
+    fontWeight: 800,
+    cursor: "pointer",
   };
 
   return (
@@ -126,9 +140,9 @@ export default function TennisApp() {
                 minHeight: 44,
                 padding: "9px 20px",
                 borderRadius: 8,
-                border: league === item ? "2px solid #0d9488" : "1px solid #d1d5db",
-                background: league === item ? "#0d9488" : "#fff",
-                color: league === item ? "#fff" : "#1f2937",
+                border: league === item ? "2px solid #2dd4bf" : "1px solid #34516b",
+                background: league === item ? "#0d9488" : "#10253a",
+                color: "#f3f7fb",
                 fontWeight: 800,
                 cursor: "pointer",
               }}
@@ -140,7 +154,7 @@ export default function TennisApp() {
             type="button"
             onClick={() => void refresh()}
             disabled={loading}
-            style={{ minHeight: 44, padding: "9px 16px", borderRadius: 8, cursor: loading ? "wait" : "pointer" }}
+            style={{ ...secondaryButtonStyle, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.65 : 1 }}
           >
             {loading ? "Cargando…" : "Actualizar"}
           </button>
@@ -148,10 +162,10 @@ export default function TennisApp() {
       </section>
 
       {error ? (
-        <div role="alert" style={{ ...panelStyle, borderColor: "#dc2626", marginBottom: 16 }}>
+        <div role="alert" style={{ ...panelStyle, borderColor: "#b94b59", marginBottom: 16 }}>
           <strong>No se pudo cargar el tenis.</strong>
           <p style={{ overflowWrap: "anywhere" }}>{error}</p>
-          <button type="button" onClick={() => void refresh()}>Reintentar</button>
+          <button type="button" onClick={() => void refresh()} style={secondaryButtonStyle}>Reintentar</button>
         </div>
       ) : null}
 
@@ -182,7 +196,7 @@ export default function TennisApp() {
                 </div>
                 <h2 style={{ fontSize: 17, lineHeight: 1.3, margin: "6px 0" }}>{match.tournament || "Torneo por confirmar"}</h2>
               </div>
-              <span style={{ fontSize: 12, whiteSpace: "nowrap", border: "1px solid #d1d5db", borderRadius: 20, padding: "4px 8px" }}>
+              <span style={{ fontSize: 12, whiteSpace: "nowrap", border: "1px solid #34516b", background: "#15283a", color: "#c5d7e7", borderRadius: 20, padding: "4px 8px" }}>
                 {statusLabel(match)}
               </span>
             </div>
