@@ -8,6 +8,43 @@ type Player = {
   sets?: string[];
 };
 
+type HistoricalProfile = {
+  success: boolean;
+  league: string;
+  player_name: string;
+  cutoff_date_exclusive: string;
+  matches_in_window: number;
+  wins_in_window: number;
+  losses_in_window: number;
+  win_rate: number | null;
+  last_5: { matches: number; wins: number; losses: number; win_rate: number | null };
+  last_10: { matches: number; wins: number; losses: number; win_rate: number | null };
+  surface_window: { matches: number; wins: number; losses: number; win_rate: number | null };
+  ranking_latest_in_window: number | null;
+  days_since_last_match: number | null;
+  workload_matches_last_7_days: number;
+  workload_matches_last_14_days: number;
+  service_return_stats_last_10_matches: {
+    matches_with_service_stats: number;
+    aces_total: number | null;
+    double_faults_total: number | null;
+    aces_per_match: number | null;
+    double_faults_per_match: number | null;
+    first_serve_in_pct: number | null;
+    first_serve_points_won_pct: number | null;
+    second_serve_points_won_pct: number | null;
+    break_points_saved_pct: number | null;
+  };
+  data_quality: {
+    annual_files_available: number[];
+    matches_found: number;
+    matches_with_service_stats: number;
+    source: string;
+    source_url: string;
+    warning: string;
+  };
+};
+
 type Match = {
   match_id: string;
   event_id?: string;
@@ -94,6 +131,14 @@ function score(player?: Player) {
   return player?.sets?.length ? player.sets.join(" · ") : "—";
 }
 
+function formatPercent(value: number | null | undefined) {
+  return typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "Sin datos";
+}
+
+function formatMetric(value: number | null | undefined) {
+  return typeof value === "number" ? value.toLocaleString("es-ES") : "Sin datos";
+}
+
 function statusLabel(match: Match) {
   if (match.completed || match.status === "post") return "Finalizado";
   if (match.status === "in") return "En juego";
@@ -118,6 +163,9 @@ export default function TennisApp() {
   const [league, setLeague] = useState<"ATP" | "WTA">("ATP");
   const [date, setDate] = useState(localDate());
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [historicalProfiles, setHistoricalProfiles] = useState<HistoricalProfile[]>([]);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -134,6 +182,8 @@ export default function TennisApp() {
       const rows = Array.isArray(data.matches) ? data.matches : [];
       setMatches(rows);
       setSelectedMatchId((current) => rows.some((match) => match.match_id === current) ? current : null);
+      setHistoricalProfiles([]);
+      setProfileError("");
       setNotice(
         "El calendario está disponible. Las proyecciones se habilitarán cuando integremos y validemos las estadísticas históricas; no mostraremos probabilidades inventadas.",
       );
@@ -148,6 +198,40 @@ export default function TennisApp() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const loadHistoricalProfiles = useCallback(async (match: Match) => {
+    const player1 = match.player1?.name?.trim();
+    const player2 = match.player2?.name?.trim();
+    if (!player1 || !player2) {
+      setProfileError("La fuente del calendario no proporcionó los nombres de ambos jugadores.");
+      return;
+    }
+    // Conservative cutoff: matches played on the target match date are excluded.
+    const cutoff = match.start_time?.slice(0, 10) || date;
+    setProfileLoading(true);
+    setProfileError("");
+    setHistoricalProfiles([]);
+    try {
+      const buildUrl = (name: string) => {
+        const params = new URLSearchParams({
+          player_name: name,
+          league,
+          cutoff_date: cutoff,
+          lookback_days: "365",
+        });
+        return `/api/v1/tennis/history/profile?${params.toString()}`;
+      };
+      const [first, second] = await Promise.all([
+        request<HistoricalProfile>(buildUrl(player1)),
+        request<HistoricalProfile>(buildUrl(player2)),
+      ]);
+      setHistoricalProfiles([first, second]);
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "No se pudieron cargar los perfiles históricos.");
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [date, league]);
 
   // La aplicación usa un tema oscuro global; los paneles de tenis deben
   // conservar contraste y no depender de variables CSS que no estén definidas.
@@ -335,9 +419,61 @@ export default function TennisApp() {
               ))}
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
-              <button type="button" disabled title="Se activará cuando el modelo y la validación estén implementados." style={{ ...secondaryButtonStyle, opacity: 0.55, cursor: "not-allowed" }}>Generar proyección (en preparación)</button>
-              <button type="button" onClick={() => void refresh()} disabled={loading} style={secondaryButtonStyle}>{loading ? "Actualizando…" : "Actualizar datos del partido"}</button>
+              <button type="button" onClick={() => void loadHistoricalProfiles(selectedMatch)} disabled={profileLoading} style={{ ...secondaryButtonStyle, opacity: profileLoading ? 0.65 : 1 }}>
+                {profileLoading ? "Consultando históricos…" : "Cargar estadísticas históricas"}
+              </button>
+              <button type="button" disabled title="Se activará después del backtest cronológico y la validación del modelo." style={{ ...secondaryButtonStyle, opacity: 0.55, cursor: "not-allowed" }}>Generar proyección (en preparación)</button>
+              <button type="button" onClick={() => void refresh()} disabled={loading} style={secondaryButtonStyle}>{loading ? "Actualizando…" : "Actualizar calendario"}</button>
             </div>
+            {profileError ? (
+              <div role="alert" style={{ marginTop: 14, padding: 12, border: "1px solid #b94b59", borderRadius: 8, color: "#ffd9de" }}>{profileError}</div>
+            ) : null}
+            {historicalProfiles.length ? (
+              <div style={{ marginTop: 16 }}>
+                <h3 style={{ marginBottom: 6 }}>Perfiles históricos previos al partido</h3>
+                <p style={{ color: "#b7c8d8", fontSize: 12, lineHeight: 1.5 }}>
+                  Corte exclusivo: {historicalProfiles[0].cutoff_date_exclusive}. Se excluyen partidos del mismo día para reducir riesgo de fuga de información. “Sin datos” significa que la fuente no reportó una muestra suficiente. La superficie todavía no está vinculada de forma fiable al calendario, por lo que esta muestra no debe interpretarse como rendimiento específico por superficie.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 12 }}>
+                  {historicalProfiles.map((profile) => {
+                    const service = profile.service_return_stats_last_10_matches;
+                    const metrics = [
+                      { label: "Partidos en ventana", value: formatMetric(profile.matches_in_window) },
+                      { label: "Victorias / derrotas", value: `${profile.wins_in_window} / ${profile.losses_in_window}` },
+                      { label: "Porcentaje de victorias", value: formatPercent(profile.win_rate) },
+                      { label: "Últimos 5", value: `${profile.last_5.wins}V – ${profile.last_5.losses}D` },
+                      { label: "Últimos 10", value: `${profile.last_10.wins}V – ${profile.last_10.losses}D` },
+                      { label: "Victorias en muestra filtrada", value: `${profile.surface_window.wins} / ${profile.surface_window.matches}` },
+                      { label: "Último ranking observado", value: formatMetric(profile.ranking_latest_in_window) },
+                      { label: "Días desde último partido", value: formatMetric(profile.days_since_last_match) },
+                      { label: "Partidos últimos 7 días", value: formatMetric(profile.workload_matches_last_7_days) },
+                      { label: "Partidos últimos 14 días", value: formatMetric(profile.workload_matches_last_14_days) },
+                      { label: "Aces por partido (últimos 10)", value: formatMetric(service.aces_per_match) },
+                      { label: "Dobles faltas por partido", value: formatMetric(service.double_faults_per_match) },
+                      { label: "Primer saque dentro", value: formatPercent(service.first_serve_in_pct) },
+                      { label: "Puntos ganados con primer saque", value: formatPercent(service.first_serve_points_won_pct) },
+                      { label: "Puntos ganados con segundo saque", value: formatPercent(service.second_serve_points_won_pct) },
+                      { label: "Break points salvados", value: formatPercent(service.break_points_saved_pct) },
+                    ];
+                    return (
+                      <article key={profile.player_name} style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, background: "#10253a" }}>
+                        <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{profile.player_name}</h4>
+                        <p style={{ margin: "0 0 12px", color: "#b7c8d8", fontSize: 12 }}>Histórico {profile.league} · 365 días · {profile.data_quality.matches_with_service_stats} partidos con estadísticas de saque</p>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                          {metrics.map((metric) => (
+                            <div key={metric.label} style={{ border: "1px solid #29445b", borderRadius: 8, padding: 9 }}>
+                              <div style={{ fontSize: 11, color: "#b7c8d8", lineHeight: 1.35 }}>{metric.label}</div>
+                              <strong style={{ display: "block", fontSize: 15, marginTop: 4, overflowWrap: "anywhere" }}>{metric.value}</strong>
+                            </div>
+                          ))}
+                        </div>
+                        <p style={{ fontSize: 11, color: "#b7c8d8", lineHeight: 1.5, marginBottom: 0 }}>{profile.data_quality.warning}</p>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </section>
         );
       })() : null}
