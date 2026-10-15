@@ -35,7 +35,7 @@ def test_external_audit_reports_monthly_coverage_without_merging(monkeypatch):
     assert result["coverage"]["coverage_start_date"] == "2026-06-10"
     assert result["coverage"]["coverage_end_date"] == "2026-08-20"
     assert result["coverage"]["months_without_matches"] == ["2026-07", "2026-09"]
-    assert result["coverage"]["monthly_breakdown"][1]["categories"] == {"Challenger": 1}
+    assert result["coverage"]["monthly_breakdown"][2]["categories"] == {"Challenger": 1}
     assert "not merged" in " ".join(result["limitations"]).lower()
     assert result["source"]["license"] == "CC BY 4.0"
 
