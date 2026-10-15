@@ -69,3 +69,52 @@ def test_profile_rejects_invalid_surface_and_league():
         get_player_profile("Player One", "ATP", "2026-10-15", surface="Synthetic")
     with pytest.raises(ValueError, match="ATP o WTA"):
         get_player_profile("Player One", "ITF", "2026-10-15")
+
+
+
+def test_load_year_uses_archive_mirror_and_parses_annual_csv(monkeypatch):
+    import tennis_history
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = (
+            "tourney_date,winner_name,loser_name,surface,score\n"
+            "20250106,Player One,Player Two,Hard,6-4 6-3\n"
+        )
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(url, headers, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(tennis_history.requests, "get", fake_get)
+    tennis_history.load_year.cache_clear()
+    rows = tennis_history.load_year("ATP", 2025)
+
+    assert captured["url"] == (
+        "https://raw.githubusercontent.com/Aneeshers/tennis-sackmann-archive/"
+        "main/atp/atp_matches_2025.csv"
+    )
+    assert captured["timeout"] == tennis_history.TIMEOUT_SECONDS
+    assert len(rows) == 1
+    assert rows[0]["winner_name"] == "Player One"
+
+
+def test_backtest_fails_clearly_when_no_historical_files_load(monkeypatch):
+    from tennis_backtest import run_elo_backtest
+    from tennis_history import HistoricalDataError
+
+    monkeypatch.setattr("tennis_backtest.load_year", lambda league, year: ())
+    with pytest.raises(HistoricalDataError, match="No se cargaron datos históricos ATP"):
+        run_elo_backtest(
+            league="ATP",
+            start_date="2025-10-01",
+            end_date="2025-10-02",
+            warmup_years=1,
+        )

@@ -26,9 +26,20 @@ logger = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 20
 MAX_PROFILE_LOOKBACK_DAYS = 730
 SUPPORTED_LEAGUES = {"ATP", "WTA"}
+# The original Jeff Sackmann repositories are no longer reliably available.
+# This archival mirror preserves the original CSV schema and includes seasons
+# through 2026. The underlying dataset remains CC BY-NC-SA 4.0.
 BASE_URLS = {
-    "ATP": "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master",
-    "WTA": "https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master",
+    "ATP": "https://raw.githubusercontent.com/Aneeshers/tennis-sackmann-archive/main/atp",
+    "WTA": "https://raw.githubusercontent.com/Aneeshers/tennis-sackmann-archive/main/wta",
+}
+SOURCE_REPOSITORY_URLS = {
+    "ATP": "https://github.com/Aneeshers/tennis-sackmann-archive/tree/main/atp",
+    "WTA": "https://github.com/Aneeshers/tennis-sackmann-archive/tree/main/wta",
+}
+UPSTREAM_PROVENANCE_URLS = {
+    "ATP": "https://github.com/JeffSackmann/tennis_atp",
+    "WTA": "https://github.com/JeffSackmann/tennis_wta",
 }
 HEADERS = {"User-Agent": "Sports-Predictor-Tennis-History/1.0", "Accept": "text/csv"}
 STAT_FIELDS = {
@@ -279,7 +290,8 @@ def get_player_profile(
                 1 for row, side in recent_service if _integer(row.get(("w_" if side == "winner" else "l_") + "svpt")) is not None
             ),
             "source": f"Jeff Sackmann {league} historical match CSVs",
-            "source_url": BASE_URLS[league],
+            "source_url": SOURCE_REPOSITORY_URLS[league],
+            "upstream_provenance_url": UPSTREAM_PROVENANCE_URLS[league],
             "warning": (
                 "Las estadísticas de servicio no están disponibles para todos los partidos. "
                 "El perfil solo cubre los archivos anuales accesibles y el periodo solicitado."
