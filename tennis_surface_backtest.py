@@ -49,12 +49,6 @@ def _metric_summary(rows: list[tuple[float, bool]]) -> dict[str, Any]:
             "brier_score": None,
             "log_loss": None,
         }
-    correct = sum(
-        1.0 if probability > 0.5 else
-        0.5 if math.isclose(probability, 0.5, abs_tol=1e-12) else 0.0
-        for probability, _ in rows
-        if _ is True
-    )
     # A row is (P(recorded winner wins), outcome_is_recorded_winner), which is
     # always true for the archive's winner/loser format. Keep explicit outcomes
     # so this helper also remains correct for synthetic unit tests.
@@ -66,7 +60,6 @@ def _metric_summary(rows: list[tuple[float, bool]]) -> dict[str, Any]:
         if not math.isclose(p, 0.5, abs_tol=1e-12)
     )
     ties = sum(math.isclose(p, 0.5, abs_tol=1e-12) for p, _ in rows)
-    decisive = count - ties
     return {
         "matches_evaluated": count,
         "accuracy": round((accuracy_score + 0.5 * ties) / count, 4),
@@ -219,6 +212,19 @@ def evaluate_surface_rows(
 
     general_summary = _metric_summary(general_eval)
     surface_summary = _metric_summary(surface_eval)
+    surface_coverage = {
+        surface: {
+            "evaluated_with_surface_ratings": surface_eval_counts[surface],
+            "fallback_to_general_elo": surface_fallback_counts[surface],
+            "minimum_prior_matches_per_player": int(min_surface_matches),
+        }
+        for surface in SURFACES
+    }
+    surface_coverage["unknown"] = {
+        "evaluated_with_surface_ratings": 0,
+        "fallback_to_general_elo": surface_unavailable_counts["unknown"],
+        "reason": "Missing or unsupported surface value; used general Elo.",
+    }
     return {
         "success": True,
         "model_status": "research_only",
@@ -240,19 +246,7 @@ def evaluate_surface_rows(
             ),
             "monthly_breakdown": monthly_breakdown,
         },
-        "surface_coverage": {
-            surface: {
-                "evaluated_with_surface_ratings": surface_eval_counts[surface],
-                "fallback_to_general_elo": surface_fallback_counts[surface],
-                "minimum_prior_matches_per_player": int(min_surface_matches),
-            }
-            for surface in SURFACES
-        },
-        "surface_coverage"]["unknown"] = {
-            "evaluated_with_surface_ratings": 0,
-            "fallback_to_general_elo": surface_unavailable_counts["unknown"],
-            "reason": "Missing or unsupported surface value; used general Elo.",
-        },
+        "surface_coverage": surface_coverage,
         "data_quality": {
             "historical_rows_seen": rows_seen,
             "valid_matches_used_for_rating_updates": valid_update_matches,
