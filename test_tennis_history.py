@@ -52,7 +52,7 @@ def test_profile_filters_out_matches_on_or_after_cutoff(monkeypatch):
     )
 
     monkeypatch.setattr("tennis_history.load_year", lambda league, year: rows if year == 2026 else ())
-    profile = get_player_profile("Player One", "ATP", "2026-10-15", lookback_days=365)
+    profile = get_player_profile("Player One", "ATP", "2026-10-15", surface="Hard", lookback_days=365)
     assert profile["matches_in_window"] == 2
     assert profile["wins_in_window"] == 1
     assert profile["losses_in_window"] == 1
