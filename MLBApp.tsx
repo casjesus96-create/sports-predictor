@@ -2030,6 +2030,9 @@ function GameDetail({
 
           )}
 
+          <h3 className="detail-heading">
+            Probabilidad oficial · {MODEL_VERSION}
+          </h3>
           <div className="prob-grid">
 
             <Probability
@@ -2049,6 +2052,63 @@ function GameDetail({
             />
 
           </div>
+
+          {prediction?.experimental_probability ? (
+            <section className="experimental-probability" aria-labelledby="experimental-probability-heading">
+              <div className="section-heading">
+                <div>
+                  <span className="section-kicker">MODELO EN EVALUACIÓN</span>
+                  <h3 id="experimental-probability-heading" className="detail-heading" style={{ marginTop: 4 }}>
+                    Probabilidad experimental
+                  </h3>
+                </div>
+                <span className="result pending">No oficial</span>
+              </div>
+              <p className="muted" style={{ marginTop: 0 }}>
+                {prediction.experimental_probability.method || "Estimación contextual provisional."}
+              </p>
+              <div className="prob-grid">
+                <Probability
+                  name={`${game.home?.name} · Local · experimental`}
+                  value={prediction.experimental_probability.home_probability}
+                />
+                <Probability
+                  name={`${game.away?.name} · Visitante · experimental`}
+                  value={prediction.experimental_probability.away_probability}
+                />
+              </div>
+              <div className="factor-grid" style={{ marginTop: 12 }}>
+                <Factor
+                  label="Diferencia vs. probabilidad oficial (local)"
+                  value={`${(Number(prediction.experimental_probability.home_adjustment || 0) * 100).toFixed(1)} puntos porcentuales`}
+                />
+                <Factor
+                  label="Factores contextuales disponibles"
+                  value={`${prediction.experimental_probability.available_components ?? 0} de ${prediction.experimental_probability.total_components ?? 4}`}
+                />
+                {Object.entries(prediction.experimental_probability.components || {}).map(([key, component]: [string, any]) => (
+                  <Factor
+                    key={key}
+                    label={key === "h2h"
+                      ? "Enfrentamientos directos (H2H)"
+                      : key === "batting_splits"
+                        ? "Splits ofensivos vs. mano del pitcher"
+                        : key === "bullpen"
+                          ? "Disponibilidad del bullpen"
+                          : key === "batter_vs_pitcher"
+                            ? "Bateadores vs. abridor rival"
+                            : key}
+                    value={component?.available ? `Disponible · ajuste ${(Number(component.adjustment || 0) * 100).toFixed(1)} pp` : "No disponible"}
+                  />
+                ))}
+              </div>
+              <p className="muted" style={{ marginTop: 8 }}>
+                Esta estimación no participa en las liquidaciones ni en las métricas oficiales. Sus pesos son heurísticos y deben evaluarse con partidos liquidados antes de considerar cualquier cambio.
+              </p>
+            </section>
+          ) : (
+            <p className="muted">Este análisis todavía no contiene una probabilidad experimental (por ejemplo, por ser un registro histórico anterior a esta mejora).</p>
+          )}
 
           <h3 className="detail-heading">
             Carreras pronosticadas

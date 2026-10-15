@@ -6,6 +6,7 @@ from data_coverage import calculate_data_coverage
 from run_projections import calculate_game_projections
 from matchup_engine import get_matchup_data
 from batter_pitcher_engine import get_batter_pitcher_matchups
+from experimental_probability import calculate_experimental_probability
 from prediction import (
     MODEL_VERSION,
     calculate_probability,
@@ -223,6 +224,13 @@ def analyze_mlb_game(game_id):
         away_form,
     )
 
+    # Capa de investigación separada: nunca modifica probabilities ni MODEL_VERSION.
+    experimental_probability = calculate_experimental_probability(
+        official_probabilities=probabilities,
+        matchup_data=matchup_data,
+        batter_pitcher_matchups=batter_pitcher_matchups,
+    )
+
     factors = {
         "home_advantage": 0.025,
         "home_team_ops": home_hitting.get("ops"),
@@ -391,6 +399,7 @@ def analyze_mlb_game(game_id):
             "away_probability": probabilities["away"],
             "confidence": round(confidence, 4),
             "data_quality": data_quality,
+            "experimental_probability": experimental_probability,
         },
         "factors": factors,
     }
