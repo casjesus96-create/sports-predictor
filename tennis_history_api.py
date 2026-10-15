@@ -176,4 +176,3 @@ def historical_status():
             "Valuebetennis CC BY 4.0 attribution is required; the Sackmann archive has separate CC BY-NC-SA 4.0 terms.",
         ],
     }
-}
