@@ -1,13 +1,14 @@
-"""Read-only API endpoints for validating historical tennis profiles.
+"""Read-only endpoints for tennis history and research backtesting.
 
-These endpoints expose historical indicators only. They intentionally do not
-emit winner probabilities until a separate model has been backtested.
+No endpoint here enables a live prediction model. Historical profiles and the
+Elo backtest are research tools pending validation and licensing review.
 """
 import logging
 
 import requests
 from fastapi import APIRouter, HTTPException, Query
 
+from tennis_backtest import run_elo_backtest
 from tennis_history import HistoricalDataError, get_player_profile
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,45 @@ def player_profile(
         ) from exc
 
 
+@router.get("/backtest")
+def tennis_historical_backtest(
+    league: str = Query("ATP", pattern="^(?i:ATP|WTA)$"),
+    start_date: str = Query(..., description="Inicio inclusivo YYYY-MM-DD"),
+    end_date: str = Query(..., description="Fin inclusivo YYYY-MM-DD"),
+    warmup_years: int = Query(3, ge=1, le=10),
+    k_factor: float = Query(32.0, ge=4.0, le=64.0),
+):
+    """Evaluate a research-only chronological Elo baseline on past results."""
+    try:
+        return run_elo_backtest(
+            league=league,
+            start_date=start_date,
+            end_date=end_date,
+            warmup_years=warmup_years,
+            k_factor=k_factor,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HistoricalDataError as exc:
+        logger.warning("Historical tennis backtest unavailable: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "TENNIS_HISTORY_SOURCE_ERROR",
+                "message": str(exc),
+            },
+        ) from exc
+    except requests.RequestException as exc:
+        logger.exception("Upstream error for tennis backtest")
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "TENNIS_HISTORY_SOURCE_ERROR",
+                "message": "No fue posible consultar los históricos para el backtest.",
+            },
+        ) from exc
+
+
 @router.get("/status")
 def historical_status():
     return {
@@ -59,6 +99,7 @@ def historical_status():
         "status": "historical-profile-preview",
         "leagues": ["ATP", "WTA"],
         "model_status": "not_available",
+        "research_backtest": "available",
         "available_metrics": [
             "last_5_and_10_matches",
             "recent_win_rate",
@@ -67,11 +108,13 @@ def historical_status():
             "rest_days",
             "recent_workload",
             "service_and_return_stats_when_reported",
+            "chronological_elo_backtest_accuracy_brier_log_loss",
         ],
         "limitations": [
-            "Profiles are based on public annual CSVs and a limited 30-730 day window.",
+            "Profiles and backtests use public annual CSVs and are limited by source coverage.",
             "Player matching uses normalized names and can be ambiguous.",
             "Historical source licensing must be reviewed before commercial use.",
-            "No probabilities or winner predictions are produced by these endpoints.",
+            "The Elo backtest is research-only and does not produce live match predictions.",
+            "Tournament dates are used instead of exact match timestamps; same-date matches are batched.",
         ],
     }
