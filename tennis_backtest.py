@@ -71,17 +71,36 @@ def evaluate_rows(
 
     by_date: dict[date, list[dict[str, str]]] = defaultdict(list)
     for row in rows:
+        rows_seen += 1
         played_on = _match_date(row)
-        if played_on and _valid_match(row) and played_on <= end:
-            by_date[played_on].append(row)
+        if not played_on:
+            rows_without_valid_date += 1
+            continue
+        if played_on > end:
+            rows_after_end_date += 1
+            continue
+        score = str(row.get("score") or "").casefold().strip()
+        if "walkover" in score or "w/o" in score or score in {"wo", "def"}:
+            matches_excluded_walkover += 1
+            continue
+        if not _valid_match(row):
+            matches_excluded_invalid += 1
+            continue
+        by_date[played_on].append(row)
 
     ratings: dict[str, float] = {}
     evaluation_count = 0
-    correct = 0
+    correct_score = 0.0
     brier_sum = 0.0
     log_loss_sum = 0.0
     evaluated_days = set()
     rating_snapshot_examples: list[dict[str, Any]] = []
+    rows_seen = 0
+    rows_after_end_date = 0
+    rows_without_valid_date = 0
+    matches_excluded_walkover = 0
+    matches_excluded_invalid = 0
+    matches_used_for_rating_updates = 0
 
     # Crucial: freeze ratings for the whole date batch. Since source dates are
     # tournament dates (not exact match timestamps), same-date results cannot
@@ -97,6 +116,7 @@ def evaluate_rows(
         )
         forecasts = []
         for row in day_matches:
+            matches_used_for_rating_updates += 1
             winner = str(row["winner_name"]).strip()
             loser = str(row["loser_name"]).strip()
             p_winner = _elo_probability(
@@ -107,7 +127,12 @@ def evaluate_rows(
                 forecasts.append((winner, loser, p_winner, row))
         for winner, loser, probability, row in forecasts:
             evaluation_count += 1
-            correct += int(probability >= 0.5)
+            # Equal Elo ratings imply no directional edge. Give a tied
+            # forecast half credit instead of incorrectly counting it as a win.
+            if probability > 0.5:
+                correct_score += 1.0
+            elif math.isclose(probability, 0.5, abs_tol=1e-12):
+                correct_score += 0.5
             brier_sum += (probability - 1.0) ** 2
             clipped = min(1.0 - 1e-15, max(1e-15, probability))
             log_loss_sum -= math.log(clipped)
@@ -136,10 +161,27 @@ def evaluate_rows(
 
     if evaluation_count == 0:
         accuracy = brier_score = log_loss = None
+        benchmark = {
+            "name": "50_50_coin_flip",
+            "accuracy": 0.5,
+            "brier_score": 0.25,
+            "log_loss": round(math.log(2.0), 6),
+            "elo_brier_improvement": None,
+            "elo_log_loss_improvement": None,
+        }
     else:
-        accuracy = round(correct / evaluation_count, 4)
+        accuracy = round(correct_score / evaluation_count, 4)
         brier_score = round(brier_sum / evaluation_count, 6)
         log_loss = round(log_loss_sum / evaluation_count, 6)
+        benchmark = {
+            "name": "50_50_coin_flip",
+            "accuracy": 0.5,
+            "brier_score": 0.25,
+            "log_loss": round(math.log(2.0), 6),
+            # Positive values mean Elo has lower (better) probabilistic loss.
+            "elo_brier_improvement": round(0.25 - brier_score, 6),
+            "elo_log_loss_improvement": round(math.log(2.0) - log_loss, 6),
+        }
 
     return {
         "success": True,
@@ -154,6 +196,17 @@ def evaluate_rows(
             "accuracy": accuracy,
             "brier_score": brier_score,
             "log_loss": log_loss,
+            "benchmark": benchmark,
+        },
+        "data_quality": {
+            "historical_rows_seen": rows_seen,
+            "valid_matches_available_through_end_date": sum(len(items) for items in by_date.values()),
+            "matches_used_for_rating_updates": matches_used_for_rating_updates,
+            "matches_excluded_walkover": matches_excluded_walkover,
+            "matches_excluded_invalid": matches_excluded_invalid,
+            "rows_without_valid_date": rows_without_valid_date,
+            "rows_after_end_date_ignored": rows_after_end_date,
+            "evaluation_matches": evaluation_count,
         },
         "configuration": {
             "initial_rating": DEFAULT_INITIAL_RATING,
