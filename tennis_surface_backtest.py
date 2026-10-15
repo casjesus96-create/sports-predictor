@@ -25,6 +25,8 @@ from tennis_history import HistoricalDataError, load_year
 
 SURFACES = ("Hard", "Clay", "Grass")
 MIN_SURFACE_MATCHES_DEFAULT = 10
+# Fixed, pre-declared research weights; these are comparisons, not tuned live settings.
+BLEND_WEIGHTS = (0.25, 0.50, 0.75)
 
 
 def _normalize_surface(value: Any) -> str | None:
@@ -112,8 +114,15 @@ def evaluate_surface_rows(
     surface_counts: dict[str, dict[str, int]] = {surface: defaultdict(int) for surface in SURFACES}
     general_eval: list[tuple[float, bool]] = []
     surface_eval: list[tuple[float, bool]] = []
+    blend_eval: dict[str, list[tuple[float, bool]]] = {
+        f"blend_{int(weight * 100)}": [] for weight in BLEND_WEIGHTS
+    }
     monthly: dict[str, dict[str, list[tuple[float, bool]]]] = defaultdict(
-        lambda: {"general": [], "surface": []}
+        lambda: {
+            "general": [],
+            "surface": [],
+            **{f"blend_{int(weight * 100)}": [] for weight in BLEND_WEIGHTS},
+        }
     )
     surface_eval_counts: dict[str, int] = defaultdict(int)
     surface_fallback_counts: dict[str, int] = defaultdict(int)
@@ -164,6 +173,11 @@ def evaluate_surface_rows(
                 bucket = monthly[played_on.strftime("%Y-%m")]
                 bucket["general"].append((p_general, True))
                 bucket["surface"].append((p_surface, True))
+                for weight in BLEND_WEIGHTS:
+                    key = f"blend_{int(weight * 100)}"
+                    p_blend = (1.0 - weight) * p_general + weight * p_surface
+                    blend_eval[key].append((p_blend, True))
+                    bucket[key].append((p_blend, True))
             forecasts.append((row, surface))
 
         # Updates are based on pre-date ratings; aggregate deltas to remove
@@ -207,11 +221,21 @@ def evaluate_surface_rows(
             "month": key,
             "general_elo": _metric_summary(monthly[key]["general"]),
             "surface_elo_with_fallback": _metric_summary(monthly[key]["surface"]),
+            **{
+                f"surface_elo_blend_{int(weight * 100)}": _metric_summary(
+                    monthly[key][f"blend_{int(weight * 100)}"]
+                )
+                for weight in BLEND_WEIGHTS
+            },
         })
         cursor = date(cursor.year + (cursor.month == 12), 1 if cursor.month == 12 else cursor.month + 1, 1)
 
     general_summary = _metric_summary(general_eval)
     surface_summary = _metric_summary(surface_eval)
+    blend_summaries = {
+        f"blend_{int(weight * 100)}": _metric_summary(blend_eval[f"blend_{int(weight * 100)}"])
+        for weight in BLEND_WEIGHTS
+    }
     surface_coverage = {
         surface: {
             "evaluated_with_surface_ratings": surface_eval_counts[surface],
@@ -244,6 +268,31 @@ def evaluate_surface_rows(
                 if general_summary["log_loss"] is not None and surface_summary["log_loss"] is not None
                 else None
             ),
+            "surface_elo_blends": {
+                f"{int(weight * 100)}%": {
+                    "surface_weight": weight,
+                    "metrics": blend_summaries[f"blend_{int(weight * 100)}"],
+                    "brier_improvement_vs_general": (
+                        round(
+                            general_summary["brier_score"]
+                            - blend_summaries[f"blend_{int(weight * 100)}"]["brier_score"], 6
+                        )
+                        if general_summary["brier_score"] is not None
+                        and blend_summaries[f"blend_{int(weight * 100)}"]["brier_score"] is not None
+                        else None
+                    ),
+                    "log_loss_improvement_vs_general": (
+                        round(
+                            general_summary["log_loss"]
+                            - blend_summaries[f"blend_{int(weight * 100)}"]["log_loss"], 6
+                        )
+                        if general_summary["log_loss"] is not None
+                        and blend_summaries[f"blend_{int(weight * 100)}"]["log_loss"] is not None
+                        else None
+                    ),
+                }
+                for weight in BLEND_WEIGHTS
+            },
             "monthly_breakdown": monthly_breakdown,
         },
         "surface_coverage": surface_coverage,
@@ -269,6 +318,7 @@ def evaluate_surface_rows(
             "Research-only comparison; no live predictions or production model changes.",
             "Same-date matches are forecast before any result from that date updates ratings.",
             "Surface-specific ratings start at 1500 and are not shrunk toward general ratings.",
+            "Fixed blends use 25%, 50%, and 75% surface probability weights; weights are not selected from evaluation results.",
             "The source's tournament date is not an exact match timestamp.",
             "Historical dataset licensing must be reviewed before commercial use.",
         ],
