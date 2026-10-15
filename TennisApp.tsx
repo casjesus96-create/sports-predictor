@@ -26,6 +26,56 @@ type Match = {
 
 const API = "/api/v1/tennis";
 
+function localDate() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+function shiftDate(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+const plannedFactors = [
+  {
+    group: "Nivel y forma del jugador",
+    items: [
+      "Ranking ATP/WTA y puntos vigentes antes del partido",
+      "Elo general y Elo específico de superficie",
+      "Victorias/derrotas y porcentaje de victorias en últimos 5 y 10 partidos",
+      "Porcentaje de victorias en la superficie del encuentro y últimos 12 meses",
+    ],
+  },
+  {
+    group: "Servicio y devolución",
+    items: [
+      "Porcentaje de primeros servicios dentro y puntos ganados con primer/segundo servicio",
+      "Juegos de servicio mantenidos y juegos de devolución ganados",
+      "Aces y dobles faltas por partido/servicio",
+      "Puntos de quiebre convertidos y salvados; rendimiento en tie-breaks",
+    ],
+  },
+  {
+    group: "Enfrentamiento y carga física",
+    items: [
+      "Cara a cara histórico anterior al encuentro, general y por superficie",
+      "Días de descanso, duración del partido anterior y carga de los últimos 7/14 días",
+      "Retiradas, molestias o ausencias solo cuando exista una fuente verificable",
+    ],
+  },
+  {
+    group: "Contexto del torneo y control de calidad",
+    items: [
+      "Torneo, ronda, superficie, indoor/outdoor y formato al mejor de 3/5 sets",
+      "Fuente, fecha de captura, corte temporal y porcentaje de datos faltantes",
+      "Versión del modelo, probabilidades originales, confianza y resultado final liquidado",
+    ],
+  },
+];
+
 function formatDate(value?: string | null) {
   if (!value) return "Horario no disponible";
   const date = new Date(value);
@@ -66,6 +116,8 @@ async function request<T>(path: string): Promise<T> {
 
 export default function TennisApp() {
   const [league, setLeague] = useState<"ATP" | "WTA">("ATP");
+  const [date, setDate] = useState(localDate());
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -77,11 +129,13 @@ export default function TennisApp() {
     setNotice("");
     try {
       const data = await request<{ matches?: Match[]; model_status?: string }>(
-        `${API}/games?league=${league}&days=14&limit=200`,
+        `${API}/games?league=${league}&start_date=${date}&days=1&limit=200`,
       );
-      setMatches(Array.isArray(data.matches) ? data.matches : []);
+      const rows = Array.isArray(data.matches) ? data.matches : [];
+      setMatches(rows);
+      setSelectedMatchId((current) => rows.some((match) => match.match_id === current) ? current : null);
       setNotice(
-        "Calendario y resultados en fase de validación. Las probabilidades no están habilitadas hasta validar el historial estadístico de los jugadores.",
+        "El calendario está disponible. Las proyecciones se habilitarán cuando integremos y validemos las estadísticas históricas; no mostraremos probabilidades inventadas.",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo cargar el calendario de tenis.");
@@ -89,7 +143,7 @@ export default function TennisApp() {
     } finally {
       setLoading(false);
     }
-  }, [league]);
+  }, [league, date]);
 
   useEffect(() => {
     void refresh();
@@ -129,7 +183,18 @@ export default function TennisApp() {
           Primero verificamos la cobertura y calidad de los datos; no mostramos
           porcentajes predictivos sin una base estadística validada.
         </p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 180, fontWeight: 800, fontSize: 13 }}>
+            Fecha de los encuentros
+            <input
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value || localDate())}
+              style={{ minHeight: 44, padding: "8px 10px", borderRadius: 8, border: "1px solid #34516b", background: "#10253a", color: "#f3f7fb", font: "inherit" }}
+            />
+          </label>
+          <button type="button" onClick={() => setDate(localDate())} style={secondaryButtonStyle}>Hoy</button>
+          <button type="button" onClick={() => setDate(shiftDate(localDate(), 1))} style={secondaryButtonStyle}>Mañana</button>
           {(["ATP", "WTA"] as const).map((item) => (
             <button
               key={item}
@@ -175,6 +240,23 @@ export default function TennisApp() {
         </p>
       ) : null}
 
+      <section style={{ ...panelStyle, marginBottom: 16 }} aria-label="Resumen del calendario">
+        <h2 style={{ margin: "0 0 10px", fontSize: 17 }}>Resumen del {date}</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(125px, 1fr))", gap: 10 }}>
+          {[
+            { label: "Partidos encontrados", value: matches.length },
+            { label: "Programados", value: matches.filter((match) => !match.completed && match.status !== "in" && match.status !== "post").length },
+            { label: "En juego", value: matches.filter((match) => match.status === "in").length },
+            { label: "Finalizados", value: matches.filter((match) => match.completed || match.status === "post").length },
+          ].map((metric) => (
+            <div key={metric.label} style={{ border: "1px solid #29445b", borderRadius: 9, padding: 12, background: "#10253a" }}>
+              <div style={{ color: "#b7c8d8", fontSize: 12 }}>{metric.label}</div>
+              <strong style={{ display: "block", fontSize: 24, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{metric.value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {loading && matches.length === 0 ? (
         <div style={panelStyle} role="status">Consultando calendario ATP/WTA…</div>
       ) : null}
@@ -182,7 +264,7 @@ export default function TennisApp() {
       {!loading && !error && matches.length === 0 ? (
         <div style={panelStyle}>
           <h2 style={{ marginTop: 0 }}>No hay partidos en este rango</h2>
-          <p>La fuente no devolvió partidos individuales para {league} en los próximos 14 días. Puedes cambiar entre ATP y WTA o volver a actualizar.</p>
+          <p>La fuente no devolvió partidos individuales para {league} el {date}. Prueba otra fecha o cambia entre ATP y WTA.</p>
         </div>
       ) : null}
 
@@ -214,9 +296,51 @@ export default function TennisApp() {
               <strong style={{ fontVariantNumeric: "tabular-nums" }}>{score(match.player2)}</strong>
             </div>
             {match.venue ? <p style={{ fontSize: 12, opacity: 0.75, marginBottom: 0 }}>{match.venue}</p> : null}
+            <button
+              type="button"
+              onClick={() => setSelectedMatchId((current) => current === match.match_id ? null : match.match_id)}
+              aria-expanded={selectedMatchId === match.match_id}
+              style={{ ...secondaryButtonStyle, width: "100%", marginTop: 14 }}
+            >
+              {selectedMatchId === match.match_id ? "Ocultar ficha de análisis" : "Preparar análisis del partido"}
+            </button>
           </article>
         ))}
       </div>
+
+      {selectedMatchId ? (() => {
+        const selectedMatch = matches.find((match) => match.match_id === selectedMatchId);
+        if (!selectedMatch) return null;
+        return (
+          <section style={{ ...panelStyle, marginTop: 16 }} aria-label="Ficha de factores para proyección">
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start", flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 12, color: "#2dd4bf", fontWeight: 800, letterSpacing: 1 }}>FICHA PREVIA A LA PROYECCIÓN</div>
+                <h2 style={{ margin: "6px 0" }}>{selectedMatch.player1?.name || "Jugador 1"} vs. {selectedMatch.player2?.name || "Jugador 2"}</h2>
+                <p style={{ margin: 0, color: "#b7c8d8" }}>{selectedMatch.tournament || "Torneo por confirmar"} · {selectedMatch.round || "Ronda por confirmar"} · {date}</p>
+              </div>
+              <button type="button" onClick={() => setSelectedMatchId(null)} style={secondaryButtonStyle}>Cerrar ficha</button>
+            </div>
+            <div style={{ margin: "14px 0", padding: 12, borderRadius: 8, border: "1px solid #ca8a04", background: "#2b2414", color: "#f8e6b0", lineHeight: 1.5 }}>
+              <strong>Estado del modelo: en preparación.</strong> Esta ficha define qué datos reuniremos; aún no calcula ganador ni porcentajes. El botón de proyección se habilitará después de conectar históricos verificables y superar una prueba retrospectiva sin filtración de datos futuros.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 270px), 1fr))", gap: 12 }}>
+              {plannedFactors.map((group) => (
+                <div key={group.group} style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, background: "#10253a" }}>
+                  <h3 style={{ fontSize: 15, margin: "0 0 10px" }}>{group.group}</h3>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: "#c5d7e7", lineHeight: 1.55 }}>
+                    {group.items.map((item) => <li key={item} style={{ marginBottom: 7 }}>{item}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+              <button type="button" disabled title="Se activará cuando el modelo y la validación estén implementados." style={{ ...secondaryButtonStyle, opacity: 0.55, cursor: "not-allowed" }}>Generar proyección (en preparación)</button>
+              <button type="button" onClick={() => void refresh()} disabled={loading} style={secondaryButtonStyle}>{loading ? "Actualizando…" : "Actualizar datos del partido"}</button>
+            </div>
+          </section>
+        );
+      })() : null}
     </main>
   );
 }
