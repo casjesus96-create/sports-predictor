@@ -262,13 +262,24 @@ def run_elo_backtest(
     result["league"] = league
     result["configuration"]["warmup_years_requested"] = int(warmup_years)
     result["configuration"]["annual_files_loaded"] = years_loaded
+    if not rows:
+        raise HistoricalDataError(
+            f"No se cargaron datos históricos {league} desde el archivo anual. "
+            "Verifica la disponibilidad de la fuente y vuelve a intentarlo."
+        )
     result["data_quality"].update({
         "historical_rows_loaded": len(rows),
         "annual_files_available": years_loaded,
-        "source": f"Jeff Sackmann {league} historical match CSVs",
+        "source": f"Jeff Sackmann {league} historical match CSVs (archival mirror)",
         "source_url": (
+            "https://github.com/Aneeshers/tennis-sackmann-archive/tree/main/atp"
+            if league == "ATP"
+            else "https://github.com/Aneeshers/tennis-sackmann-archive/tree/main/wta"
+        ),
+        "upstream_provenance_url": (
             "https://github.com/JeffSackmann/tennis_atp"
-            if league == "ATP" else "https://github.com/JeffSackmann/tennis_wta"
+            if league == "ATP"
+            else "https://github.com/JeffSackmann/tennis_wta"
         ),
     })
     return result
