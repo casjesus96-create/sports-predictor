@@ -95,3 +95,37 @@ def test_data_quality_reports_walkovers_and_invalid_rows():
     assert quality["matches_excluded_invalid"] == 1
     assert quality["rows_without_valid_date"] == 1
     assert quality["evaluation_matches"] == 1
+
+
+
+def test_run_backtest_preserves_quality_counters_and_source_metadata(monkeypatch):
+    from tennis_backtest import run_elo_backtest
+
+    day = date(2025, 1, 2)
+    rows = [
+        row(day, "A", "B"),
+        row(day, "C", "D", "W/O"),
+        row(day, "", "E"),
+        {"tourney_date": "bad-date", "winner_name": "F", "loser_name": "G", "score": "6-2"},
+    ]
+
+    def fake_load_year(league, year):
+        return rows if year == 2025 else []
+
+    monkeypatch.setattr("tennis_backtest.load_year", fake_load_year)
+    result = run_elo_backtest(
+        league="ATP",
+        start_date="2025-01-02",
+        end_date="2025-01-02",
+        warmup_years=1,
+    )
+
+    quality = result["data_quality"]
+    assert quality["historical_rows_loaded"] == 4
+    assert quality["historical_rows_seen"] == 4
+    assert quality["matches_excluded_walkover"] == 1
+    assert quality["matches_excluded_invalid"] == 1
+    assert quality["rows_without_valid_date"] == 1
+    assert quality["evaluation_matches"] == 1
+    assert quality["source"] == "Jeff Sackmann ATP historical match CSVs"
+    assert quality["source_url"] == "https://github.com/JeffSackmann/tennis_atp"
