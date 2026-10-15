@@ -101,6 +101,15 @@ def evaluate_rows(
     brier_sum = 0.0
     log_loss_sum = 0.0
     evaluated_days = set()
+    monthly_stats: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "matches_evaluated": 0,
+            "dates": set(),
+            "correct_score": 0.0,
+            "brier_sum": 0.0,
+            "log_loss_sum": 0.0,
+        }
+    )
     rating_snapshot_examples: list[dict[str, Any]] = []
 
     # Crucial: freeze ratings for the whole date batch. Since source dates are
@@ -133,10 +142,22 @@ def evaluate_rows(
                 correct_score += 1.0
             elif math.isclose(probability, 0.5, abs_tol=1e-12):
                 correct_score += 0.5
-            brier_sum += (probability - 1.0) ** 2
+            match_brier = (probability - 1.0) ** 2
             clipped = min(1.0 - 1e-15, max(1e-15, probability))
-            log_loss_sum -= math.log(clipped)
+            match_log_loss = -math.log(clipped)
+            brier_sum += match_brier
+            log_loss_sum += match_log_loss
             evaluated_days.add(match_date.isoformat())
+            month_bucket = monthly_stats[match_date.strftime("%Y-%m")]
+            month_bucket["matches_evaluated"] += 1
+            month_bucket["dates"].add(match_date.isoformat())
+            month_bucket["correct_score"] += (
+                1.0 if probability > 0.5
+                else 0.5 if math.isclose(probability, 0.5, abs_tol=1e-12)
+                else 0.0
+            )
+            month_bucket["brier_sum"] += match_brier
+            month_bucket["log_loss_sum"] += match_log_loss
             if len(rating_snapshot_examples) < 5:
                 rating_snapshot_examples.append({
                     "event_date": match_date.isoformat(),
@@ -159,6 +180,25 @@ def evaluate_rows(
             deltas[loser] -= k_factor * (1.0 - expected_winner)
         for player, delta in deltas.items():
             ratings[player] = ratings.get(player, DEFAULT_INITIAL_RATING) + delta
+
+    monthly_breakdown = []
+    cursor = start.replace(day=1)
+    while cursor <= end:
+        key = cursor.strftime("%Y-%m")
+        bucket = monthly_stats.get(key)
+        count = bucket["matches_evaluated"] if bucket else 0
+        monthly_breakdown.append({
+            "month": key,
+            "matches_evaluated": count,
+            "dates_evaluated": len(bucket["dates"]) if bucket else 0,
+            "accuracy": round(bucket["correct_score"] / count, 4) if count else None,
+            "brier_score": round(bucket["brier_sum"] / count, 6) if count else None,
+            "log_loss": round(bucket["log_loss_sum"] / count, 6) if count else None,
+        })
+        if cursor.month == 12:
+            cursor = date(cursor.year + 1, 1, 1)
+        else:
+            cursor = date(cursor.year, cursor.month + 1, 1)
 
     if evaluation_count == 0:
         accuracy = brier_score = log_loss = None
@@ -197,6 +237,9 @@ def evaluate_rows(
             "accuracy": accuracy,
             "brier_score": brier_score,
             "log_loss": log_loss,
+            "months_with_matches": sum(item["matches_evaluated"] > 0 for item in monthly_breakdown),
+            "months_without_matches": sum(item["matches_evaluated"] == 0 for item in monthly_breakdown),
+            "monthly_breakdown": monthly_breakdown,
             "benchmark": benchmark,
         },
         "data_quality": {
@@ -267,7 +310,32 @@ def run_elo_backtest(
             f"No se cargaron datos históricos {league} desde el archivo anual. "
             "Verifica la disponibilidad de la fuente y vuelve a intentarlo."
         )
+    valid_source_dates = [
+        played_on
+        for row in rows
+        if (played_on := _match_date(row)) is not None and _valid_match(row)
+    ]
+    source_month_counts: dict[str, int] = defaultdict(int)
+    for row in rows:
+        played_on = _match_date(row)
+        if played_on and start <= played_on <= end and _valid_match(row):
+            source_month_counts[played_on.strftime("%Y-%m")] += 1
+    requested_months = [item["month"] for item in result["evaluation"]["monthly_breakdown"]]
     result["data_quality"].update({
+        "source_coverage_start_date": min(valid_source_dates).isoformat() if valid_source_dates else None,
+        "source_coverage_end_date": max(valid_source_dates).isoformat() if valid_source_dates else None,
+        "source_latest_valid_match_on_or_before_end_date": (
+            max((played_on for played_on in valid_source_dates if played_on <= end)).isoformat()
+            if any(played_on <= end for played_on in valid_source_dates)
+            else None
+        ),
+        "source_valid_matches_by_month_in_evaluation_window": [
+            {"month": month, "matches_available": source_month_counts.get(month, 0)}
+            for month in requested_months
+        ],
+        "months_without_source_matches_in_evaluation_window": [
+            month for month in requested_months if source_month_counts.get(month, 0) == 0
+        ],
         "historical_rows_loaded": len(rows),
         "annual_files_available": years_loaded,
         "source": f"Jeff Sackmann {league} historical match CSVs (archival mirror)",
