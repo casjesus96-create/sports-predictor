@@ -80,8 +80,8 @@ def test_load_year_uses_archive_mirror_and_parses_annual_csv(monkeypatch):
     class FakeResponse:
         status_code = 200
         text = (
-            "tourney_date,winner_name,loser_name,surface,score\\n"
-            "20250106,Player One,Player Two,Hard,6-4 6-3\\n"
+            "tourney_date,winner_name,loser_name,surface,score\n"
+            "20250106,Player One,Player Two,Hard,6-4 6-3\n"
         )
 
         def raise_for_status(self):
