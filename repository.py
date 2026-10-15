@@ -264,40 +264,73 @@ def settle_prediction(
 
     predicted_winner = features.get("predicted_winner")
 
+    # Never derive the prediction from the actual result: that would
+    # leak the outcome into the forecast and can create false CORRECT rows.
     if not predicted_winner:
         game = features.get("game") or {}
         home_name = game.get("home")
         away_name = game.get("away")
+        try:
+            home_probability = float(prediction.get("home_probability"))
+            away_probability = float(prediction.get("away_probability"))
+        except (TypeError, ValueError):
+            home_probability = None
+            away_probability = None
 
-        if actual_winner == home_name:
-            predicted_winner = home_name
-        elif actual_winner == away_name:
-            predicted_winner = away_name
-        elif home_name and away_name:
-            try:
-                home_probability = float(
-                    prediction.get("home_probability") or 0
-                )
-                away_probability = float(
-                    prediction.get("away_probability") or 0
-                )
+        if (
+            home_name
+            and away_name
+            and home_name != away_name
+            and home_probability is not None
+            and away_probability is not None
+            and home_probability >= 0
+            and away_probability >= 0
+            and abs((home_probability + away_probability) - 1.0) <= 0.02
+            and home_probability != away_probability
+        ):
+            predicted_winner = (
+                home_name if home_probability > away_probability else away_name
+            )
 
-                predicted_winner = (
-                    home_name
-                    if home_probability >= away_probability
-                    else away_name
-                )
-            except (TypeError, ValueError):
-                predicted_winner = None
+    if not predicted_winner:
+        return {
+            "updated": False,
+            "reason": (
+                "La predicción original no contiene ganador ni probabilidades "
+                "válidas suficientes. El registro permanece PENDING para revisión."
+            ),
+            "event_id": str(event_id),
+        }
 
-    if predicted_winner is None:
-        prediction_result = "INCORRECT"
-    else:
-        prediction_result = (
-            "CORRECT"
-            if predicted_winner == actual_winner
-            else "INCORRECT"
-        )
+    if predicted_winner not in {
+        ((features.get("game") or {}).get("home")),
+        ((features.get("game") or {}).get("away")),
+    }:
+        return {
+            "updated": False,
+            "reason": (
+                "El ganador pronosticado no coincide con los equipos guardados. "
+                "El registro permanece PENDING para revisión."
+            ),
+            "event_id": str(event_id),
+        }
+
+    if actual_winner not in {
+        ((features.get("game") or {}).get("home")),
+        ((features.get("game") or {}).get("away")),
+    }:
+        return {
+            "updated": False,
+            "reason": (
+                "El ganador real no coincide con los equipos guardados. "
+                "El registro permanece PENDING para revisión."
+            ),
+            "event_id": str(event_id),
+        }
+
+    prediction_result = (
+        "CORRECT" if predicted_winner == actual_winner else "INCORRECT"
+    )
 
     now = datetime.now(timezone.utc).isoformat()
 
