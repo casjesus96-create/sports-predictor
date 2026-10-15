@@ -2089,12 +2089,15 @@ function GameDetail({
                 {Object.entries(prediction.experimental_probability.components || {}).map(([key, component]: [string, any]) => (
                   <Factor
                     key={key}
-                    label={{
-                      h2h: "Enfrentamientos directos (H2H)",
-                      batting_splits: "Splits ofensivos vs. mano del pitcher",
-                      bullpen: "Disponibilidad del bullpen",
-                      batter_vs_pitcher: "Bateadores vs. abridor rival",
-                    }[key] || key}
+                    label={key === "h2h"
+                      ? "Enfrentamientos directos (H2H)"
+                      : key === "batting_splits"
+                        ? "Splits ofensivos vs. mano del pitcher"
+                        : key === "bullpen"
+                          ? "Disponibilidad del bullpen"
+                          : key === "batter_vs_pitcher"
+                            ? "Bateadores vs. abridor rival"
+                            : key}
                     value={component?.available ? `Disponible · ajuste ${(Number(component.adjustment || 0) * 100).toFixed(1)} pp` : "No disponible"}
                   />
                 ))}
