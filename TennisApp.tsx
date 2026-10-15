@@ -432,7 +432,7 @@ export default function TennisApp() {
               <div style={{ marginTop: 16 }}>
                 <h3 style={{ marginBottom: 6 }}>Perfiles históricos previos al partido</h3>
                 <p style={{ color: "#b7c8d8", fontSize: 12, lineHeight: 1.5 }}>
-                  Corte exclusivo: {historicalProfiles[0].cutoff_date_exclusive}. Se excluyen partidos del mismo día para reducir riesgo de fuga de información. “Sin datos” significa que la fuente no reportó una muestra suficiente.
+                  Corte exclusivo: {historicalProfiles[0].cutoff_date_exclusive}. Se excluyen partidos del mismo día para reducir riesgo de fuga de información. “Sin datos” significa que la fuente no reportó una muestra suficiente. La superficie todavía no está vinculada de forma fiable al calendario, por lo que esta muestra no debe interpretarse como rendimiento específico por superficie.
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 12 }}>
                   {historicalProfiles.map((profile) => {
@@ -443,7 +443,7 @@ export default function TennisApp() {
                       { label: "Porcentaje de victorias", value: formatPercent(profile.win_rate) },
                       { label: "Últimos 5", value: `${profile.last_5.wins}V – ${profile.last_5.losses}D` },
                       { label: "Últimos 10", value: `${profile.last_10.wins}V – ${profile.last_10.losses}D` },
-                      { label: "Victorias en superficie (ventana)", value: `${profile.surface_window.wins} / ${profile.surface_window.matches}` },
+                      { label: "Victorias en muestra filtrada", value: `${profile.surface_window.wins} / ${profile.surface_window.matches}` },
                       { label: "Último ranking observado", value: formatMetric(profile.ranking_latest_in_window) },
                       { label: "Días desde último partido", value: formatMetric(profile.days_since_last_match) },
                       { label: "Partidos últimos 7 días", value: formatMetric(profile.workload_matches_last_7_days) },
