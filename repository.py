@@ -85,13 +85,116 @@ def save_prediction(
 # GUARDAR ANÁLISIS COMPLETO
 # =========================================================
 
+def _matchup_snapshot_metrics(features):
+    """Compact, comparable summary of confirmed MLB lineup/BvP coverage."""
+    factors = (features or {}).get("factors") or {}
+    matchup = factors.get("batter_pitcher_matchups") or {}
+    sides = []
+    confirmed_count = 0
+    confirmed_hitters = 0
+    available_bvp_hitters = 0
+    signatures = {}
+
+    for side in ("home_team", "away_team"):
+        team = matchup.get(side) or {}
+        hitters = team.get("hitters") or []
+        confirmed = bool(team.get("lineup_confirmed"))
+        if confirmed:
+            confirmed_count += 1
+            confirmed_hitters += len(hitters)
+        available_bvp_hitters += sum(
+            1 for hitter in hitters
+            if ((hitter.get("vs_pitcher") or {}).get("available"))
+        )
+        signatures[side] = [
+            str(hitter.get("player_id") or hitter.get("player_name") or "")
+            for hitter in hitters
+        ] if confirmed else []
+        sides.append({
+            "side": side,
+            "lineup_confirmed": confirmed,
+            "lineup_status": team.get("lineup_status"),
+            "lineup_source": team.get("lineup_source"),
+            "hitter_count": len(hitters),
+            "available_bvp_hitters": sum(
+                1 for hitter in hitters
+                if ((hitter.get("vs_pitcher") or {}).get("available"))
+            ),
+        })
+
+    pitchers = factors.get("probable_pitchers") or {}
+    pitcher_ids = {}
+    for side in ("home", "away"):
+        pitcher = pitchers.get(side) or {}
+        pitcher_ids[side] = (
+            pitcher.get("pitcher_id")
+            or pitcher.get("id")
+        )
+
+    return {
+        "confirmed_lineup_count": confirmed_count,
+        "confirmed_hitter_count": confirmed_hitters,
+        "available_bvp_hitter_count": available_bvp_hitters,
+        "lineup_signatures": signatures,
+        "lineups": sides,
+        "pitcher_ids": pitcher_ids,
+    }
+
+
+def _pending_refresh_reason(existing, payload):
+    """Return a reason only when fresh pregame information materially improves."""
+    old_features = existing.get("features") or {}
+    new_features = payload.get("features") or {}
+    old_metrics = _matchup_snapshot_metrics(old_features)
+    new_metrics = _matchup_snapshot_metrics(new_features)
+
+    if new_metrics["confirmed_lineup_count"] > old_metrics["confirmed_lineup_count"]:
+        return "Se publicaron alineaciones confirmadas de MLB."
+
+    if (
+        new_metrics["lineup_signatures"] != old_metrics["lineup_signatures"]
+        and new_metrics["confirmed_lineup_count"] > 0
+    ):
+        return "Cambió una alineación confirmada de MLB."
+
+    if new_metrics["available_bvp_hitter_count"] > old_metrics["available_bvp_hitter_count"]:
+        return "Hay más historial directo bateador-contra-pitcher disponible."
+
+    old_pitchers = old_metrics["pitcher_ids"]
+    new_pitchers = new_metrics["pitcher_ids"]
+    if any(
+        new_pitchers.get(side) and new_pitchers.get(side) != old_pitchers.get(side)
+        for side in ("home", "away")
+    ):
+        return "Se actualizó la identificación del pitcher probable."
+
+    try:
+        old_quality = float(existing.get("data_quality") or 0)
+        new_quality = float(payload.get("data_quality") or 0)
+        if new_quality >= old_quality + 3:
+            return "Mejoró de forma material la cobertura de datos."
+    except (TypeError, ValueError):
+        pass
+
+    # Probabilities are outputs of the single official model. If its actual
+    # pregame inputs changed, preserve the new output as a revision too.
+    for key in ("home_probability", "away_probability"):
+        try:
+            if abs(float(payload.get(key)) - float(existing.get(key))) >= 0.0001:
+                return "Cambió la salida del modelo oficial con datos pregame nuevos."
+        except (TypeError, ValueError):
+            continue
+
+    return None
+
+
 def save_analysis(analysis):
     """
-    Guarda un snapshot inmutable de la predicción oficial MLB.
+    Guarda la predicción oficial MLB 2.0.0-matchup.
 
-    Si ya existe una predicción PENDING para el mismo partido y modelo,
-    se conserva exactamente como fue registrada: no se reemplazan la
-    probabilidad, ganador, confianza, fecha ni factores históricos.
+    Un snapshot PENDING se refresca únicamente cuando el nuevo análisis pregame
+    aporta mejoras materiales. La misma fila conserva un historial acotado de
+    revisiones; nunca se modifica un resultado liquidado ni se duplica el evento.
     """
     if not analysis.get("success"):
         return {
@@ -108,12 +211,22 @@ def save_analysis(analysis):
     if not event_id:
         raise ValueError("El análisis no contiene game_id.")
 
+    game_status = str(game.get("status") or "").strip().lower()
+    if game_status in {"live", "final", "in progress", "game over"}:
+        return {
+            "success": False,
+            "saved": False,
+            "message": (
+                "No se puede crear ni refrescar una predicción cuando el partido "
+                "ya comenzó o terminó."
+            ),
+            "event_id": str(event_id),
+            "status": game.get("status"),
+        }
+
     supabase = get_supabase_client()
     model_version = analysis.get("model_version", CURRENT_MODEL_VERSION)
-    generated_at = analysis.get("generated_at")
-
-    if not generated_at:
-        generated_at = datetime.now(timezone.utc).isoformat()
+    generated_at = analysis.get("generated_at") or datetime.now(timezone.utc).isoformat()
 
     data_quality = prediction.get("data_quality")
     if data_quality is None:
@@ -146,8 +259,7 @@ def save_analysis(analysis):
     }
 
     existing_response = (
-        supabase
-        .table("prediction_snapshots")
+        supabase.table("prediction_snapshots")
         .select("*")
         .eq("event_id", str(event_id))
         .eq("model_version", model_version)
@@ -159,32 +271,96 @@ def save_analysis(analysis):
     existing_rows = existing_response.data or []
 
     if existing_rows:
-        # No actualizar ni reescribir un pronóstico ya emitido.
+        existing = existing_rows[0]
+        refresh_reason = _pending_refresh_reason(existing, payload)
+        if not refresh_reason:
+            return {
+                "success": True,
+                "saved": True,
+                "updated_existing": False,
+                "existing_prediction_preserved": True,
+                "message": (
+                    "Se consultaron de nuevo los datos pregame, pero no se detectó "
+                    "una mejora material. Se conservó la predicción pendiente."
+                ),
+                "refresh_reason": None,
+                "data": existing_rows,
+            }
+
+        old_features = existing.get("features") or {}
+        old_metrics = _matchup_snapshot_metrics(old_features)
+        old_revision = {
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "data_cutoff": existing.get("data_cutoff"),
+            "reason": refresh_reason,
+            "predicted_winner": old_features.get("predicted_winner"),
+            "home_probability": existing.get("home_probability"),
+            "away_probability": existing.get("away_probability"),
+            "confidence": existing.get("confidence"),
+            "data_quality": existing.get("data_quality"),
+            "lineup_metrics": old_metrics,
+            "previous_batter_pitcher_matchups": (
+                ((old_features.get("factors") or {}).get("batter_pitcher_matchups"))
+            ),
+        }
+        revisions = list(old_features.get("analysis_revisions") or [])
+        revisions.append(old_revision)
+        # Bound JSON growth while keeping recent revision audit data.
+        features["analysis_revisions"] = revisions[-10:]
+        features["last_revision_reason"] = refresh_reason
+
+        update_payload = {
+            "data_cutoff": generated_at,
+            "home_probability": payload["home_probability"],
+            "away_probability": payload["away_probability"],
+            "confidence": payload["confidence"],
+            "data_quality": payload["data_quality"],
+            "features": features,
+        }
+        updated_response = (
+            supabase.table("prediction_snapshots")
+            .update(update_payload)
+            .eq("id", existing.get("id"))
+            .eq("result_status", "PENDING")
+            .execute()
+        )
+        updated_rows = updated_response.data or []
+        if not updated_rows:
+            return {
+                "success": True,
+                "saved": True,
+                "updated_existing": False,
+                "existing_prediction_preserved": True,
+                "message": (
+                    "El snapshot dejó de estar PENDING durante el reanálisis; "
+                    "no se modificó un resultado liquidado."
+                ),
+                "refresh_reason": refresh_reason,
+                "data": [existing],
+            }
+
         return {
             "success": True,
             "saved": True,
-            "updated_existing": False,
-            "existing_prediction_preserved": True,
-            "message": (
-                "Ya existe una predicción pendiente para este partido y modelo. "
-                "Se conservó el snapshot original sin modificar sus probabilidades."
-            ),
-            "data": existing_rows,
+            "updated_existing": True,
+            "existing_prediction_preserved": False,
+            "message": "Se refrescó el snapshot pendiente y se guardó la revisión anterior.",
+            "refresh_reason": refresh_reason,
+            "data": updated_rows,
         }
 
     response = (
-        supabase
-        .table("prediction_snapshots")
+        supabase.table("prediction_snapshots")
         .insert(payload)
         .execute()
     )
-
     return {
         "success": True,
         "saved": True,
         "updated_existing": False,
         "existing_prediction_preserved": False,
         "message": "Predicción guardada como un nuevo snapshot.",
+        "refresh_reason": None,
         "data": response.data,
     }
 
