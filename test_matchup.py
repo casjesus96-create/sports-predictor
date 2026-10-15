@@ -34,6 +34,24 @@ def test_matchup_shape(monkeypatch):
     # Keep the matchup shape test deterministic and independent of Supabase.
     monkeypatch.setattr(matchup_engine, "get_h2h_games", lambda **kwargs: [])
     monkeypatch.setattr(matchup_engine, "get_team_history", lambda **kwargs: [])
+    monkeypatch.setattr(
+        matchup_engine,
+        "get_game_pitchers",
+        lambda game_id: {
+            "home_pitcher": {"pitcher_hand": "R"},
+            "away_pitcher": {"pitcher_hand": "L"},
+        },
+    )
+    monkeypatch.setattr(
+        matchup_engine,
+        "get_team_batting_split",
+        lambda **kwargs: {"available": False},
+    )
+    monkeypatch.setattr(
+        matchup_engine,
+        "get_bullpen_matchup_data",
+        lambda **kwargs: {"available": False},
+    )
     result = get_matchup_data(
         game_id=0,
         home_team_id=HOME_TEAM_ID,
