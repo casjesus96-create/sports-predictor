@@ -12,6 +12,7 @@ COPY App.tsx ./
 COPY MLBApp.tsx ./
 COPY NFLApp.tsx ./
 COPY NBAApp.tsx ./
+COPY TennisApp.tsx ./
 COPY main.tsx ./
 COPY index.html ./
 COPY styles.css ./

@@ -2,8 +2,9 @@ import { useState } from "react";
 import MLBApp from "./MLBApp";
 import NFLApp from "./NFLApp";
 import NBAApp from "./NBAApp";
+import TennisApp from "./TennisApp";
 
-type Sport = "MLB" | "NFL" | "NBA";
+type Sport = "MLB" | "NFL" | "NBA" | "TENNIS";
 
 export default function App() {
   const [sport, setSport] = useState<Sport>("NBA");
@@ -58,9 +59,18 @@ export default function App() {
         >
           🏀 NBA
         </button>
+
+        <button
+          type="button"
+          aria-pressed={sport === "TENNIS"}
+          onClick={() => setSport("TENNIS")}
+          style={buttonStyle(sport === "TENNIS")}
+        >
+          🎾 Tennis
+        </button>
       </nav>
 
-      {sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : <NBAApp />}
+      {sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
     </>
   );
 }
