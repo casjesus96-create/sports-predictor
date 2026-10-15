@@ -262,7 +262,7 @@ def run_elo_backtest(
     result["league"] = league
     result["configuration"]["warmup_years_requested"] = int(warmup_years)
     result["configuration"]["annual_files_loaded"] = years_loaded
-    result["data_quality"] = {
+    result["data_quality"].update({
         "historical_rows_loaded": len(rows),
         "annual_files_available": years_loaded,
         "source": f"Jeff Sackmann {league} historical match CSVs",
@@ -270,5 +270,5 @@ def run_elo_backtest(
             "https://github.com/JeffSackmann/tennis_atp"
             if league == "ATP" else "https://github.com/JeffSackmann/tennis_wta"
         ),
-    }
+    })
     return result
