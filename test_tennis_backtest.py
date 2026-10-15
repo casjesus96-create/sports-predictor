@@ -48,6 +48,25 @@ def test_same_date_results_do_not_change_predictions_for_other_matches_same_date
     assert first["evaluation"]["matches_evaluated"] == 2
 
 
+def test_monthly_breakdown_includes_months_without_matches():
+    jan = date(2026, 1, 3)
+    mar = date(2026, 3, 3)
+    result = evaluate_rows(
+        [row(jan, "A", "B"), row(mar, "A", "C")],
+        date(2026, 1, 1),
+        date(2026, 3, 31),
+    )
+    evaluation = result["evaluation"]
+    assert evaluation["months_with_matches"] == 2
+    assert evaluation["months_without_matches"] == 1
+    assert [item["month"] for item in evaluation["monthly_breakdown"]] == [
+        "2026-01", "2026-02", "2026-03"
+    ]
+    assert evaluation["monthly_breakdown"][1]["matches_evaluated"] == 0
+    assert evaluation["monthly_breakdown"][1]["accuracy"] is None
+    assert evaluation["monthly_breakdown"][1]["brier_score"] is None
+
+
 def test_walkovers_are_excluded():
     day = date(2026, 1, 2)
     result = evaluate_rows([row(day, "A", "B", "W/O")], day, day)
@@ -128,5 +147,12 @@ def test_run_backtest_preserves_quality_counters_and_source_metadata(monkeypatch
     assert quality["rows_without_valid_date"] == 1
     assert quality["evaluation_matches"] == 1
     assert quality["source"] == "Jeff Sackmann ATP historical match CSVs (archival mirror)"
+    assert quality["source_coverage_start_date"] == "2025-01-02"
+    assert quality["source_coverage_end_date"] == "2025-01-02"
+    assert quality["source_latest_valid_match_on_or_before_end_date"] == "2025-01-02"
+    assert quality["months_without_source_matches_in_evaluation_window"] == []
+    assert quality["source_valid_matches_by_month_in_evaluation_window"] == [
+        {"month": "2025-01", "matches_available": 1}
+    ]
     assert quality["source_url"] == "https://github.com/Aneeshers/tennis-sackmann-archive/tree/main/atp"
     assert quality["upstream_provenance_url"] == "https://github.com/JeffSackmann/tennis_atp"
