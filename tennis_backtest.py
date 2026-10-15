@@ -70,6 +70,13 @@ def evaluate_rows(
         raise ValueError("k_factor debe estar entre 4 y 64.")
 
     by_date: dict[date, list[dict[str, str]]] = defaultdict(list)
+    rows_seen = 0
+    rows_after_end_date = 0
+    rows_without_valid_date = 0
+    matches_excluded_walkover = 0
+    matches_excluded_invalid = 0
+    matches_used_for_rating_updates = 0
+
     for row in rows:
         rows_seen += 1
         played_on = _match_date(row)
@@ -95,12 +102,6 @@ def evaluate_rows(
     log_loss_sum = 0.0
     evaluated_days = set()
     rating_snapshot_examples: list[dict[str, Any]] = []
-    rows_seen = 0
-    rows_after_end_date = 0
-    rows_without_valid_date = 0
-    matches_excluded_walkover = 0
-    matches_excluded_invalid = 0
-    matches_used_for_rating_updates = 0
 
     # Crucial: freeze ratings for the whole date batch. Since source dates are
     # tournament dates (not exact match timestamps), same-date results cannot
@@ -116,7 +117,6 @@ def evaluate_rows(
         )
         forecasts = []
         for row in day_matches:
-            matches_used_for_rating_updates += 1
             winner = str(row["winner_name"]).strip()
             loser = str(row["loser_name"]).strip()
             p_winner = _elo_probability(
@@ -149,6 +149,7 @@ def evaluate_rows(
         # player appears more than once in a date batch.
         deltas: dict[str, float] = defaultdict(float)
         for row in day_matches:
+            matches_used_for_rating_updates += 1
             winner = str(row["winner_name"]).strip()
             loser = str(row["loser_name"]).strip()
             winner_rating = ratings.get(winner, DEFAULT_INITIAL_RATING)
