@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import requests
 from fastapi import APIRouter, HTTPException
 
-from repository import get_pending_predictions, get_supabase_client
+from repository import get_pending_predictions, get_supabase_client, settle_prediction
 
 router = APIRouter()
 
@@ -297,103 +297,25 @@ def settle_pending_predictions():
                     home_team if home_score > away_score else away_team
                 )
 
-                # 4. Recuperar la predicción original sin recalcularla.
-                features = record.get("features") or {}
-                predicted_winner = features.get("predicted_winner")
-
-                if predicted_winner:
-                    predicted_normalized = normalized_text(
-                        predicted_winner
-                    )
-
-                    if predicted_normalized == normalized_text(home_team):
-                        predicted_winner = home_team
-                    elif predicted_normalized == normalized_text(away_team):
-                        predicted_winner = away_team
-                    else:
-                        predicted_winner = None
-
-                # Si no se guardó el ganador, usar solo las
-                # probabilidades originales almacenadas.
-                if not predicted_winner:
-                    try:
-                        home_probability = float(
-                            record.get("home_probability")
-                        )
-                        away_probability = float(
-                            record.get("away_probability")
-                        )
-                    except (TypeError, ValueError):
-                        home_probability = None
-                        away_probability = None
-
-                    if (
-                        home_probability is None
-                        or away_probability is None
-                        or home_probability == away_probability
-                    ):
-                        item.update({
-                            "status": "SKIPPED",
-                            "reason": (
-                                "No se puede reconstruir con seguridad "
-                                "el pronóstico original."
-                            ),
-                        })
-                        results.append(item)
-                        continue
-
-                    predicted_winner = (
-                        home_team
-                        if home_probability > away_probability
-                        else away_team
-                    )
-
-                prediction_result = (
-                    "CORRECT"
-                    if normalized_text(predicted_winner)
-                    == normalized_text(actual_winner)
-                    else "INCORRECT"
+                # 4. Usar la única ruta central de liquidación.
+                # repository.settle_prediction valida el snapshot original,
+                # no deriva el pronóstico del resultado real y conserva
+                # probabilidades, confianza y versión del modelo.
+                settlement = settle_prediction(
+                    event_id=event_id,
+                    actual_winner=actual_winner,
+                    actual_home_score=home_score,
+                    actual_away_score=away_score,
+                    prediction_id=prediction_id,
+                    model_version=record.get("model_version"),
                 )
 
-                # Preservar los datos originales del análisis.
-                updated_features = dict(features)
-                updated_features["predicted_winner"] = predicted_winner
-                updated_features["game"] = {
-                    **(features.get("game") or {}),
-                    "home": home_team,
-                    "away": away_team,
-                }
-                updated_features["settlement"] = {
-                    **(features.get("settlement") or {}),
-                    "status": "SETTLED",
-                    "checked_at": utc_now(),
-                    "source": "MLB Stats API live feed",
-                }
-
-                update_data = {
-                    "result_status": "SETTLED",
-                    "prediction_result": prediction_result,
-                    "actual_winner": actual_winner,
-                    "actual_home_score": home_score,
-                    "actual_away_score": away_score,
-                    "settled_at": utc_now(),
-                    "features": updated_features,
-                }
-
-                saved = (
-                    supabase.table("prediction_snapshots")
-                    .update(update_data)
-                    .eq("id", prediction_id)
-                    .eq("result_status", "PENDING")
-                    .execute()
-                )
-
-                if not saved.data:
+                if not settlement.get("updated"):
                     item.update({
                         "status": "SKIPPED",
-                        "reason": (
-                            "La predicción ya cambió de estado "
-                            "o fue procesada por otra solicitud."
+                        "reason": settlement.get(
+                            "reason",
+                            "La predicción permanece pendiente para revisión.",
                         ),
                     })
                     results.append(item)
@@ -405,9 +327,9 @@ def settle_pending_predictions():
                     "away": away_team,
                     "home_score": home_score,
                     "away_score": away_score,
-                    "predicted_winner": predicted_winner,
+                    "predicted_winner": settlement.get("predicted_winner"),
                     "actual_winner": actual_winner,
-                    "prediction_result": prediction_result,
+                    "prediction_result": settlement.get("prediction_result"),
                 })
                 results.append(item)
 
