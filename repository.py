@@ -236,6 +236,7 @@ def save_analysis(analysis):
         "game": game,
         "factors": factors,
         "predicted_winner": prediction.get("winner"),
+        "experimental_probability": prediction.get("experimental_probability"),
     }
 
     payload = {
@@ -298,6 +299,7 @@ def save_analysis(analysis):
             "away_probability": existing.get("away_probability"),
             "confidence": existing.get("confidence"),
             "data_quality": existing.get("data_quality"),
+            "experimental_probability": old_features.get("experimental_probability"),
             "lineup_metrics": old_metrics,
             "previous_batter_pitcher_matchups": (
                 ((old_features.get("factors") or {}).get("batter_pitcher_matchups"))
@@ -810,6 +812,7 @@ def get_predictions():
                 "away_probability": away_probability,
                 "confidence": row.get("confidence"),
                 "data_quality": row.get("data_quality"),
+                "experimental_probability": features.get("experimental_probability"),
             },
             "result": {
                 "status": row.get("result_status"),
