@@ -1,5 +1,6 @@
 import os
 
+import matchup_engine
 from matchup_engine import calculate_h2h, get_matchup_data
 
 
@@ -8,7 +9,9 @@ AWAY_TEAM_ID = 139  # Tampa Bay Rays
 BEFORE_DATE = "2026-09-22T00:00:00Z"
 
 
-def test_h2h_shape():
+def test_h2h_shape(monkeypatch):
+    # Unit test: isolate the calculation from the live Supabase database.
+    monkeypatch.setattr(matchup_engine, "get_h2h_games", lambda **kwargs: [])
     result = calculate_h2h(
         home_team_id=HOME_TEAM_ID,
         away_team_id=AWAY_TEAM_ID,
@@ -27,7 +30,10 @@ def test_h2h_shape():
     assert isinstance(result["games"], int)
 
 
-def test_matchup_shape():
+def test_matchup_shape(monkeypatch):
+    # Keep the matchup shape test deterministic and independent of Supabase.
+    monkeypatch.setattr(matchup_engine, "get_h2h_games", lambda **kwargs: [])
+    monkeypatch.setattr(matchup_engine, "get_team_history", lambda **kwargs: [])
     result = get_matchup_data(
         game_id=0,
         home_team_id=HOME_TEAM_ID,
