@@ -67,6 +67,46 @@ def test_rejects_invalid_surface_history_threshold(minimum):
         evaluate_surface_rows([], "2024-01-01", "2024-01-01", min_surface_matches=minimum)
 
 
+def test_surface_probability_blends_are_research_only_and_report_fixed_weights():
+    rows = [
+        match("20240101", "A", "B", "Hard"),
+        match("20240102", "A", "B", "Hard"),
+        match("20240103", "B", "A", "Hard"),
+        match("20240104", "A", "C", "Clay"),
+        match("20240105", "C", "B", "Clay"),
+        match("20240106", "A", "B", "Hard"),
+    ]
+    result = evaluate_surface_rows(
+        rows, "2024-01-03", "2024-01-06", min_surface_matches=1
+    )
+
+    blends = result["evaluation"]["surface_elo_blends"]
+    assert set(blends) == {"25%", "50%", "75%"}
+    assert result["model_status"] == "research_only"
+    for label, expected_weight in (("25%", 0.25), ("50%", 0.5), ("75%", 0.75)):
+        assert blends[label]["surface_weight"] == expected_weight
+        assert blends[label]["metrics"]["matches_evaluated"] == 4
+        assert "brier_improvement_vs_general" in blends[label]
+        assert "log_loss_improvement_vs_general" in blends[label]
+        assert all(
+            f"surface_elo_blend_{int(expected_weight * 100)}" in month
+            for month in result["evaluation"]["monthly_breakdown"]
+        )
+
+
+def test_blends_equal_general_when_all_surface_rows_fallback():
+    rows = [
+        match("20240101", "A", "B", "Carpet"),
+        match("20240102", "A", "B", ""),
+        match("20240103", "B", "A", "unknown"),
+    ]
+    result = evaluate_surface_rows(rows, "2024-01-02", "2024-01-03")
+
+    general = result["evaluation"]["general_elo"]
+    for blend in result["evaluation"]["surface_elo_blends"].values():
+        assert blend["metrics"] == general
+
+
 def test_rejects_period_over_366_days():
     with pytest.raises(ValueError):
         evaluate_surface_rows([], "2023-01-01", "2024-01-02")
