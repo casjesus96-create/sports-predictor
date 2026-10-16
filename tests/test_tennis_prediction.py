@@ -27,7 +27,7 @@ def test_cutoff_is_exclusive_and_walkovers_are_excluded():
     rows = [
         row("2025-01-01", "Player A", "Player B"),
         row("2025-01-02", "Player A", "Player C"),
-        row("2025-01-03", "Player B", "Player C", "Walkover"),
+        row("2025-01-01", "Player B", "Player C", "Walkover"),
     ]
     state = build_pre_match_ratings(rows, "2025-01-02")
     assert state["matches_used"] == 1
