@@ -71,10 +71,12 @@ def _evaluate_year(rows: list[dict[str, str]], year: int, k_factor: float, min_s
             continue
         if played > end:
             continue
-        raw = str(row.get("surface") or "").strip()
+        raw = str(row.get("surface") or "")
         normalized_surface = _normalize_surface(raw)
         if start <= played <= end:
-            raw_surface_counts[raw if raw else "<blank>"] += 1
+            # Preserve the source label verbatim for diagnostics; normalize only
+            # the separate normalized counter used to inspect data consistency.
+            raw_surface_counts[raw if raw.strip() else "<blank>"] += 1
             normalized_surface_counts[normalized_surface or "<unknown>"] += 1
         score = str(row.get("score") or "").casefold().strip()
         if "walkover" in score or "w/o" in score or score in {"wo", "def"}:
