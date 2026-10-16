@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from tennis_backtest import run_elo_backtest
 from tennis_surface_backtest import run_surface_elo_backtest
 from tennis_surface_validation import run_chronological_surface_validation
+from tennis_surface_validation import run_chronological_surface_validation
 from tennis_external_source import ExternalTennisSourceError, audit_external_coverage
 from tennis_history import HistoricalDataError, get_player_profile
 from tennis_reconciliation import audit_external_reconciliation
@@ -228,6 +229,45 @@ def tennis_external_reconciliation_audit(
         ) from exc
 
 
+
+
+@router.get("/chronological-validation")
+def tennis_chronological_surface_validation(
+    league: str = Query("ATP", pattern="^(?i:ATP|WTA)$"),
+    warmup_years: int = Query(3, ge=1, le=10),
+    k_factor: float = Query(32.0, ge=4.0, le=64.0),
+    min_surface_matches: int = Query(10, ge=1, le=100),
+):
+    """Run a research-only multi-year validation; never changes live predictions."""
+    try:
+        return run_chronological_surface_validation(
+            league=league,
+            validation_years=(2023, 2024),
+            reference_year=2025,
+            holdout_year=2026,
+            warmup_years=warmup_years,
+            k_factor=k_factor,
+            min_surface_matches=min_surface_matches,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HistoricalDataError as exc:
+        logger.warning("Chronological tennis validation unavailable: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "TENNIS_HISTORY_SOURCE_ERROR", "message": str(exc)},
+        ) from exc
+    except requests.RequestException as exc:
+        logger.exception("Upstream error for chronological tennis validation")
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "TENNIS_HISTORY_SOURCE_ERROR",
+                "message": "No fue posible consultar los históricos para la validación cronológica.",
+            },
+        ) from exc
+
+
 @router.get("/status")
 def historical_status():
     return {
@@ -237,6 +277,7 @@ def historical_status():
         "model_status": "not_available",
         "research_backtest": "available",
         "surface_research_backtest": "available",
+        "chronological_surface_validation": "research_only",
         "external_source_audit": "available",
         "external_source_reconciliation_audit": "available",
         "available_metrics": [
@@ -248,6 +289,8 @@ def historical_status():
             "service_and_return_stats_when_reported",
             "chronological_elo_backtest_accuracy_brier_log_loss",
             "general_vs_surface_elo_research_comparison",
+            "multi_year_chronological_validation_and_calibration",
+            "raw_surface_label_coverage_audit",
             "independent_source_monthly_coverage",
             "read_only_source_reconciliation_candidates",
         ],
