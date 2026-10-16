@@ -143,9 +143,9 @@ def tennis_candidate_projection(
             "historical_source": "Jeff Sackmann archive mirror",
             "snapshot_saved": False,
             "notice": (
-                "Esta respuesta no se guarda como pronóstico oficial. "
-                "No la uses para medir rendimiento de producción hasta integrar "
-                "y verificar snapshots inmutables y liquidación."
+                "Esta consulta no crea un snapshot. Para registrar el partido usa "
+                "POST /api/v1/tennis/matches/{match_id}/predict. El modelo sigue "
+                "siendo candidato y no está activado como modelo oficial."
             ),
         })
         return projection
