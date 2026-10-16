@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from tennis_backtest import run_elo_backtest
 from tennis_surface_backtest import run_surface_elo_backtest
+from tennis_surface_validation import run_chronological_surface_validation
 from tennis_external_source import ExternalTennisSourceError, audit_external_coverage
 from tennis_history import HistoricalDataError, get_player_profile
 from tennis_reconciliation import audit_external_reconciliation
@@ -134,6 +135,47 @@ def tennis_surface_historical_backtest(
         ) from exc
 
 
+@router.get("/surface-validation")
+def tennis_surface_chronological_validation(
+    league: str = Query("ATP", pattern="^(?i:ATP|WTA)$"),
+    validation_year_1: int = Query(2023, ge=2000, le=2100),
+    validation_year_2: int = Query(2024, ge=2000, le=2100),
+    reference_year: int = Query(2025, ge=2000, le=2100),
+    holdout_year: int = Query(2026, ge=2000, le=2100),
+    warmup_years: int = Query(3, ge=1, le=10),
+    k_factor: float = Query(32.0, ge=4.0, le=64.0),
+    min_surface_matches: int = Query(10, ge=1, le=100),
+):
+    """Run multi-year research validation with calibration and surface diagnostics."""
+    try:
+        return run_chronological_surface_validation(
+            league=league,
+            validation_years=(validation_year_1, validation_year_2),
+            reference_year=reference_year,
+            holdout_year=holdout_year,
+            warmup_years=warmup_years,
+            k_factor=k_factor,
+            min_surface_matches=min_surface_matches,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HistoricalDataError as exc:
+        logger.warning("Historical tennis validation unavailable: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "TENNIS_HISTORY_SOURCE_ERROR", "message": str(exc)},
+        ) from exc
+    except requests.RequestException as exc:
+        logger.exception("Upstream error for tennis chronological validation")
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "TENNIS_HISTORY_SOURCE_ERROR",
+                "message": "No fue posible consultar los históricos para la validación cronológica.",
+            },
+        ) from exc
+
+
 @router.get("/source-audit")
 def tennis_external_source_audit(
     league: str = Query("ATP", pattern="^(?i:ATP|WTA)$"),
@@ -186,6 +228,8 @@ def tennis_external_reconciliation_audit(
         ) from exc
 
 
+
+
 @router.get("/status")
 def historical_status():
     return {
@@ -195,6 +239,7 @@ def historical_status():
         "model_status": "not_available",
         "research_backtest": "available",
         "surface_research_backtest": "available",
+        "chronological_surface_validation": "research_only",
         "external_source_audit": "available",
         "external_source_reconciliation_audit": "available",
         "available_metrics": [
@@ -206,6 +251,8 @@ def historical_status():
             "service_and_return_stats_when_reported",
             "chronological_elo_backtest_accuracy_brier_log_loss",
             "general_vs_surface_elo_research_comparison",
+            "multi_year_chronological_validation_and_calibration",
+            "raw_surface_label_coverage_audit",
             "independent_source_monthly_coverage",
             "read_only_source_reconciliation_candidates",
         ],
