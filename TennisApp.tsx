@@ -61,6 +61,42 @@ type Match = {
   venue?: string | null;
 };
 
+type ProjectionResponse = {
+  success: boolean;
+  model_status?: string;
+  snapshot_saved?: boolean;
+  already_exists?: boolean;
+  snapshot?: {
+    match_id: string;
+    model_version: string;
+    player1_name: string;
+    player2_name: string;
+    player1_probability: number;
+    player2_probability: number;
+    player1_rating: number;
+    player2_rating: number;
+    result_status: string;
+    created_at: string;
+  };
+  notice?: string;
+  settled?: boolean;
+  already_settled?: boolean;
+  error?: string;
+  detail?: string | { message?: string };
+};
+
+type PerformanceResponse = {
+  success: boolean;
+  model_status?: string;
+  matches_settled: number;
+  correct?: number;
+  incorrect?: number;
+  accuracy: number | null;
+  brier_score: number | null;
+  log_loss: number | null;
+  message?: string;
+};
+
 const API = "/api/v1/tennis";
 
 function localDate() {
@@ -145,8 +181,11 @@ function statusLabel(match: Match) {
   return match.status_detail || "Programado";
 }
 
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { Accept: "application/json" } });
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, {
+    ...options,
+    headers: { Accept: "application/json", ...(options.headers || {}) },
+  });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = payload?.detail;
@@ -170,6 +209,61 @@ export default function TennisApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [projectionLoading, setProjectionLoading] = useState(false);
+  const [projectionError, setProjectionError] = useState("");
+  const [projectionResult, setProjectionResult] = useState<ProjectionResponse | null>(null);
+  const [settlementLoading, setSettlementLoading] = useState(false);
+  const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
+  const [performanceError, setPerformanceError] = useState("");
+
+  const loadPerformance = useCallback(async () => {
+    try {
+      const result = await request<PerformanceResponse>(`${API}/performance?league=${league}`);
+      setPerformance(result);
+      setPerformanceError("");
+    } catch (err) {
+      setPerformanceError(err instanceof Error ? err.message : "No se pudo consultar el rendimiento.");
+    }
+  }, [league]);
+
+  const saveProjection = useCallback(async (match: Match) => {
+    if (!match.match_id) return;
+    setProjectionLoading(true);
+    setProjectionError("");
+    setProjectionResult(null);
+    try {
+      const matchDate = match.start_time?.slice(0, 10) || date;
+      const params = new URLSearchParams({ league, match_date: matchDate });
+      const result = await request<ProjectionResponse>(
+        `${API}/matches/${encodeURIComponent(match.match_id)}/predict?${params.toString()}`,
+        { method: "POST" },
+      );
+      setProjectionResult(result);
+      await loadPerformance();
+    } catch (err) {
+      setProjectionError(err instanceof Error ? err.message : "No se pudo guardar la proyección.");
+    } finally {
+      setProjectionLoading(false);
+    }
+  }, [date, league, loadPerformance]);
+
+  const settleProjection = useCallback(async (match: Match) => {
+    if (!match.match_id) return;
+    setSettlementLoading(true);
+    setProjectionError("");
+    try {
+      const result = await request<ProjectionResponse>(
+        `${API}/matches/${encodeURIComponent(match.match_id)}/settle?league=${league}`,
+        { method: "POST" },
+      );
+      setProjectionResult(result);
+      await loadPerformance();
+    } catch (err) {
+      setProjectionError(err instanceof Error ? err.message : "No se pudo liquidar la proyección.");
+    } finally {
+      setSettlementLoading(false);
+    }
+  }, [league, loadPerformance]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -185,15 +279,16 @@ export default function TennisApp() {
       setHistoricalProfiles([]);
       setProfileError("");
       setNotice(
-        "El calendario está disponible. Las proyecciones se habilitarán cuando integremos y validemos las estadísticas históricas; no mostraremos probabilidades inventadas.",
+        "El motor Elo general está en fase candidata. Puedes guardar una proyección prepartido para validación; todavía no es el modelo oficial de producción.",
       );
+      void loadPerformance();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo cargar el calendario de tenis.");
       setMatches([]);
     } finally {
       setLoading(false);
     }
-  }, [league, date]);
+  }, [league, date, loadPerformance]);
 
   useEffect(() => {
     void refresh();
@@ -324,6 +419,34 @@ export default function TennisApp() {
         </p>
       ) : null}
 
+
+      <section style={{ ...panelStyle, marginBottom: 16 }} aria-label="Rendimiento del modelo de tenis">
+        <h2 style={{ margin: "0 0 10px", fontSize: 17 }}>Rendimiento del modelo candidato · {league}</h2>
+        {performanceError ? <p role="alert" style={{ color: "#ffd9de" }}>{performanceError}</p> : null}
+        {performance ? (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+              {[
+                { label: "Partidos liquidados", value: performance.matches_settled },
+                { label: "Correctos", value: performance.correct ?? "—" },
+                { label: "Incorrectos", value: performance.incorrect ?? "—" },
+                { label: "Acierto", value: formatPercent(performance.accuracy) },
+                { label: "Brier Score", value: performance.brier_score == null ? "—" : performance.brier_score.toFixed(4) },
+                { label: "Log Loss", value: performance.log_loss == null ? "—" : performance.log_loss.toFixed(4) },
+              ].map((metric) => (
+                <div key={metric.label} style={{ border: "1px solid #29445b", borderRadius: 9, padding: 12, background: "#10253a" }}>
+                  <div style={{ color: "#b7c8d8", fontSize: 12 }}>{metric.label}</div>
+                  <strong style={{ display: "block", fontSize: 20, marginTop: 4 }}>{metric.value}</strong>
+                </div>
+              ))}
+            </div>
+            <p style={{ marginBottom: 0, color: "#b7c8d8", fontSize: 12, lineHeight: 1.5 }}>
+              {performance.message || "Métricas descriptivas del registro guardado. No activan cambios automáticos de parámetros."}
+            </p>
+          </>
+        ) : <p style={{ color: "#b7c8d8" }}>Consultando métricas de rendimiento…</p>}
+      </section>
+
       <section style={{ ...panelStyle, marginBottom: 16 }} aria-label="Resumen del calendario">
         <h2 style={{ margin: "0 0 10px", fontSize: 17 }}>Resumen del {date}</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(125px, 1fr))", gap: 10 }}>
@@ -406,7 +529,7 @@ export default function TennisApp() {
               <button type="button" onClick={() => setSelectedMatchId(null)} style={secondaryButtonStyle}>Cerrar ficha</button>
             </div>
             <div style={{ margin: "14px 0", padding: 12, borderRadius: 8, border: "1px solid #ca8a04", background: "#2b2414", color: "#f8e6b0", lineHeight: 1.5 }}>
-              <strong>Estado del modelo: en preparación.</strong> Esta ficha define qué datos reuniremos; aún no calcula ganador ni porcentajes. El botón de proyección se habilitará después de conectar históricos verificables y superar una prueba retrospectiva sin filtración de datos futuros.
+              <strong>Estado del modelo: candidato, no oficial.</strong> La proyección usa Elo general y datos históricos anteriores a la fecha del partido. Se guardará una sola vez por partido y versión; las probabilidades originales no se sobrescriben. La superficie y otros factores todavía no están incluidos.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 270px), 1fr))", gap: 12 }}>
               {plannedFactors.map((group) => (
@@ -422,9 +545,44 @@ export default function TennisApp() {
               <button type="button" onClick={() => void loadHistoricalProfiles(selectedMatch)} disabled={profileLoading} style={{ ...secondaryButtonStyle, opacity: profileLoading ? 0.65 : 1 }}>
                 {profileLoading ? "Consultando históricos…" : "Cargar estadísticas históricas"}
               </button>
-              <button type="button" disabled title="Se activará después del backtest cronológico y la validación del modelo." style={{ ...secondaryButtonStyle, opacity: 0.55, cursor: "not-allowed" }}>Generar proyección (en preparación)</button>
+              {!selectedMatch.completed && selectedMatch.status !== "in" && selectedMatch.status !== "post" ? (
+                <button
+                  type="button"
+                  onClick={() => void saveProjection(selectedMatch)}
+                  disabled={projectionLoading}
+                  style={{ ...secondaryButtonStyle, opacity: projectionLoading ? 0.65 : 1 }}
+                >
+                  {projectionLoading ? "Calculando y guardando…" : "Generar y guardar proyección candidata"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void settleProjection(selectedMatch)}
+                  disabled={settlementLoading}
+                  style={{ ...secondaryButtonStyle, opacity: settlementLoading ? 0.65 : 1 }}
+                >
+                  {settlementLoading ? "Verificando resultado…" : "Liquidar proyección guardada"}
+                </button>
+              )}
               <button type="button" onClick={() => void refresh()} disabled={loading} style={secondaryButtonStyle}>{loading ? "Actualizando…" : "Actualizar calendario"}</button>
             </div>
+            {projectionError ? (
+              <div role="alert" style={{ marginTop: 14, padding: 12, border: "1px solid #b94b59", borderRadius: 8, color: "#ffd9de", overflowWrap: "anywhere" }}>
+                <strong>No se pudo completar la operación.</strong><p>{projectionError}</p>
+                <small>Para guardar proyecciones, primero debe aplicarse en Supabase la migración `migrations/20261015_create_tennis_prediction_snapshots.sql`.</small>
+              </div>
+            ) : null}
+            {projectionResult?.snapshot ? (
+              <div role="status" style={{ marginTop: 14, padding: 14, border: "1px solid #2dd4bf", borderRadius: 10, background: "#102b32" }}>
+                <strong>{projectionResult.already_exists ? "Ya existía el pronóstico original" : projectionResult.settled ? "Pronóstico liquidado" : "Pronóstico guardado"}</strong>
+                <p style={{ color: "#b7c8d8", lineHeight: 1.5 }}>{projectionResult.notice || "Las probabilidades originales se conservaron en el registro."}</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+                  <div><strong>{projectionResult.snapshot.player1_name}</strong><div>{formatPercent(projectionResult.snapshot.player1_probability)} · Elo {projectionResult.snapshot.player1_rating}</div></div>
+                  <div><strong>{projectionResult.snapshot.player2_name}</strong><div>{formatPercent(projectionResult.snapshot.player2_probability)} · Elo {projectionResult.snapshot.player2_rating}</div></div>
+                </div>
+                <p style={{ marginBottom: 0, fontSize: 12, color: "#b7c8d8" }}>Modelo {projectionResult.snapshot.model_version} · Estado {projectionResult.snapshot.result_status}</p>
+              </div>
+            ) : null}
             {profileError ? (
               <div role="alert" style={{ marginTop: 14, padding: 12, border: "1px solid #b94b59", borderRadius: 8, color: "#ffd9de" }}>{profileError}</div>
             ) : null}
