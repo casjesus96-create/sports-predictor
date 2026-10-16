@@ -180,7 +180,7 @@ def run_chronological_surface_validation(
     k_factor: float = DEFAULT_K_FACTOR,
     min_surface_matches: int = 10,
 ) -> dict[str, Any]:
-    """Validate on 2023/2024, report known 2025 reference, and reserve 2026 holdout."""
+    """Validate predeclared seasons, report a reference season, and reserve a holdout."""
     league = str(league or "").strip().upper()
     if league not in SUPPORTED_LEAGUES:
         raise ValueError("league debe ser ATP o WTA.")
@@ -191,6 +191,8 @@ def run_chronological_surface_validation(
         raise ValueError("Año de validación fuera del rango permitido.")
     if len(set(years)) != len(years):
         raise ValueError("Los años de validación, referencia y holdout deben ser distintos.")
+    if max(validation_years) >= reference_year or reference_year >= holdout_year:
+        raise ValueError("Los años deben estar ordenados: validación, referencia y holdout.")
     if not 1 <= int(warmup_years) <= 10:
         raise ValueError("warmup_years debe estar entre 1 y 10.")
     if not math.isfinite(k_factor) or not 4 <= k_factor <= 64:
@@ -212,15 +214,22 @@ def run_chronological_surface_validation(
     windows = []
     for year in years:
         if year == today.year:
-            # Current season is the untouched holdout and ends yesterday.
+            # Current season is evaluated only through yesterday.
             target_end = today - timedelta(days=1)
             target_rows = [row for y in range(max(1968, year - warmup_years), year + 1) for row in loaded.get(y, ())]
             windows.append(_evaluate_year(target_rows, year, k_factor, int(min_surface_matches), end_override=target_end))
-            windows[-1]["role"] = "holdout_partial_year"
+            windows[-1]["role"] = "holdout_partial_year" if year == holdout_year else "current_year_partial"
         else:
             target_rows = [row for y in range(max(1968, year - warmup_years), year + 1) for row in loaded.get(y, ())]
             item = _evaluate_year(target_rows, year, k_factor, int(min_surface_matches))
-            item["role"] = "validation" if year in validation_years else "reference_seen_before"
+            if year in validation_years:
+                item["role"] = "validation"
+            elif year == reference_year:
+                item["role"] = "reference_seen_before"
+            elif year == holdout_year:
+                item["role"] = "holdout_full_year"
+            else:
+                item["role"] = "unassigned"
             windows.append(item)
 
     return {
@@ -237,14 +246,18 @@ def run_chronological_surface_validation(
             "minimum_surface_matches_per_player": int(min_surface_matches),
             "same_date_batching": True,
             "calibration_orientation": "Alphabetical player orientation; observed outcome is whether player A won.",
-            "holdout_status": "2026 is partial-year and is not used to select weights.",
+            "holdout_status": (
+                "Current year through yesterday; not used to select weights."
+                if holdout_year == today.year
+                else "Completed historical year; interpret as a holdout only if it was not inspected or used to tune weights."
+            ),
             "official_model_changed": False,
         },
         "windows": windows,
         "limitations": [
             "Research-only; does not alter live predictions or the official model.",
             "2025 was already examined in prior research and is therefore reference-only, not an untouched holdout.",
-            "2026 is a partial-year holdout and must be interpreted with seasonality in mind.",
+            "A current-year holdout is partial and must be interpreted with seasonality in mind; a completed-year holdout is only untouched if it was not inspected or used to tune weights.",
             "Tournament date is not an exact match timestamp; same-date forecasts use frozen pre-date ratings.",
             "Calibration bins are descriptive and should be read with their match counts.",
             "Historical dataset licensing must be reviewed before commercial use.",
