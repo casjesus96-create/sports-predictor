@@ -16,11 +16,11 @@ def match(day, winner, loser, surface="Hard"):
 
 
 def test_calibration_uses_consistent_player_orientation():
-    rows = [(0.8, 1), (0.7, 1), (0.2, 0), (0.3, 0)]
+    rows = [(0.79, 1), (0.71, 1), (0.21, 0), (0.29, 0)]
     bins = validation._calibration(rows)
     assert sum(item["matches"] for item in bins) == 4
-    assert bins[1]["matches"] == 2
-    assert bins[1]["observed_win_rate"] == 0.0
+    assert bins[2]["matches"] == 2
+    assert bins[2]["observed_win_rate"] == 0.0
     assert bins[7]["matches"] == 2
     assert bins[7]["observed_win_rate"] == 1.0
 
