@@ -1,15 +1,22 @@
-"""Read-only API for the initial ATP/WTA tennis section.
+"""Tennis calendar and candidate Elo projection API.
 
-No predictions are exposed here: the first milestone validates match data
-before a tennis model is introduced.
+Live projections remain a validation candidate until chronological backtests,
+immutable snapshot persistence, and settlement are verified.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import requests
 from fastapi import APIRouter, HTTPException, Query
 
 from tennis_client import get_matches
+from tennis_history import HistoricalDataError, load_year
+from tennis_prediction import (
+    DEFAULT_K_FACTOR,
+    MODEL_VERSION,
+    build_pre_match_ratings,
+    project_match,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/tennis", tags=["Tennis"])
@@ -23,11 +30,12 @@ def tennis_status():
         "sport": "Tennis",
         "leagues": ["ATP", "WTA"],
         "status": "data-preview",
-        "model_status": "not_available",
+        "model_status": "candidate_not_activated",
+        "candidate_model": MODEL_VERSION,
         "message": (
-            "El calendario y los resultados están disponibles para validación. "
-            "El modelo de predicción se habilitará después de validar datos "
-            "históricos de jugadores."
+            "El motor Elo general está disponible para pruebas controladas. "
+            "No se considera modelo oficial de producción hasta completar "
+            "validación cronológica, registro inmutable y liquidación."
         ),
     }
 
@@ -58,7 +66,7 @@ def tennis_games(
             "generated_at": datetime.now(UTC).isoformat(),
             "total": min(len(matches), limit),
             "matches": matches[:limit],
-            "model_status": "not_available",
+            "model_status": "candidate_not_activated",
         }
     except HTTPException:
         raise
@@ -82,5 +90,79 @@ def tennis_games(
                 "error": "TENNIS_DATA_ERROR",
                 "message": "No fue posible procesar los partidos de tenis.",
                 "details": str(exc),
+            },
+        ) from exc
+
+
+@router.get("/projection")
+def tennis_candidate_projection(
+    player1: str = Query(..., min_length=2, max_length=120),
+    player2: str = Query(..., min_length=2, max_length=120),
+    league: str = Query("ATP", pattern="^(?i:ATP|WTA)$"),
+    cutoff_date: str = Query(..., description="Fecha del partido/corte exclusiva YYYY-MM-DD"),
+    warmup_years: int = Query(3, ge=1, le=10),
+    k_factor: float = Query(DEFAULT_K_FACTOR, ge=4.0, le=64.0),
+):
+    """Generate a candidate general-Elo projection using only pre-cutoff results."""
+    try:
+        try:
+            cutoff = date.fromisoformat(cutoff_date)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="cutoff_date debe tener formato YYYY-MM-DD.",
+            ) from exc
+
+        league_value = league.strip().upper()
+        first_year = max(1968, cutoff.year - warmup_years)
+        historical_rows = []
+        for year in range(first_year, cutoff.year + 1):
+            historical_rows.extend(load_year(league_value, year))
+
+        rating_state = build_pre_match_ratings(
+            historical_rows,
+            cutoff_date=cutoff,
+            k_factor=k_factor,
+        )
+        projection = project_match(player1, player2, rating_state)
+        projection.update({
+            "league": league_value,
+            "model_status": "candidate_not_activated",
+            "warmup_years": warmup_years,
+            "historical_source": "Jeff Sackmann archive mirror",
+            "snapshot_saved": False,
+            "notice": (
+                "Esta respuesta no se guarda como pronóstico oficial. "
+                "No la uses para medir rendimiento de producción hasta integrar "
+                "y verificar snapshots inmutables y liquidación."
+            ),
+        })
+        return projection
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HistoricalDataError as exc:
+        logger.warning("Historical tennis candidate projection unavailable: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "TENNIS_HISTORY_SOURCE_ERROR", "message": str(exc)},
+        ) from exc
+    except requests.RequestException as exc:
+        logger.exception("Upstream error for tennis candidate projection")
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "TENNIS_HISTORY_SOURCE_ERROR",
+                "message": "No fue posible consultar los históricos de tenis.",
+            },
+        ) from exc
+    except Exception as exc:
+        logger.exception("Unexpected tennis candidate projection failure")
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "TENNIS_PROJECTION_ERROR",
+                "message": "No fue posible calcular la proyección candidata.",
             },
         ) from exc
