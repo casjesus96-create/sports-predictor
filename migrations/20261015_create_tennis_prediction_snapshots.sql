@@ -32,3 +32,8 @@ create index if not exists idx_tennis_snapshot_event on tennis_prediction_snapsh
 create index if not exists idx_tennis_snapshot_created on tennis_prediction_snapshots(created_at desc);
 create index if not exists idx_tennis_snapshot_pending on tennis_prediction_snapshots(result_status)
     where result_status = 'PENDING';
+
+-- A match has one immutable snapshot per model version. A repeated request
+-- returns the original row rather than overwriting the pre-match probabilities.
+create unique index if not exists uq_tennis_snapshot_match_model
+    on tennis_prediction_snapshots(league, match_id, model_version);
