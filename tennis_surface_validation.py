@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from tennis_backtest import (
@@ -56,8 +56,10 @@ def _calibration(rows: list[tuple[float, int]], bins: int = 10) -> list[dict[str
     return output
 
 
-def _evaluate_year(rows: list[dict[str, str]], year: int, k_factor: float, min_surface_matches: int) -> dict[str, Any]:
-    start, end = date(year, 1, 1), min(date(year, 12, 31), datetime.now(timezone.utc).date().replace(day=max(1, datetime.now(timezone.utc).date().day)))
+def _evaluate_year(rows: list[dict[str, str]], year: int, k_factor: float, min_surface_matches: int, end_override: date | None = None) -> dict[str, Any]:
+    today = datetime.now(timezone.utc).date()
+    default_end = date(year, 12, 31) if year < today.year else min(date(year, 12, 31), today - timedelta(days=1))
+    start, end = date(year, 1, 1), min(default_end, end_override) if end_override else default_end
     by_date: dict[date, list[dict[str, str]]] = defaultdict(list)
     raw_surface_counts: dict[str, int] = defaultdict(int)
     excluded = {"walkover": 0, "invalid": 0, "missing_date": 0}
@@ -211,10 +213,9 @@ def run_chronological_surface_validation(
     for year in years:
         if year == today.year:
             # Current season is the untouched holdout and ends yesterday.
-            target_end = today.replace(day=today.day) 
+            target_end = today - timedelta(days=1)
             target_rows = [row for y in range(max(1968, year - warmup_years), year + 1) for row in loaded.get(y, ())]
-            windows.append(_evaluate_year(target_rows, year, k_factor, int(min_surface_matches)))
-            windows[-1]["evaluation_end_date"] = min(target_end, date(year, 12, 31)).isoformat()
+            windows.append(_evaluate_year(target_rows, year, k_factor, int(min_surface_matches), end_override=target_end))
             windows[-1]["role"] = "holdout_partial_year"
         else:
             target_rows = [row for y in range(max(1968, year - warmup_years), year + 1) for row in loaded.get(y, ())]
