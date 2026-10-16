@@ -359,8 +359,9 @@ export default function TennisApp() {
         <h1 style={{ margin: "6px 0 8px" }}>🎾 Tennis Predictor</h1>
         <p style={{ marginTop: 0, lineHeight: 1.5 }}>
           Calendario de individuales, torneos, rondas y marcadores ATP/WTA.
-          Primero verificamos la cobertura y calidad de los datos; no mostramos
-          porcentajes predictivos sin una base estadística validada.
+          Estamos validando el motor Elo general. Las proyecciones se guardan
+          con su versión y corte temporal, pero el modelo sigue siendo candidato
+          hasta superar la validación cronológica.
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 180, fontWeight: 800, fontSize: 13 }}>
@@ -529,7 +530,7 @@ export default function TennisApp() {
               <button type="button" onClick={() => setSelectedMatchId(null)} style={secondaryButtonStyle}>Cerrar ficha</button>
             </div>
             <div style={{ margin: "14px 0", padding: 12, borderRadius: 8, border: "1px solid #ca8a04", background: "#2b2414", color: "#f8e6b0", lineHeight: 1.5 }}>
-              <strong>Estado del modelo: candidato, no oficial.</strong> La proyección usa Elo general y datos históricos anteriores a la fecha del partido. Se guardará una sola vez por partido y versión; las probabilidades originales no se sobrescriben. La superficie y otros factores todavía no están incluidos.
+              <strong>Estado del modelo: candidato, no oficial.</strong> La proyección usa Elo general y datos históricos anteriores a la fecha del partido. Se guardará una sola vez por partido y versión; las probabilidades originales no se sobrescriben. La superficie y otros factores todavía no están incluidos. Para guardar/liquidar registros, la migración de snapshots de tenis debe estar aplicada en Supabase.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 270px), 1fr))", gap: 12 }}>
               {plannedFactors.map((group) => (
