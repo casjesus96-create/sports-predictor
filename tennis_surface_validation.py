@@ -62,6 +62,7 @@ def _evaluate_year(rows: list[dict[str, str]], year: int, k_factor: float, min_s
     start, end = date(year, 1, 1), min(default_end, end_override) if end_override else default_end
     by_date: dict[date, list[dict[str, str]]] = defaultdict(list)
     raw_surface_counts: dict[str, int] = defaultdict(int)
+    normalized_surface_counts: dict[str, int] = defaultdict(int)
     excluded = {"walkover": 0, "invalid": 0, "missing_date": 0}
     for row in rows:
         played = _match_date(row)
@@ -70,9 +71,13 @@ def _evaluate_year(rows: list[dict[str, str]], year: int, k_factor: float, min_s
             continue
         if played > end:
             continue
-        raw = str(row.get("surface") or "").strip()
+        raw = str(row.get("surface") or "")
+        normalized_surface = _normalize_surface(raw)
         if start <= played <= end:
-            raw_surface_counts[raw if raw else "<blank>"] += 1
+            # Preserve the source label verbatim for diagnostics; normalize only
+            # the separate normalized counter used to inspect data consistency.
+            raw_surface_counts[raw if raw.strip() else "<blank>"] += 1
+            normalized_surface_counts[normalized_surface or "<unknown>"] += 1
         score = str(row.get("score") or "").casefold().strip()
         if "walkover" in score or "w/o" in score or score in {"wo", "def"}:
             excluded["walkover"] += int(start <= played <= end)
@@ -167,6 +172,7 @@ def _evaluate_year(rows: list[dict[str, str]], year: int, k_factor: float, min_s
         },
         "surface_coverage": surface_coverage,
         "raw_surface_labels_in_evaluation_window": dict(sorted(raw_surface_counts.items(), key=lambda item: item[0].casefold())),
+        "normalized_surface_labels_in_evaluation_window": dict(sorted(normalized_surface_counts.items(), key=lambda item: item[0].casefold())),
         "data_quality": {"excluded_walkover": excluded["walkover"], "excluded_invalid": excluded["invalid"], "rows_without_valid_date": excluded["missing_date"]},
     }
 
@@ -246,6 +252,9 @@ def run_chronological_surface_validation(
             "minimum_surface_matches_per_player": int(min_surface_matches),
             "same_date_batching": True,
             "calibration_orientation": "Alphabetical player orientation; observed outcome is whether player A won.",
+            "as_of_date_utc": today.isoformat(),
+            "holdout_cutoff_exclusive": today.isoformat() if holdout_year == today.year else None,
+            "holdout_evaluation_end_date": (today - timedelta(days=1)).isoformat() if holdout_year == today.year else None,
             "holdout_status": (
                 "Current year through yesterday; not used to select weights."
                 if holdout_year == today.year
