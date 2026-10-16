@@ -30,7 +30,7 @@ def _summary(rows: list[tuple[float, int]]) -> dict[str, Any]:
     if not rows:
         return {"matches_evaluated": 0, "accuracy": None, "brier_score": None, "log_loss": None}
     n = len(rows)
-    accuracy = sum((p >= 0.5) == bool(y) for p, y in rows) / n
+    accuracy = sum(1.0 if (p > 0.5 and y == 1) or (p < 0.5 and y == 0) else 0.5 if math.isclose(p, 0.5, abs_tol=1e-12) else 0.0 for p, y in rows) / n
     brier = sum((p - y) ** 2 for p, y in rows) / n
     loss = sum(-math.log(max(1e-15, min(1 - 1e-15, p if y else 1 - p))) for p, y in rows) / n
     return {
