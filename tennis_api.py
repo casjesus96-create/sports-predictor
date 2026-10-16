@@ -124,6 +124,10 @@ def tennis_candidate_projection(
             cutoff_date=cutoff,
             k_factor=k_factor,
         )
+        if rating_state["matches_used"] == 0:
+            raise HistoricalDataError(
+                "No hay partidos históricos válidos anteriores al corte para construir el rating."
+            )
         projection = project_match(player1, player2, rating_state)
         projection.update({
             "league": league_value,
