@@ -58,3 +58,41 @@ def test_invalid_odds_rejected():
         assert "decimal_odds" in str(exc)
     else:
         raise AssertionError("Expected invalid odds to raise ValueError")
+
+
+
+def test_two_odds_estimate_no_vig_market_probability():
+    result = evaluate_decision(
+        sport="MLB",
+        model_probability=0.55,
+        decimal_odds=1.90,
+        opponent_decimal_odds=2.10,
+        data_quality=90,
+    )
+    assert result["calculated_no_vig_market_probability"] is not None
+    assert result["market_overround_percentage"] > 0
+    assert "normalizando" in " ".join(result["warnings"])
+
+
+def test_opponent_probability_pair_consistency_warning():
+    result = evaluate_decision(
+        sport="NBA",
+        model_probability=0.60,
+        decimal_odds=1.80,
+        opponent_model_probability=0.35,
+        data_quality=90,
+    )
+    assert result["model_probabilities_consistent"] is False
+    assert any("no suman" in warning for warning in result["warnings"])
+
+
+def test_complementary_probabilities_are_consistent():
+    result = evaluate_decision(
+        sport="TENNIS",
+        model_probability=0.554,
+        decimal_odds=2.15,
+        opponent_model_probability=0.446,
+        opponent_decimal_odds=1.80,
+        data_quality=90,
+    )
+    assert result["model_probabilities_consistent"] is True
