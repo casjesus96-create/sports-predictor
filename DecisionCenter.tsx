@@ -8,6 +8,15 @@ type DecisionResult = {
   label: string;
   model_probability: number;
   decimal_odds: number;
+  opponent_model_probability: number | null;
+  model_probability_pair_sum: number | null;
+  model_probabilities_consistent: boolean | null;
+  opponent_decimal_odds: number | null;
+  opponent_implied_probability: number | null;
+  calculated_no_vig_market_probability: number | null;
+  market_comparison_probability: number | null;
+  market_implied_total: number | null;
+  market_overround_percentage: number | null;
   implied_probability: number;
   fair_odds: number;
   edge_percentage_points: number;
@@ -42,6 +51,8 @@ export default function DecisionCenter() {
   const [sport, setSport] = useState<Sport>("MLB");
   const [probability, setProbability] = useState("60");
   const [odds, setOdds] = useState("1.80");
+  const [opponentProbability, setOpponentProbability] = useState("");
+  const [opponentOdds, setOpponentOdds] = useState("");
   const [marketProbability, setMarketProbability] = useState("");
   const [dataQuality, setDataQuality] = useState("85");
   const [riskSignals, setRiskSignals] = useState<string[]>([]);
@@ -66,6 +77,22 @@ export default function DecisionCenter() {
       if (!Number.isInteger(quality) || quality < 0 || quality > 100) {
         throw new Error("La calidad de datos debe ser un número entero entre 0 y 100.");
       }
+      let otherProbability: number | null = null;
+      if (opponentProbability.trim() !== "") {
+        const op = Number(opponentProbability);
+        if (!Number.isFinite(op) || op <= 0 || op >= 100) {
+          throw new Error("La probabilidad del equipo rival debe estar entre 0 y 100.");
+        }
+        otherProbability = op / 100;
+      }
+      let otherOdds: number | null = null;
+      if (opponentOdds.trim() !== "") {
+        const oo = Number(opponentOdds);
+        if (!Number.isFinite(oo) || oo <= 1 || oo > 1000) {
+          throw new Error("La cuota decimal del equipo rival debe ser mayor que 1 y como máximo 1000.");
+        }
+        otherOdds = oo;
+      }
       let market: number | null = null;
       if (marketProbability.trim() !== "") {
         const m = Number(marketProbability);
@@ -85,6 +112,8 @@ export default function DecisionCenter() {
           data_quality: quality,
           risk_signals: riskSignals,
           market_probability: market,
+          opponent_model_probability: otherProbability,
+          opponent_decimal_odds: otherOdds,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -132,7 +161,7 @@ export default function DecisionCenter() {
         </p>
         <h1 style={{ margin: "0 0 8px", fontSize: 28 }}>Centro de Decisión</h1>
         <p style={{ margin: 0, lineHeight: 1.55, color: "#64748b" }}>
-          Compara la probabilidad estimada con la cuota, calcula el valor esperado y registra señales de riesgo antes de decidir.
+          Compara la probabilidad estimada con la cuota, calcula el valor esperado y registra señales de riesgo antes de decidir. Puedes introducir la probabilidad y cuota del otro equipo para comprobar coherencia y estimar el margen del mercado.
         </p>
       </header>
 
@@ -155,7 +184,15 @@ export default function DecisionCenter() {
           <input id="decision-odds" type="number" min="1.01" max="1000" step="0.01" value={odds} onChange={(e) => setOdds(e.target.value)} style={fieldStyle} />
         </div>
         <div>
-          <label style={labelStyle} htmlFor="decision-market">Probabilidad de mercado (%) · opcional</label>
+          <label style={labelStyle} htmlFor="decision-opponent-probability">Probabilidad del otro equipo (%) · opcional</label>
+          <input id="decision-opponent-probability" type="number" min="0.1" max="99.9" step="0.1" value={opponentProbability} onChange={(e) => setOpponentProbability(e.target.value)} placeholder="Ej. 44.6" style={fieldStyle} />
+        </div>
+        <div>
+          <label style={labelStyle} htmlFor="decision-opponent-odds">Cuota decimal del otro equipo · opcional</label>
+          <input id="decision-opponent-odds" type="number" min="1.01" max="1000" step="0.01" value={opponentOdds} onChange={(e) => setOpponentOdds(e.target.value)} placeholder="Ej. 2.15" style={fieldStyle} />
+        </div>
+        <div>
+          <label style={labelStyle} htmlFor="decision-market">Probabilidad de mercado sin margen (%) · opcional</label>
           <input id="decision-market" type="number" min="0.1" max="99.9" step="0.1" value={marketProbability} onChange={(e) => setMarketProbability(e.target.value)} placeholder="Ej. 52.5" style={fieldStyle} />
         </div>
         <div>
@@ -207,6 +244,19 @@ export default function DecisionCenter() {
           </div>
           {result.model_market_gap_percentage_points !== null && (
             <p>Brecha modelo–mercado: <strong>{result.model_market_gap_percentage_points >= 0 ? "+" : ""}{result.model_market_gap_percentage_points.toFixed(2)} puntos porcentuales</strong>.</p>
+          )}
+          {result.calculated_no_vig_market_probability !== null && (
+            <div style={{ ...cardStyle, marginTop: 10 }}>
+              <strong>Mercado ajustado por margen (estimación)</strong>
+              <p style={{ margin: "6px 0" }}>Probabilidad sin margen estimada para esta selección: <strong>{(result.calculated_no_vig_market_probability * 100).toFixed(2)}%</strong>.</p>
+              {result.market_overround_percentage !== null && <p style={{ margin: "6px 0" }}>Margen/overround aproximado de ambas cuotas: <strong>{result.market_overround_percentage >= 0 ? "+" : ""}{result.market_overround_percentage.toFixed(2)}%</strong>.</p>}
+              <small>Se normalizan las probabilidades implícitas de las dos cuotas; es una aproximación, no una estimación oficial de la casa.</small>
+            </div>
+          )}
+          {result.model_probabilities_consistent !== null && (
+            <p style={{ color: result.model_probabilities_consistent ? "#166534" : "#b91c1c" }}>
+              Suma de probabilidades del modelo para ambos equipos: <strong>{((result.model_probability_pair_sum || 0) * 100).toFixed(2)}%</strong>. {result.model_probabilities_consistent ? "Consistente con un mercado de dos resultados." : "Revisar: las probabilidades no suman aproximadamente 100%."}
+            </p>
           )}
           {result.warnings.length > 0 && (
             <div style={{ marginTop: 12 }}>
