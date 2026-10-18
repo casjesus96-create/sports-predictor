@@ -3,8 +3,9 @@ import MLBApp from "./MLBApp";
 import NFLApp from "./NFLApp";
 import NBAApp from "./NBAApp";
 import TennisApp from "./TennisApp";
+import DecisionCenter from "./DecisionCenter";
 
-type Sport = "MLB" | "NFL" | "NBA" | "TENNIS";
+type Sport = "MLB" | "NFL" | "NBA" | "TENNIS" | "DECISION";
 
 export default function App() {
   const [sport, setSport] = useState<Sport>("NBA");
@@ -68,9 +69,18 @@ export default function App() {
         >
           🎾 Tennis
         </button>
+
+        <button
+          type="button"
+          aria-pressed={sport === "DECISION"}
+          onClick={() => setSport("DECISION")}
+          style={buttonStyle(sport === "DECISION")}
+        >
+          📊 Centro de Decisión
+        </button>
       </nav>
 
-      {sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
+      {sport === "DECISION" ? <DecisionCenter /> : sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
     </>
   );
 }
