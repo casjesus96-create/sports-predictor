@@ -14,6 +14,7 @@ type SavedPrediction = {
   away_probability: number;
   data_quality: number | null;
   result_status: string;
+  auto_risk_signals?: string[];
 };
 type HistoryItem = {
   id: string;
@@ -295,6 +296,17 @@ export default function DecisionCenter() {
             <small style={{ display: "block", marginTop: 6, color: "#64748b" }}>
               Snapshot oficial {selectedPrediction.model_version || ""} · evento {selectedPrediction.event_id}. La probabilidad se lee del registro guardado, no del campo editable.
             </small>
+            {Boolean(selectedPrediction.auto_risk_signals?.length) && (
+              <div role="status" style={{ marginTop: 10, padding: 10, border: "1px solid #f59e0b", borderRadius: 8, background: "#fffbeb", color: "#92400e" }}>
+                <strong>Riesgos detectados en los datos guardados</strong>
+                <ul style={{ margin: "6px 0 0", paddingLeft: 20 }}>
+                  {selectedPrediction.auto_risk_signals!.map((signal) => <li key={signal}>{signal}</li>)}
+                </ul>
+              </div>
+            )}
+            {selectedPrediction.auto_risk_signals?.length === 0 && (
+              <small style={{ display: "block", marginTop: 8, color: "#166534" }}>No se detectaron señales automáticas en los campos disponibles. Esto no confirma que no existan lesiones o cambios de alineación.</small>
+            )}
           </div>
         )}
 
@@ -333,7 +345,7 @@ export default function DecisionCenter() {
 
       <section style={{ ...cardStyle, marginTop: 14 }}>
         <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>Señales de riesgo</h2>
-        <p style={{ margin: "0 0 12px", color: "#64748b", lineHeight: 1.5 }}>Marca solo factores que hayas verificado; no se detectan automáticamente en esta versión.</p>
+        <p style={{ margin: "0 0 12px", color: "#64748b", lineHeight: 1.5 }}>Las señales automáticas se calculan a partir de los datos guardados disponibles. Marca manualmente solo los factores adicionales que hayas verificado.</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
           {riskOptions.map((option) => (
             <label key={option} style={{ display: "flex", alignItems: "flex-start", gap: 9, lineHeight: 1.4 }}>
