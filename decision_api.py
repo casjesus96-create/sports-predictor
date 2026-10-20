@@ -289,6 +289,106 @@ def evaluate(request: DecisionEvaluationRequest):
         ) from exc
 
 
+@router.get("/performance")
+def model_performance(limit: int = Query(2000, ge=1, le=5000)):
+    """Aggregate verified settled snapshots by sport and model version.
+
+    Accuracy measures whether the most likely side won. Brier score and log
+    loss measure probability quality; lower values are better. Rows lacking
+    valid final scores or probabilities are excluded.
+    """
+    import math
+
+    try:
+        response = (
+            get_supabase_client()
+            .table("prediction_snapshots")
+            .select(
+                "id,sport,league,model_version,result_status,home_probability,"
+                "away_probability,actual_home_score,actual_away_score,settled_at"
+            )
+            .eq("result_status", "SETTLED")
+            .order("settled_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        groups = {}
+        excluded = 0
+        for row in response.data or []:
+            try:
+                home_p = float(row.get("home_probability"))
+                away_p = float(row.get("away_probability"))
+                home_score = float(row.get("actual_home_score"))
+                away_score = float(row.get("actual_away_score"))
+                if (
+                    not math.isfinite(home_p) or not math.isfinite(away_p)
+                    or not math.isfinite(home_score) or not math.isfinite(away_score)
+                    or not 0 < home_p < 1 or not 0 < away_p < 1
+                    or home_score == away_score
+                ):
+                    raise ValueError("invalid settled row")
+            except (TypeError, ValueError):
+                excluded += 1
+                continue
+
+            sport_name = _sport_from_row(row)
+            if sport_name not in {"MLB", "NFL", "NBA", "TENNIS"}:
+                excluded += 1
+                continue
+            model = str(row.get("model_version") or "unknown")
+            key = (sport_name, model)
+            stats = groups.setdefault(key, {
+                "sport": sport_name, "model_version": model, "sample_size": 0,
+                "correct": 0, "incorrect": 0, "brier_total": 0.0,
+                "log_loss_total": 0.0,
+            })
+            actual_home_win = 1 if home_score > away_score else 0
+            predicted_home_win = home_p > away_p
+            stats["sample_size"] += 1
+            if predicted_home_win == bool(actual_home_win):
+                stats["correct"] += 1
+            else:
+                stats["incorrect"] += 1
+            stats["brier_total"] += (home_p - actual_home_win) ** 2
+            clipped = min(max(home_p, 1e-15), 1 - 1e-15)
+            stats["log_loss_total"] += -math.log(
+                clipped if actual_home_win else 1 - clipped
+            )
+
+        models = []
+        for stats in groups.values():
+            count = stats["sample_size"]
+            models.append({
+                "sport": stats["sport"],
+                "model_version": stats["model_version"],
+                "sample_size": count,
+                "correct": stats["correct"],
+                "incorrect": stats["incorrect"],
+                "accuracy_percentage": round(stats["correct"] / count * 100, 2),
+                "brier_score": round(stats["brier_total"] / count, 6),
+                "log_loss": round(stats["log_loss_total"] / count, 6),
+            })
+        models.sort(key=lambda item: (item["sport"], item["model_version"]))
+        return {
+            "success": True,
+            "sample_limit": limit,
+            "groups": models,
+            "settled_rows_excluded": excluded,
+            "methodology": {
+                "accuracy": "Ganador más probable comparado con marcador final",
+                "brier_score": "Error cuadrático medio de la probabilidad local; menor es mejor",
+                "log_loss": "Pérdida logarítmica de la probabilidad local; menor es mejor",
+                "minimum_sample_warning": "Las muestras pequeñas son inestables; no se recomienda ajustar el modelo con pocos partidos.",
+            },
+        }
+    except Exception as exc:
+        logger.exception("No se pudo calcular el rendimiento por modelo")
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible calcular el rendimiento. Comprueba la conexión con prediction_snapshots.",
+        ) from exc
+
+
 @router.get("/history")
 def decision_history(limit: int = Query(100, ge=1, le=500)):
     """Read saved evaluations and derive outcome when the source prediction settles."""
