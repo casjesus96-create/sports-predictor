@@ -29,6 +29,8 @@ type HistoryItem = {
   evaluated_at: string;
   outcome_status: string;
   actual_winner: string | null;
+  actual_home_score?: number | string | null;
+  actual_away_score?: number | string | null;
 };
 type DecisionResult = {
   success: boolean;
@@ -387,7 +389,7 @@ export default function DecisionCenter() {
         {history.length === 0 ? <p style={{ color: "#64748b" }}>No hay evaluaciones registradas visibles todavía. El historial aparecerá después de aplicar la migración de Supabase y guardar la primera evaluación.</p> : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead><tr>{["Fecha", "Deporte", "Selección", "Cuota", "EV teórico", "Estado"].map((heading) => <th key={heading} style={{ textAlign: "left", padding: "9px 7px", borderBottom: "1px solid #cbd5e1" }}>{heading}</th>)}</tr></thead>
+              <thead><tr>{["Fecha", "Deporte", "Selección", "Cuota", "EV teórico", "Resultado real", "Marcador", "Estado"].map((heading) => <th key={heading} style={{ textAlign: "left", padding: "9px 7px", borderBottom: "1px solid #cbd5e1" }}>{heading}</th>)}</tr></thead>
               <tbody>{history.map((item) => (
                 <tr key={item.id}>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{item.evaluated_at ? new Date(item.evaluated_at).toLocaleDateString() : "—"}</td>
@@ -395,6 +397,8 @@ export default function DecisionCenter() {
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.selected_team || "Entrada manual"}</td>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{Number(item.decimal_odds).toFixed(2)}</td>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{Number(item.expected_value_percent) >= 0 ? "+" : ""}{Number(item.expected_value_percent).toFixed(2)}%</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.actual_winner || (item.outcome_status === "PENDING" ? "Pendiente" : item.outcome_status === "MANUAL_UNTRACKED" ? "Sin seguimiento" : "—")}</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{item.actual_home_score != null && item.actual_away_score != null ? `${item.actual_away_score}–${item.actual_home_score}` : "—"}</td>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{outcomeLabels[item.outcome_status] || item.outcome_status}</td>
                 </tr>
               ))}</tbody>
