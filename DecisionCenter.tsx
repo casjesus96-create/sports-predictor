@@ -111,6 +111,7 @@ export default function DecisionCenter() {
   const [selectedSide, setSelectedSide] = useState<Side>("home");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historySummary, setHistorySummary] = useState<{total: number; settled: number; correct: number; incorrect: number; accuracy_percentage: number | null} | null>(null);
+  const [performance, setPerformance] = useState<{groups: Array<{sport: Sport; model_version: string; sample_size: number; correct: number; incorrect: number; accuracy_percentage: number; brier_score: number; log_loss: number}>; settled_rows_excluded: number} | null>(null);
   const [result, setResult] = useState<DecisionResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
@@ -141,6 +142,20 @@ export default function DecisionCenter() {
     }
   }, []);
 
+  const loadPerformance = useCallback(async () => {
+    try {
+      const response = await fetch(`${API}/performance?limit=2000`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error("No se pudo cargar el rendimiento por modelo.");
+      setPerformance({
+        groups: Array.isArray(data.groups) ? data.groups : [],
+        settled_rows_excluded: Number(data.settled_rows_excluded || 0),
+      });
+    } catch {
+      setPerformance(null);
+    }
+  }, []);
+
   const loadPredictions = useCallback(async () => {
     setLoadingData(true);
     setDataMessage("");
@@ -161,7 +176,8 @@ export default function DecisionCenter() {
   useEffect(() => {
     void loadPredictions();
     void loadHistory();
-  }, [loadPredictions, loadHistory]);
+    void loadPerformance();
+  }, [loadPredictions, loadHistory, loadPerformance]);
 
   useEffect(() => {
     if (!selectedPrediction) return;
@@ -282,7 +298,7 @@ export default function DecisionCenter() {
           </select>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
             <small style={{ color: "#64748b" }}>{loadingData ? "Cargando snapshots…" : dataMessage}</small>
-            <button type="button" onClick={() => { void loadPredictions(); void loadHistory(); }} style={{ minHeight: 34, padding: "5px 10px", border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#0f172a" }}>Actualizar datos</button>
+            <button type="button" onClick={() => { void loadPredictions(); void loadHistory(); void loadPerformance(); }} style={{ minHeight: 34, padding: "5px 10px", border: "1px solid #cbd5e1", borderRadius: 7, background: "#fff", color: "#0f172a" }}>Actualizar datos</button>
           </div>
         </div>
 
@@ -389,6 +405,33 @@ export default function DecisionCenter() {
           <p style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5, marginBottom: 0 }}>{result.basis} No garantiza resultados.</p>
         </section>
       )}
+
+      <section style={{ ...cardStyle, marginTop: 18 }}>
+        <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Rendimiento histórico por modelo</h2>
+        <p style={{ margin: "0 0 12px", color: "#64748b", lineHeight: 1.5 }}>
+          Solo incluye snapshots liquidados con probabilidades y marcador final válidos. La precisión mide si el lado más probable ganó; Brier y Log Loss miden calidad probabilística (menor es mejor). Las muestras pequeñas no permiten conclusiones firmes.
+        </p>
+        {!performance ? <p style={{ color: "#64748b" }}>Rendimiento temporalmente no disponible. Pulsa “Actualizar datos” para reintentar.</p> : performance.groups.length === 0 ? <p style={{ color: "#64748b" }}>Todavía no hay suficientes registros liquidados con marcador válido para calcular métricas.</p> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead><tr>{["Deporte", "Modelo", "Muestra", "Aciertos", "Errores", "Precisión", "Brier ↓", "Log Loss ↓"].map((heading) => <th key={heading} style={{ textAlign: "left", padding: "9px 7px", borderBottom: "1px solid #cbd5e1" }}>{heading}</th>)}</tr></thead>
+              <tbody>{performance.groups.map((item) => (
+                <tr key={item.sport + ":" + item.model_version}>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.sport}</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.model_version}</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.sample_size}</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.correct}</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.incorrect}</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.accuracy_percentage.toFixed(2)}%</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.brier_score.toFixed(4)}</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.log_loss.toFixed(4)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+        {performance && performance.settled_rows_excluded > 0 && <small style={{ display: "block", marginTop: 8, color: "#64748b" }}>Registros liquidados excluidos por falta de marcador o probabilidades válidas: {performance.settled_rows_excluded}.</small>}
+      </section>
 
       <section style={{ ...cardStyle, marginTop: 18 }}>
         <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Historial y validación</h2>
