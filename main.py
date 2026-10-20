@@ -1011,6 +1011,65 @@ def settle_game(
             }
 
         # -------------------------------------------------
+        # RECONCILIAR CON EL FEED OFICIAL DEL JUEGO
+        # -------------------------------------------------
+        # El endpoint schedule puede devolver un estado Final sin scores
+        # para juegos reprogramados. Antes de rechazar la liquidación,
+        # consultar el feed oficial del gamePk y aceptar solo un Final
+        # con carreras completas. Nunca usar un score de otro gamePk.
+        if home_score is None or away_score is None:
+            try:
+                feed_response = requests.get(
+                    f"https://statsapi.mlb.com/api/v1.1/game/{event_id}/feed/live",
+                    timeout=20,
+                    headers=MLB_HEADERS,
+                )
+                feed_response.raise_for_status()
+                feed_data = feed_response.json()
+                feed_game_data = feed_data.get("gameData") or {}
+                feed_status = feed_game_data.get("status") or {}
+                feed_live = feed_data.get("liveData") or {}
+                feed_linescore = feed_live.get("linescore") or {}
+                feed_teams = feed_game_data.get("teams") or {}
+                feed_home = feed_teams.get("home") or {}
+                feed_away = feed_teams.get("away") or {}
+                feed_home_score = (feed_linescore.get("teams") or {}).get("home") or {}
+                feed_away_score = (feed_linescore.get("teams") or {}).get("away") or {}
+
+                if feed_status.get("abstractGameState") == "Final":
+                    if feed_home_score.get("runs") is not None and feed_away_score.get("runs") is not None:
+                        game_status = "Final"
+                        detailed_state = feed_status.get("detailedState") or "Final"
+                        home_team = feed_home.get("name") or home_team
+                        away_team = feed_away.get("name") or away_team
+                        home_score = feed_home_score.get("runs")
+                        away_score = feed_away_score.get("runs")
+            except (requests.exceptions.RequestException, ValueError, TypeError):
+                # Preserve the original safe response if the feed is unavailable.
+                pass
+
+        # -------------------------------------------------
+        # NO LIQUIDAR EVENTOS APLAZADOS/CANCELADOS
+        # -------------------------------------------------
+        normalized_detail = str(detailed_state or "").strip().lower()
+        if any(token in normalized_detail for token in ("postponed", "cancelled", "canceled")):
+            return {
+                "success": False,
+                "event_id": event_id,
+                "status": "POSTPONED",
+                "detailed_status": detailed_state,
+                "home": home_team,
+                "away": away_team,
+                "home_score": home_score,
+                "away_score": away_score,
+                "message": (
+                    "MLB identifica este gamePk como aplazado o cancelado. "
+                    "No se liquidó para evitar registrar un resultado falso; "
+                    "verifica el gamePk del encuentro realmente disputado."
+                ),
+            }
+
+        # -------------------------------------------------
         # VALIDAR MARCADOR
         # -------------------------------------------------
 
