@@ -59,6 +59,37 @@ def _sport_from_row(row: dict) -> str:
     return aliases.get(value, value)
 
 
+
+def _detect_snapshot_risks(row: dict) -> list[str]:
+    """Detect only risks supported by fields actually stored in the official snapshot."""
+    risks = []
+    quality = row.get("data_quality")
+    try:
+        quality_value = float(quality) if quality is not None else None
+    except (TypeError, ValueError):
+        quality_value = None
+
+    if quality_value is None or quality_value < 75:
+        risks.append("Datos incompletos o contradictorios")
+
+    if _sport_from_row(row) == "MLB":
+        features = row.get("features") or {}
+        pitchers = features.get("probable_pitchers") or {}
+        for side in ("home", "away"):
+            pitcher = pitchers.get(side) or {}
+            name = (
+                pitcher.get("pitcher_name")
+                or pitcher.get("name")
+                or pitcher.get("fullName")
+            )
+            if not isinstance(name, str) or not name.strip():
+                risks.append("MLB: abridor no confirmado")
+                break
+
+    # No inferimos lesiones, titulares confirmados ni movimientos de cuotas
+    # si el snapshot no contiene una fuente verificable para esos datos.
+    return list(dict.fromkeys(risks))
+
 def _snapshot_summary(row: dict) -> dict | None:
     home_probability = _as_float(row.get("home_probability"))
     away_probability = _as_float(row.get("away_probability"))
@@ -92,6 +123,7 @@ def _snapshot_summary(row: dict) -> dict | None:
         "away_probability": away_probability,
         "data_quality": row.get("data_quality"),
         "confidence": row.get("confidence"),
+        "auto_risk_signals": _detect_snapshot_risks(row),
     }
 
 
@@ -170,6 +202,8 @@ def evaluate(request: DecisionEvaluationRequest):
         except (TypeError, ValueError):
             quality = 0
         features = snapshot.get("features") or {}
+        auto_risk_signals = _detect_snapshot_risks(snapshot)
+        effective_risk_signals = list(dict.fromkeys(request.risk_signals + auto_risk_signals))
         game = features.get("game") or {}
         home_team = snapshot_summary["home"]
         away_team = snapshot_summary["away"]
@@ -193,6 +227,8 @@ def evaluate(request: DecisionEvaluationRequest):
         model_version = None
         event_id = None
         source_snapshot_id = None
+        auto_risk_signals = []
+        effective_risk_signals = list(dict.fromkeys(request.risk_signals))
 
     try:
         result = evaluate_decision(
@@ -200,7 +236,7 @@ def evaluate(request: DecisionEvaluationRequest):
             model_probability=probability,
             decimal_odds=request.decimal_odds,
             data_quality=quality,
-            risk_signals=request.risk_signals,
+            risk_signals=effective_risk_signals,
             market_probability=request.market_probability,
             opponent_model_probability=opponent_probability,
             opponent_decimal_odds=request.opponent_decimal_odds,
@@ -219,7 +255,7 @@ def evaluate(request: DecisionEvaluationRequest):
         "model_probability": probability,
         "decimal_odds": request.decimal_odds,
         "data_quality": quality,
-        "risk_signals": request.risk_signals,
+        "risk_signals": effective_risk_signals,
         "classification": result["classification"],
         "expected_value_percent": result["expected_value_percent"],
         "evaluation": result,
@@ -231,6 +267,7 @@ def evaluate(request: DecisionEvaluationRequest):
             raise RuntimeError("Supabase no devolvió el registro guardado.")
         result["evaluation_id"] = str(saved_rows[0].get("id"))
         result["saved"] = True
+        result["auto_risk_signals"] = auto_risk_signals
         result["source"] = {
             "type": "official_snapshot" if snapshot else "manual",
             "prediction_snapshot_id": source_snapshot_id,
