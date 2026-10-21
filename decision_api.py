@@ -336,6 +336,19 @@ def model_performance(limit: int = Query(2000, ge=1, le=5000)):
                 excluded += 1
                 continue
             model = str(row.get("model_version") or "unknown")
+            official_versions = {
+                "MLB": {"2.0.0-matchup"},
+                "NBA": {"NBA-1.1.0"},
+                "NFL": {"NFL-1.0.0"},
+                "TENNIS": set(),
+            }
+            research_versions = {"2.1.0-recent-strength-30", "mlb-context-experimental-0.1"}
+            if model in official_versions.get(sport_name, set()):
+                model_status = "OFFICIAL"
+            elif model in research_versions:
+                model_status = "RESEARCH"
+            else:
+                model_status = "HISTORICAL"
             key = (sport_name, model)
             stats = groups.setdefault(key, {
                 "sport": sport_name, "model_version": model, "sample_size": 0,
@@ -361,6 +374,7 @@ def model_performance(limit: int = Query(2000, ge=1, le=5000)):
             models.append({
                 "sport": stats["sport"],
                 "model_version": stats["model_version"],
+                "model_status": model_status,
                 "sample_size": count,
                 "correct": stats["correct"],
                 "incorrect": stats["incorrect"],
