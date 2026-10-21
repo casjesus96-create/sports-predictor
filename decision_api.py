@@ -351,7 +351,7 @@ def model_performance(limit: int = Query(2000, ge=1, le=5000)):
                 model_status = "HISTORICAL"
             key = (sport_name, model)
             stats = groups.setdefault(key, {
-                "sport": sport_name, "model_version": model, "sample_size": 0,
+                "sport": sport_name, "model_version": model, "model_status": model_status, "sample_size": 0,
                 "correct": 0, "incorrect": 0, "brier_total": 0.0,
                 "log_loss_total": 0.0,
             })
@@ -374,7 +374,7 @@ def model_performance(limit: int = Query(2000, ge=1, le=5000)):
             models.append({
                 "sport": stats["sport"],
                 "model_version": stats["model_version"],
-                "model_status": model_status,
+                "model_status": stats["model_status"],
                 "sample_size": count,
                 "correct": stats["correct"],
                 "incorrect": stats["incorrect"],
