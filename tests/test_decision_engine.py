@@ -12,6 +12,7 @@ def test_expected_value_and_fair_odds():
     assert result["fair_odds"] == 1.6667
     assert result["expected_value_percent"] == 8.0
     assert result["is_guaranteed"] is False
+    assert result["classification_reason"]
 
 
 def test_missing_data_blocks_value_label():
@@ -22,6 +23,23 @@ def test_missing_data_blocks_value_label():
         data_quality=40,
     )
     assert result["classification"] == "NO_PLAY"
+    assert "calidad de datos insuficiente" in result["label"]
+    assert "40/100" in result["classification_reason"]
+    assert any("bloqueada" in warning for warning in result["warnings"])
+
+
+def test_positive_value_with_low_quality_is_not_called_a_proven_edge():
+    result = evaluate_decision(
+        sport="NBA",
+        model_probability=0.808,
+        decimal_odds=2.0,
+        data_quality=40,
+        opponent_decimal_odds=2.09,
+    )
+    assert result["expected_value_percent"] == 61.6
+    assert result["classification"] == "NO_PLAY"
+    assert result["label"] == "Sin ventaja demostrable: calidad de datos insuficiente"
+    assert "40/100" in result["classification_reason"]
 
 
 def test_risk_signals_flag_high_risk():
