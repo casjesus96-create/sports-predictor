@@ -55,7 +55,9 @@ type DecisionResult = {
   fair_odds: number;
   edge_percentage_points: number;
   expected_value_percent: number;
-  data_quality: number;
+  data_quality: number | null;
+  decision_reason: string;
+  decision_action: string;
   risk_signals: string[];
   market_probability: number | null;
   model_market_gap_percentage_points: number | null;
@@ -86,7 +88,9 @@ const colors: Record<string, string> = {
   UPSET_CANDIDATE: "#6b21a8",
   HIGH_RISK: "#92400e",
   MARGINAL: "#475569",
-  NO_PLAY: "#991b1b",\n  DATA_INSUFFICIENT: "#92400e",\n  BLOCKED_INCONSISTENT: "#991b1b",
+  NO_PLAY: "#991b1b",
+  DATA_INSUFFICIENT: "#92400e",
+  BLOCKED_INCONSISTENT: "#991b1b",\n  DATA_INSUFFICIENT: "#92400e",\n  BLOCKED_INCONSISTENT: "#991b1b",
 };
 const outcomeLabels: Record<string, string> = {
   CORRECT: "Acierto",
