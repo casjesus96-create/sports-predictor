@@ -111,7 +111,7 @@ export default function DecisionCenter() {
   const [selectedSide, setSelectedSide] = useState<Side>("home");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historySummary, setHistorySummary] = useState<{total: number; settled: number; correct: number; incorrect: number; accuracy_percentage: number | null} | null>(null);
-  const [performance, setPerformance] = useState<{groups: Array<{sport: Sport; model_version: string; sample_size: number; correct: number; incorrect: number; accuracy_percentage: number; brier_score: number; log_loss: number}>; settled_rows_excluded: number} | null>(null);
+  const [performance, setPerformance] = useState<{groups: Array<{sport: Sport; model_version: string; model_status: "OFFICIAL" | "HISTORICAL" | "RESEARCH"; sample_size: number; correct: number; incorrect: number; accuracy_percentage: number; brier_score: number; log_loss: number}>; settled_rows_excluded: number} | null>(null);
   const [result, setResult] = useState<DecisionResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
@@ -414,11 +414,12 @@ export default function DecisionCenter() {
         {!performance ? <p style={{ color: "#64748b" }}>Rendimiento temporalmente no disponible. Pulsa “Actualizar datos” para reintentar.</p> : performance.groups.length === 0 ? <p style={{ color: "#64748b" }}>Todavía no hay suficientes registros liquidados con marcador válido para calcular métricas.</p> : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead><tr>{["Deporte", "Modelo", "Muestra", "Aciertos", "Errores", "Precisión", "Brier ↓", "Log Loss ↓"].map((heading) => <th key={heading} style={{ textAlign: "left", padding: "9px 7px", borderBottom: "1px solid #cbd5e1" }}>{heading}</th>)}</tr></thead>
+              <thead><tr>{["Deporte", "Modelo", "Tipo", "Muestra", "Aciertos", "Errores", "Precisión", "Brier ↓", "Log Loss ↓"].map((heading) => <th key={heading} style={{ textAlign: "left", padding: "9px 7px", borderBottom: "1px solid #cbd5e1" }}>{heading}</th>)}</tr></thead>
               <tbody>{performance.groups.map((item) => (
                 <tr key={item.sport + ":" + item.model_version}>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.sport}</td>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.model_version}</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.model_status === "OFFICIAL" ? "Oficial activo" : item.model_status === "RESEARCH" ? "Investigación" : "Histórico"}</td>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.sample_size}</td>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.correct}</td>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.incorrect}</td>
