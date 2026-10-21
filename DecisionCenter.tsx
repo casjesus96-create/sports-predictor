@@ -86,7 +86,7 @@ const colors: Record<string, string> = {
   UPSET_CANDIDATE: "#6b21a8",
   HIGH_RISK: "#92400e",
   MARGINAL: "#475569",
-  NO_PLAY: "#991b1b",
+  NO_PLAY: "#991b1b",\n  DATA_INSUFFICIENT: "#92400e",\n  BLOCKED_INCONSISTENT: "#991b1b",
 };
 const outcomeLabels: Record<string, string> = {
   CORRECT: "Acierto",
@@ -385,6 +385,12 @@ export default function DecisionCenter() {
           <div style={{ display: "inline-block", background: colors[result.classification] || "#334155", color: "#fff", borderRadius: 999, padding: "7px 12px", fontWeight: 800, fontSize: 13 }}>{result.label}</div>
           {result.source?.selected_team && <p>Selección: <strong>{result.source.selected_team}</strong> · Modelo: {result.source.model_version || "no indicado"} · Evento: {result.source.event_id}</p>}
           {result.saved && <p style={{ color: "#166534" }}>Evaluación guardada en el historial (ID: {result.evaluation_id}).</p>}
+          <div role="status" style={{ ...cardStyle, marginTop: 12, borderColor: result.classification === "VALUE_CANDIDATE" ? "#86efac" : result.classification === "NO_PLAY" || result.classification.startsWith("BLOCKED") ? "#fca5a5" : "#fcd34d" }}>
+            <h3 style={{ margin: "0 0 8px", fontSize: 17 }}>¿Por qué el sistema toma esta decisión?</h3>
+            <p style={{ margin: "0 0 8px", lineHeight: 1.5 }}><strong>Motivo:</strong> {result.decision_reason || "No se recibió una explicación estructurada del backend."}</p>
+            <p style={{ margin: 0, lineHeight: 1.5 }}><strong>Siguiente paso:</strong> {result.decision_action || "Revisar la calidad de los datos y las advertencias antes de considerar la oportunidad validada."}</p>
+            <small style={{ display: "block", marginTop: 8, color: "#64748b" }}>Una candidata con valor teórico no implica una ventaja demostrada ni garantiza resultados.</small>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 10, marginTop: 14 }}>
             <div style={cardStyle}><small>Probabilidad implícita</small><h2 style={{ margin: "5px 0 0" }}>{(result.implied_probability * 100).toFixed(2)}%</h2></div>
             <div style={cardStyle}><small>Cuota justa estimada</small><h2 style={{ margin: "5px 0 0" }}>{result.fair_odds.toFixed(2)}</h2></div>
