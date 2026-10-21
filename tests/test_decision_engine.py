@@ -21,7 +21,7 @@ def test_missing_data_blocks_value_label():
         decimal_odds=1.80,
         data_quality=40,
     )
-    assert result["classification"] == "NO_PLAY"
+    assert result["classification"] == "DATA_INSUFFICIENT"
 
 
 def test_risk_signals_flag_high_risk():
@@ -96,3 +96,58 @@ def test_complementary_probabilities_are_consistent():
         data_quality=90,
     )
     assert result["model_probabilities_consistent"] is True
+
+
+
+def test_missing_data_quality_is_not_invented_and_explains_block():
+    result = evaluate_decision(
+        sport="NBA",
+        model_probability=0.808,
+        decimal_odds=2.0,
+        data_quality=None,
+        opponent_model_probability=0.192,
+    )
+    assert result["expected_value_percent"] == 61.6
+    assert result["data_quality"] is None
+    assert result["classification"] == "DATA_INSUFFICIENT"
+    assert "calidad de datos" in result["decision_reason"].lower()
+    assert result["decision_action"]
+
+
+def test_inconsistent_model_probabilities_block_approval_with_reason():
+    result = evaluate_decision(
+        sport="NBA",
+        model_probability=0.70,
+        decimal_odds=1.8,
+        data_quality=90,
+        opponent_model_probability=0.40,
+    )
+    assert result["classification"] == "BLOCKED_INCONSISTENT"
+    assert "no suman" in result["decision_reason"].lower()
+    assert result["decision_action"]
+
+
+def test_negative_expected_value_explains_no_value():
+    result = evaluate_decision(
+        sport="NBA",
+        model_probability=0.40,
+        decimal_odds=2.0,
+        data_quality=90,
+        opponent_model_probability=0.60,
+    )
+    assert result["classification"] == "NO_PLAY"
+    assert "negativo" in result["decision_reason"].lower()
+
+
+def test_risk_warning_explains_why_positive_ev_is_not_approved():
+    result = evaluate_decision(
+        sport="NBA",
+        model_probability=0.60,
+        decimal_odds=2.0,
+        data_quality=90,
+        risk_signals=["Lesión sin resolver"],
+        opponent_model_probability=0.40,
+    )
+    assert result["expected_value_percent"] == 20.0
+    assert result["classification"] == "HIGH_RISK"
+    assert "señales de riesgo" in result["decision_reason"].lower()
