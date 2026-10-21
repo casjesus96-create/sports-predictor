@@ -90,7 +90,7 @@ const colors: Record<string, string> = {
   MARGINAL: "#475569",
   NO_PLAY: "#991b1b",
   DATA_INSUFFICIENT: "#92400e",
-  BLOCKED_INCONSISTENT: "#991b1b",\n  DATA_INSUFFICIENT: "#92400e",\n  BLOCKED_INCONSISTENT: "#991b1b",
+  BLOCKED_INCONSISTENT: "#991b1b",
 };
 const outcomeLabels: Record<string, string> = {
   CORRECT: "Acierto",
