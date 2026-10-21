@@ -83,22 +83,56 @@ def evaluate_decision(
         and not signals
     )
 
-    if expected_value <= 0 or quality < 50:
-        classification, label = "NO_PLAY", "Sin ventaja demostrable"
+    # Keep the decision conservative, but explain the exact blocking condition.
+    if quality < 50:
+        classification = "NO_PLAY"
+        label = "Sin ventaja demostrable: calidad de datos insuficiente"
+        classification_reason = (
+            f"La calidad de datos es {quality}/100; se requieren al menos 50/100 "
+            "para evaluar una oportunidad."
+        )
+    elif expected_value <= 0:
+        classification = "NO_PLAY"
+        label = "Sin ventaja demostrable: valor esperado no positivo"
+        classification_reason = (
+            "El valor esperado teórico no es positivo con la probabilidad y cuota introducidas."
+        )
     elif upset_candidate:
-        classification, label = "UPSET_CANDIDATE", "Posible sorpresa: validar"
+        classification = "UPSET_CANDIDATE"
+        label = "Posible sorpresa: validar"
+        classification_reason = (
+            "Existe una diferencia relevante frente al mercado y valor esperado positivo; "
+            "requiere validación, no garantiza un resultado."
+        )
     elif signals or quality < 75:
-        classification, label = "HIGH_RISK", "Riesgo elevado / posible partido trampa"
+        classification = "HIGH_RISK"
+        label = "Riesgo elevado / posible partido trampa"
+        classification_reason = (
+            "Hay señales de riesgo o la calidad de datos es inferior al umbral recomendado de 75/100."
+        )
     elif expected_value >= 0.03:
-        classification, label = "VALUE_CANDIDATE", "Candidata con valor teórico"
+        classification = "VALUE_CANDIDATE"
+        label = "Candidata con valor teórico"
+        classification_reason = (
+            "El valor esperado teórico es al menos 3%, con calidad de datos suficiente y sin señales de riesgo registradas."
+        )
     else:
-        classification, label = "MARGINAL", "Ventaja pequeña; no priorizar"
+        classification = "MARGINAL"
+        label = "Ventaja pequeña; no priorizar"
+        classification_reason = (
+            "El valor esperado teórico es positivo, pero inferior al umbral del 3%."
+        )
 
     warnings = []
     if signals:
         warnings.append("Hay señales de riesgo que requieren revisión.")
     if quality < 75:
         warnings.append("La calidad de datos no alcanza el umbral recomendado de 75/100.")
+    if quality < 50:
+        warnings.append(
+            "La evaluación queda bloqueada por calidad de datos inferior a 50/100; "
+            "un valor esperado positivo no basta para demostrar ventaja."
+        )
     if market_probability is None and opponent_odds is None:
         warnings.append("No se aportó una probabilidad de mercado sin margen ni la cuota del rival; la comparación usa la probabilidad implícita bruta de esta cuota.")
     elif market_probability is None and opponent_odds is not None:
@@ -115,6 +149,7 @@ def evaluate_decision(
         "sport": sport,
         "classification": classification,
         "label": label,
+        "classification_reason": classification_reason,
         "model_probability": round(probability, 6),
         "decimal_odds": round(odds, 4),
         "implied_probability": round(implied_probability, 6),
