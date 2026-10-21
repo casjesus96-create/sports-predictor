@@ -16,7 +16,7 @@ def evaluate_decision(
     sport: str,
     model_probability: float,
     decimal_odds: float,
-    data_quality: int = 100,
+    data_quality: int | None = 100,
     risk_signals: Iterable[str] = (),
     market_probability: float | None = None,
     opponent_model_probability: float | None = None,
@@ -29,7 +29,7 @@ def evaluate_decision(
         raise ValueError("model_probability debe estar entre 0 y 1, sin incluir extremos.")
     if not 1 < float(decimal_odds) <= 1000:
         raise ValueError("decimal_odds debe ser mayor que 1 y como máximo 1000.")
-    if not 0 <= int(data_quality) <= 100:
+    if data_quality is not None and not 0 <= int(data_quality) <= 100:
         raise ValueError("data_quality debe estar entre 0 y 100.")
     if market_probability is not None and not 0 < float(market_probability) < 1:
         raise ValueError("market_probability debe estar entre 0 y 1, sin incluir extremos.")
@@ -45,7 +45,7 @@ def evaluate_decision(
     expected_value = probability * odds - 1.0
     edge = probability - implied_probability
     signals = list(dict.fromkeys(str(s).strip() for s in risk_signals if str(s).strip()))
-    quality = int(data_quality)
+    quality = int(data_quality) if data_quality is not None else None
 
     opponent_probability = float(opponent_model_probability) if opponent_model_probability is not None else None
     probability_pair_sum = probability + opponent_probability if opponent_probability is not None else None
@@ -79,25 +79,55 @@ def evaluate_decision(
         and market_gap is not None
         and market_gap >= 0.05
         and expected_value > 0
-        and quality >= 70
+        and quality is not None and quality >= 70
         and not signals
     )
 
-    if expected_value <= 0 or quality < 50:
-        classification, label = "NO_PLAY", "Sin ventaja demostrable"
+    # Classifications explain the reason for the decision, not only the EV.
+    # Unknown quality is not silently converted to a score of zero or 100.
+    if probability_pair_consistent is False:
+        classification, label = "BLOCKED_INCONSISTENT", "Bloqueada: probabilidades incoherentes"
+        decision_reason = "Las probabilidades de ambos lados no suman aproximadamente 100%; verifica que sean del mismo evento y mercado."
+        decision_action = "Verificar las probabilidades de ambos equipos antes de volver a evaluar."
+    elif quality is None:
+        classification, label = "DATA_INSUFFICIENT", "Datos insuficientes para validar"
+        decision_reason = "No hay una puntuación de calidad de datos disponible; el valor teórico se calcula, pero no puede validarse la fiabilidad de la evidencia."
+        decision_action = "Completar o verificar la calidad de datos de la fuente antes de aprobar la oportunidad."
+    elif expected_value <= 0:
+        classification, label = "NO_PLAY", "Sin valor matemático a esta cuota"
+        decision_reason = "El valor esperado es cero o negativo con la probabilidad y la cuota introducidas."
+        decision_action = "No priorizar esta selección a la cuota actual; reevaluar solo si cambian datos o cuota."
+    elif quality < 50:
+        classification, label = "DATA_INSUFFICIENT", "Bloqueada: calidad de datos insuficiente"
+        decision_reason = "La calidad de datos está por debajo del mínimo de 50/100; no hay base suficiente para validar la oportunidad."
+        decision_action = "Verificar y completar los datos antes de considerar la selección."
+    elif signals:
+        classification, label = "HIGH_RISK", "Advertencia: riesgo detectado"
+        decision_reason = "Hay una o más señales de riesgo que requieren revisión aunque el valor esperado sea positivo."
+        decision_action = "Resolver o verificar las señales de riesgo antes de reconsiderar la oportunidad."
+    elif quality < 75:
+        classification, label = "HIGH_RISK", "Advertencia: calidad de datos limitada"
+        decision_reason = "La calidad de datos no alcanza el umbral recomendado de 75/100."
+        decision_action = "Mejorar o confirmar la calidad de la información antes de priorizar la selección."
     elif upset_candidate:
-        classification, label = "UPSET_CANDIDATE", "Posible sorpresa: validar"
-    elif signals or quality < 75:
-        classification, label = "HIGH_RISK", "Riesgo elevado / posible partido trampa"
+        classification, label = "UPSET_CANDIDATE", "Posible discrepancia: validar"
+        decision_reason = "El modelo difiere del mercado y el valor esperado es positivo; una discrepancia no demuestra por sí sola una ventaja fiable."
+        decision_action = "Validar la probabilidad del modelo y la cuota antes de tomar una decisión."
     elif expected_value >= 0.03:
         classification, label = "VALUE_CANDIDATE", "Candidata con valor teórico"
+        decision_reason = "El valor esperado es positivo, la calidad de datos alcanza el umbral recomendado y no se detectaron señales de riesgo."
+        decision_action = "Comparar con el mercado y seguir validando la calibración histórica; no equivale a una ventaja demostrada."
     else:
         classification, label = "MARGINAL", "Ventaja pequeña; no priorizar"
+        decision_reason = "El valor esperado es positivo, pero inferior al umbral operativo del 3%."
+        decision_action = "No priorizar; considerar costes, cambios de cuota y evidencia adicional."
 
     warnings = []
     if signals:
         warnings.append("Hay señales de riesgo que requieren revisión.")
-    if quality < 75:
+    if quality is None:
+        warnings.append("La calidad de datos no está disponible; no se asigna una puntuación inventada.")
+    elif quality < 75:
         warnings.append("La calidad de datos no alcanza el umbral recomendado de 75/100.")
     if market_probability is None and opponent_odds is None:
         warnings.append("No se aportó una probabilidad de mercado sin margen ni la cuota del rival; la comparación usa la probabilidad implícita bruta de esta cuota.")
@@ -122,6 +152,8 @@ def evaluate_decision(
         "edge_percentage_points": round(edge * 100, 3),
         "expected_value_percent": round(expected_value * 100, 3),
         "data_quality": quality,
+        "decision_reason": decision_reason,
+        "decision_action": decision_action,
         "risk_signals": signals,
         "market_probability": round(float(market_probability), 6) if market_probability is not None else None,
         "calculated_no_vig_market_probability": round(calculated_no_vig_probability, 6) if calculated_no_vig_probability is not None else None,
