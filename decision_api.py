@@ -198,9 +198,9 @@ def evaluate(request: DecisionEvaluationRequest):
         opponent_probability = away_probability if request.selected_side == "home" else home_probability
         quality_value = snapshot_summary.get("data_quality")
         try:
-            quality = max(0, min(100, int(float(quality_value)))) if quality_value is not None else 0
+            quality = max(0, min(100, int(float(quality_value)))) if quality_value is not None else None
         except (TypeError, ValueError):
-            quality = 0
+            quality = None
         features = snapshot.get("features") or {}
         auto_risk_signals = _detect_snapshot_risks(snapshot)
         effective_risk_signals = list(dict.fromkeys(request.risk_signals + auto_risk_signals))
@@ -221,7 +221,7 @@ def evaluate(request: DecisionEvaluationRequest):
         sport = request.sport
         probability = request.model_probability
         opponent_probability = request.opponent_model_probability
-        quality = request.data_quality if request.data_quality is not None else 100
+        quality = request.data_quality
         selected_team = None
         opponent_team = None
         model_version = None
