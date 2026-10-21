@@ -31,6 +31,14 @@ def _valid_probability(value) -> float | None:
     return number if math.isfinite(number) and 0 < number < 1 else None
 
 
+def _valid_score(value) -> bool:
+    try:
+        score = float(value)
+        return math.isfinite(score) and score >= 0
+    except (TypeError, ValueError):
+        return False
+
+
 def audit_settled_row(row: dict) -> list[str]:
     """Return stable issue codes; never mutate or repair the source row."""
     issues = []
@@ -49,19 +57,23 @@ def audit_settled_row(row: dict) -> list[str]:
     elif abs((home_p + away_p) - 1.0) > 0.02:
         issues.append("PROBABILITIES_NOT_COMPLEMENTARY")
 
-    def valid_score(value):
-        try:
-            score = float(value)
-            return math.isfinite(score) and score >= 0
-        except (TypeError, ValueError):
-            return False
-
     home_score = row.get("actual_home_score")
     away_score = row.get("actual_away_score")
-    if not valid_score(home_score) or not valid_score(away_score):
+    if not _valid_score(home_score) or not _valid_score(away_score):
         issues.append("MISSING_OR_INVALID_FINAL_SCORE")
     elif float(home_score) == float(away_score):
-        issues.append("TIED_FINAL_SCORE")
+        # NFL regular-season games can legitimately end in a tie. Only accept
+        # it as clean when the snapshot explicitly records TIE + PUSH.
+        if sport == "NFL":
+            if (
+                str(row.get("actual_winner") or "").strip().upper() != "TIE"
+                or str(row.get("prediction_result") or "").strip().upper() != "PUSH"
+            ):
+                issues.append("NFL_TIE_SETTLEMENT_MISMATCH")
+        else:
+            # A tied final score is suspicious for the other supported sports
+            # under this snapshot's home/away final-score representation.
+            issues.append("TIED_FINAL_SCORE")
 
     if not row.get("settled_at"):
         issues.append("MISSING_SETTLED_AT")
@@ -77,7 +89,7 @@ def audit_prediction_history(limit: int = Query(2000, ge=1, le=5000)):
             get_supabase_client()
             .table("prediction_snapshots")
             .select(
-                "id,event_id,sport,league,model_version,result_status,"
+                "id,event_id,sport,league,model_version,result_status,prediction_result,"
                 "home_probability,away_probability,actual_home_score,"
                 "actual_away_score,actual_winner,created_at,settled_at"
             )
@@ -89,8 +101,8 @@ def audit_prediction_history(limit: int = Query(2000, ge=1, le=5000)):
         rows = response.data or []
         issue_counts = Counter()
         affected = []
-        for row in rows:
-            codes = audit_settled_row(row)
+        audited = [(row, audit_settled_row(row)) for row in rows]
+        for row, codes in audited:
             if not codes:
                 continue
             issue_counts.update(codes)
@@ -103,16 +115,17 @@ def audit_prediction_history(limit: int = Query(2000, ge=1, le=5000)):
                     "issues": codes,
                 })
 
+        rows_with_issues = sum(1 for _, codes in audited if codes)
         return {
             "success": True,
             "read_only": True,
             "sample_limit": limit,
             "settled_rows_checked": len(rows),
-            "rows_with_issues": sum(1 for row in rows if audit_settled_row(row)),
-            "rows_without_issues": sum(1 for row in rows if not audit_settled_row(row)),
+            "rows_with_issues": rows_with_issues,
+            "rows_without_issues": len(rows) - rows_with_issues,
             "issue_counts": dict(sorted(issue_counts.items())),
             "affected_records": affected,
-            "affected_records_truncated": max(0, sum(1 for row in rows if audit_settled_row(row)) - len(affected)),
+            "affected_records_truncated": max(0, rows_with_issues - len(affected)),
         }
     except Exception as exc:
         import logging
