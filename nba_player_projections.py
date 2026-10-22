@@ -41,7 +41,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=5):
                 team_meta[str(team_id)] = game.get("away") or game.get("away_abbreviation") or "Equipo"
                 break
 
-    aggregates = defaultdict(lambda: defaultdict(lambda: {"name": "", "position": None, "games": set(), "totals": defaultdict(float), "counts": defaultdict(int)}))
+    aggregates = defaultdict(lambda: defaultdict(lambda: {"name": "", "position": None, "games": set(), "totals": defaultdict(float), "counts": defaultdict(int), "stat_games": defaultdict(set)}))
     team_game_ids = defaultdict(set)
     team_game_counts = defaultdict(set)
 
@@ -67,6 +67,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=5):
                 for key in present_stats:
                     item["totals"][key] += float(player[key])
                     item["counts"][key] += 1
+                    item["stat_games"][key].add(str(game_id))
 
     teams = []
     for team_id in sorted(set(team_meta) | set(aggregates)):
@@ -77,6 +78,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=5):
                 "name": item["name"],
                 "position": item["position"],
                 "games_sampled": len(item["games"]),
+                "games_sampled_by_stat": {key: len(item["stat_games"].get(key, set())) for key in STAT_KEYS},
             }
             for key, output_key in PROJECTION_KEYS.items():
                 count = item["counts"].get(key, 0)
@@ -88,6 +90,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=5):
                 "team_id": team_id,
                 "team": team_meta.get(team_id, "Equipo"),
                 "games_available": len(team_game_ids.get(team_id, set())),
+                "statistical_coverage": {key: sum(1 for player in players if player.get(PROJECTION_KEYS[key]) is not None) for key in STAT_KEYS},
                 "players": players,
             })
     return {

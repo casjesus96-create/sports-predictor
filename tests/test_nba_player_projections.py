@@ -29,6 +29,8 @@ def test_aggregates_player_stats_by_appearances_and_team():
     assert player["projected_blocks"] == 1
     assert player["projected_steals"] == 2
     assert player["games_sampled"] == 1
+    assert player["games_sampled_by_stat"]["points"] == 1
+    assert home["statistical_coverage"]["points"] == 1
 
 
 def test_empty_or_unavailable_boxscores_return_no_fabricated_projections():

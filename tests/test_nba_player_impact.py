@@ -21,6 +21,7 @@ def test_returns_team_production_signals_without_changing_official_probability()
     assert result["available"] is True
     assert result["official_probability_changed"] is False
     assert result["differences_home_minus_away"]["points"] == 15
+    assert result["teams"]["home"]["player_appearance_coverage"]["points"] == 0
     assert result["differences_home_minus_away"]["assists"] == 4
     assert result["differences_home_minus_away"]["rebounds"] == 6
     assert result["differences_home_minus_away"]["blocks"] == -1

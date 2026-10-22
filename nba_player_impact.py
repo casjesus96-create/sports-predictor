@@ -47,6 +47,7 @@ def evaluate_player_impact(player_projections, home_team_id, away_team_id):
             "team": team.get("team") or "Equipo",
             "players_with_projections": len(players),
             "statistical_coverage": coverage,
+            "player_appearance_coverage": {stat: sum(int(player.get("games_sampled_by_stat", {}).get(stat, 0) or 0) for player in players) for stat in PLAYER_STATS},
             "projected_team_totals": totals,
         }
     home_id, away_id = str(home_team_id), str(away_team_id)
