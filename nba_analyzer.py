@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 
 from nba_client import get_game, get_team_histories, get_team_boxscore_histories
+from nba_player_projections import project_players_from_recent_games
 from nba_prediction import MODEL_VERSION, predict_winner
 
 UTC = timezone.utc
@@ -140,6 +141,8 @@ def analyze_nba_game(game_id):
     total_samples = home_history["games"] + away_history["games"]
     generated_at = now.isoformat()
     projections = _build_projections(game, home_history, away_history)
+    # Player projections use only completed boxscores before this game's kickoff.
+    projections["player_projections"] = project_players_from_recent_games(histories, cutoff, max_games=5)
     return {
         "success": True,
         "sport": "NBA",
