@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from decision_engine import evaluate_decision
 from repository import get_supabase_client
+from calibration_engine import build_calibration_report
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/decision", tags=["Centro de Decisión"])
@@ -400,6 +401,36 @@ def model_performance(limit: int = Query(2000, ge=1, le=5000)):
         raise HTTPException(
             status_code=503,
             detail="No fue posible calcular el rendimiento. Comprueba la conexión con prediction_snapshots.",
+        ) from exc
+
+
+
+
+@router.get("/calibration")
+def prediction_calibration(limit: int = Query(2000, ge=1, le=5000)):
+    """Read-only calibration report for settled official and historical snapshots."""
+    try:
+        response = (
+            get_supabase_client()
+            .table("prediction_snapshots")
+            .select(
+                "id,sport,league,model_version,result_status,home_probability,"
+                "away_probability,actual_home_score,actual_away_score,settled_at"
+            )
+            .eq("result_status", "SETTLED")
+            .order("settled_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        report = build_calibration_report(response.data or [])
+        report["success"] = True
+        report["sample_limit"] = limit
+        return report
+    except Exception as exc:
+        logger.exception("No se pudo calcular la calibración de predicciones")
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible calcular la calibración. Comprueba la conexión con prediction_snapshots.",
         ) from exc
 
 
