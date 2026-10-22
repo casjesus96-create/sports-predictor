@@ -1,19 +1,23 @@
 """Read-only NBA player boxscore parsing from ESPN's public summary endpoint."""
 from __future__ import annotations
 
+import re
 import requests
 
 ESPN_SUMMARY_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
 TIMEOUT = 15
 
-
 PLAYER_STAT_ALIASES = {
-    "points": {"pts", "points"},
-    "assists": {"ast", "assists"},
-    "rebounds": {"reb", "rebounds", "total rebounds"},
-    "blocks": {"blk", "blocks"},
-    "steals": {"stl", "steals"},
+    "points": {"pts", "point", "points"},
+    "assists": {"ast", "assist", "assists"},
+    "rebounds": {"reb", "rebound", "rebounds", "total rebounds"},
+    "blocks": {"blk", "block", "blocks"},
+    "steals": {"stl", "steal", "steals"},
 }
+
+
+def _normalize_label(value):
+    return re.sub(r"[^a-z0-9+]", "", str(value or "").strip().lower())
 
 
 def _as_number(value):
@@ -27,12 +31,39 @@ def _as_number(value):
 
 
 def _stat_value(names, values, aliases):
+    normalized_aliases = {_normalize_label(alias) for alias in aliases}
     for index, name in enumerate(names):
-        normalized = str(name or "").strip().lower()
-        if normalized in aliases and index < len(values):
+        if _normalize_label(name) in normalized_aliases and index < len(values):
             return _as_number(values[index])
     return None
 
+
+def _made_shots(value):
+    """Read the made portion of ESPN strings such as '9-20'."""
+    if value is None:
+        return None
+    match = re.match(r"^\s*(\d+)\s*(?:-|/)\s*\d+\s*$", str(value))
+    return int(match.group(1)) if match else _as_number(value)
+
+
+def _points_from_shooting(names, values):
+    """Derive points only when all three made-shot counts are explicitly available."""
+    normalized = [_normalize_label(name) for name in names]
+    makes = {}
+    aliases_by_key = {
+        "fg": {"fg", "fieldgoals"},
+        "3pt": {"3pt", "3p", "3ptfg", "3pm", "3pointers"},
+        "ft": {"ft", "freethrows"},
+    }
+    for key, aliases in aliases_by_key.items():
+        for index, label in enumerate(normalized):
+            if label in aliases and index < len(values):
+                makes[key] = _made_shots(values[index])
+                break
+    if all(makes.get(key) is not None for key in ("fg", "3pt", "ft")):
+        # FG made includes three-pointers: add one extra point per made 3PT.
+        return 2 * makes["fg"] + makes["3pt"] + makes["ft"]
+    return None
 
 
 def fetch_player_boxscore(game_id: str) -> dict:
@@ -59,7 +90,7 @@ def parse_player_boxscore(payload: dict, game_id: str) -> dict:
         team_name = team.get("displayName") or team.get("name") or "Equipo"
         players = []
         for stat_group in team_group.get("statistics") or []:
-            names = stat_group.get("names") or stat_group.get("labels") or []
+            names = stat_group.get("names") or stat_group.get("labels") or stat_group.get("keys") or []
             for athlete_row in stat_group.get("athletes") or []:
                 athlete = athlete_row.get("athlete") or {}
                 values = athlete_row.get("stats") or []
@@ -69,17 +100,18 @@ def parse_player_boxscore(payload: dict, game_id: str) -> dict:
                     key: _stat_value(names, values, aliases)
                     for key, aliases in PLAYER_STAT_ALIASES.items()
                 }
-                # ESPN may return several statistical groups. Keep only actual player rows.
-                if not athlete.get("id") and not athlete.get("displayName"):
+                if stats["points"] is None:
+                    stats["points"] = _points_from_shooting(names, values)
+                if not athlete.get("id") and not athlete.get("displayName") and not athlete.get("fullName"):
                     continue
+                position = athlete.get("position") or {}
                 players.append({
                     "player_id": str(athlete.get("id") or ""),
                     "name": athlete.get("displayName") or athlete.get("fullName") or athlete.get("shortName") or "Jugador",
-                    "position": (athlete.get("position") or {}).get("abbreviation") or (athlete.get("position") or {}).get("name"),
+                    "position": (position.get("abbreviation") or position.get("name")) if isinstance(position, dict) else None,
                     "starter": bool(athlete_row.get("starter", False)),
                     **stats,
                 })
-        # One team can have multiple stat groups; collapse duplicate athlete rows.
         unique = {}
         for player in players:
             key = player["player_id"] or player["name"]
