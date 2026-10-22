@@ -445,7 +445,8 @@ export default function NBAApp() {
                                     {projections.player_projections.teams.map((playerTeam: any) => (
                                       <div className="panel" key={playerTeam.team_id || playerTeam.team}>
                                         <b>{playerTeam.team} · promedios recientes por jugador</b>
-                                        <small className="muted">Boxscores consultados: {playerTeam.games_available ?? 0}</small>
+                                        <small className="muted">Boxscores consultados: {playerTeam.games_available ?? 0} · Jugadores: {playerTeam.players?.length ?? 0}</small>
+                                        <small className="muted">Cobertura por estadística: PTS {playerTeam.statistical_coverage?.points ?? 0}, AST {playerTeam.statistical_coverage?.assists ?? 0}, REB {playerTeam.statistical_coverage?.rebounds ?? 0}, BLK {playerTeam.statistical_coverage?.blocks ?? 0}, STL {playerTeam.statistical_coverage?.steals ?? 0}</small>
                                         <div style={{ overflowX: "auto" }}>
                                           <table>
                                             <thead>
@@ -455,7 +456,7 @@ export default function NBAApp() {
                                               {playerTeam.players.map((player: any) => (
                                                 <tr key={player.player_id || player.name}>
                                                   <td>{player.name}{player.position ? ` · ${player.position}` : ""}</td>
-                                                  <td>{player.games_sampled}</td>
+                                                  <td>{player.games_sampled} ({player.games_sampled_by_stat?.points ?? 0} PTS)</td>
                                                   <td>{numberLabel(player.projected_points)}</td>
                                                   <td>{numberLabel(player.projected_assists)}</td>
                                                   <td>{numberLabel(player.projected_rebounds)}</td>
@@ -471,7 +472,7 @@ export default function NBAApp() {
                                   </div>
                                 )}
                                 <h4>Impact individual · evaluación experimental</h4>
-                                <p className="muted">Estas señales comparan la suma de promedios individuales de ambos equipos. Todavía no suman ni restan puntos porcentuales a la probabilidad oficial.</p>
+                                <p className="muted">Estas señales comparan la suma de promedios individuales de ambos equipos. Todavía no suman ni restan puntos porcentuales a la probabilidad oficial. La cobertura por estadística y las capturas pregame se registran para auditoría cronológica.</p>
                                 {projections.player_impact_evaluation?.available ? (
                                   <div className="panel">
                                     <b>Diferencia de producción proyectada (local − visitante)</b>
