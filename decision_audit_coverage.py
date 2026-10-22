@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 
-def build_decision_audit_coverage(evaluations: list[dict], snapshots: list[dict]) -> dict:
-    """Count where saved MLB evaluations sit in the settlement/linkage pipeline."""
+def build_decision_audit_coverage(evaluations: list[dict], snapshots: list[dict], *, sport_filter: str = "MLB") -> dict:
+    """Count evaluations for one sport in the settlement/linkage pipeline."""
     snapshots_by_id = {
         str(row.get("id")): row
         for row in snapshots
@@ -24,7 +24,7 @@ def build_decision_audit_coverage(evaluations: list[dict], snapshots: list[dict]
     by_model = {}
 
     for item in evaluations:
-        if str(item.get("sport") or "").upper() != "MLB":
+        if str(item.get("sport") or "").upper() != sport_filter.upper():
             continue
         counts["total_evaluations"] += 1
         model = str(item.get("model_version") or "manual_or_unknown")
@@ -82,7 +82,7 @@ def build_decision_audit_coverage(evaluations: list[dict], snapshots: list[dict]
 
     return {
         "success": True,
-        "sport_filter": "MLB",
+        "sport_filter": sport_filter.upper(),
         "coverage": counts,
         "by_model": sorted(by_model.values(), key=lambda row: row["model_version"]),
         "methodology": {
