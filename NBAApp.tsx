@@ -470,6 +470,21 @@ export default function NBAApp() {
                                     ))}
                                   </div>
                                 )}
+                                <h4>Impact individual · evaluación experimental</h4>
+                                <p className="muted">Estas señales comparan la suma de promedios individuales de ambos equipos. Todavía no suman ni restan puntos porcentuales a la probabilidad oficial.</p>
+                                {projections.player_impact_evaluation?.available ? (
+                                  <div className="panel">
+                                    <b>Diferencia de producción proyectada (local − visitante)</b>
+                                    <NBAStat label="Puntos (PTS)" value={projections.player_impact_evaluation.differences_home_minus_away.points} />
+                                    <NBAStat label="Asistencias (AST)" value={projections.player_impact_evaluation.differences_home_minus_away.assists} />
+                                    <NBAStat label="Rebotes (REB)" value={projections.player_impact_evaluation.differences_home_minus_away.rebounds} />
+                                    <NBAStat label="Bloqueos (BLK)" value={projections.player_impact_evaluation.differences_home_minus_away.blocks} />
+                                    <NBAStat label="Robos (STL)" value={projections.player_impact_evaluation.differences_home_minus_away.steals} />
+                                    <div className="message notice"><b>Modo de prueba</b><p>Probabilidad oficial sin cambios: NBA-1.1.0. No interpretar estas diferencias como puntos porcentuales ni como una probabilidad de victoria.</p></div>
+                                  </div>
+                                ) : (
+                                  <div className="panel"><b>Impacto individual no evaluable</b><p className="muted">Se requieren proyecciones disponibles para ambos equipos. La probabilidad oficial permanece intacta.</p></div>
+                                )}
                               </div>
                             );
                           })()}
