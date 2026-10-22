@@ -9,6 +9,34 @@ SPORT = "basketball"
 LEAGUE = "NBA"
 
 
+def _append_impact_history(features, analysis):
+    """Append point-in-time research features without rewriting earlier observations."""
+    updated = dict(features or {})
+    history = list(updated.get("player_impact_history") or [])
+    prediction = analysis.get("prediction") or {}
+    projections = analysis.get("projections") or {}
+    players = projections.get("player_projections") or {}
+    entry = {
+        "captured_at": analysis.get("generated_at") or datetime.now(timezone.utc).isoformat(),
+        "data_cutoff": analysis.get("data_cutoff"), "model_version": MODEL_VERSION,
+        "official_home_probability": prediction.get("home_probability"),
+        "official_away_probability": prediction.get("away_probability"),
+        "official_probability_changed": False,
+        "impact": projections.get("player_impact_evaluation") or {},
+        "coverage": {"player_count": players.get("player_count", 0), "teams": [{
+            "team_id": team.get("team_id"), "team": team.get("team"),
+            "games_available": team.get("games_available", 0),
+            "player_count": len(team.get("players") or []),
+            "statistical_coverage": team.get("statistical_coverage") or {},
+        } for team in (players.get("teams") or [])]},
+    }
+    signature = (entry["captured_at"], entry["data_cutoff"])
+    if not any(isinstance(item, dict) and (item.get("captured_at"), item.get("data_cutoff")) == signature for item in history):
+        history.append(entry)
+    updated["player_impact_history"] = history
+    return updated
+
+
 def save_nba_analysis(analysis):
     if not analysis.get("success"):
         raise ValueError("No se puede guardar un análisis fallido.")
@@ -31,7 +59,7 @@ def save_nba_analysis(analysis):
         "away_probability": prediction.get("away_probability"),
         "confidence": prediction.get("confidence"),
         "data_quality": prediction.get("data_quality", 0),
-        "features": {"game": game, "factors": analysis.get("factors") or {}, "projections": analysis.get("projections") or {}, "predicted_winner": prediction.get("winner")},
+        "features": _append_impact_history({"game": game, "factors": analysis.get("factors") or {}, "projections": analysis.get("projections") or {}, "predicted_winner": prediction.get("winner")}, analysis),
         "result_status": "PENDING", "actual_winner": None,
         "actual_home_score": None, "actual_away_score": None,
         "settled_at": None, "prediction_result": None,
@@ -64,6 +92,7 @@ def refresh_nba_analysis(analysis):
         "projections": analysis.get("projections") or {},
         "analysis_refreshed_at": analysis.get("generated_at") or datetime.now(timezone.utc).isoformat(),
         "analysis_data_cutoff": analysis.get("data_cutoff")}
+    new_features = _append_impact_history(new_features, analysis)
     updated = (db.table("prediction_snapshots").update({"features": new_features, "data_cutoff": analysis.get("data_cutoff")})
         .eq("id", row["id"]).eq("result_status", "PENDING").execute())
     saved = updated.data or []
