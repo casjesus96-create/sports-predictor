@@ -16,6 +16,7 @@ from decision_engine import evaluate_decision
 from repository import get_supabase_client
 from calibration_engine import build_calibration_report
 from decision_outcome_audit import build_decision_outcome_audit
+from decision_value_integrity_audit import build_decision_value_integrity_audit
 from decision_audit_coverage import build_decision_audit_coverage
 
 logger = logging.getLogger(__name__)
@@ -601,4 +602,48 @@ def decision_audit_coverage(limit: int = Query(2000, ge=1, le=5000)):
         raise HTTPException(
             status_code=503,
             detail="No fue posible calcular la cobertura. Comprueba las tablas decision_evaluations y prediction_snapshots.",
+        ) from exc
+
+
+
+@router.get("/value-integrity")
+def decision_value_integrity(limit: int = Query(2000, ge=1, le=5000)):
+    """Read-only audit of stored Decision Center EV math and selected-side probabilities."""
+    try:
+        supabase = get_supabase_client()
+        evaluations_response = (
+            supabase.table("decision_evaluations")
+            .select(
+                "id,prediction_snapshot_id,sport,model_version,selected_side,"
+                "selected_team,model_probability,decimal_odds,expected_value_percent,evaluated_at"
+            )
+            .eq("sport", "MLB")
+            .order("evaluated_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        evaluations = evaluations_response.data or []
+        snapshot_ids = list({
+            str(row.get("prediction_snapshot_id"))
+            for row in evaluations
+            if row.get("prediction_snapshot_id")
+        })
+        snapshots = []
+        for offset in range(0, len(snapshot_ids), 100):
+            batch = snapshot_ids[offset:offset + 100]
+            response = (
+                supabase.table("prediction_snapshots")
+                .select("id,home_probability,away_probability")
+                .in_("id", batch)
+                .execute()
+            )
+            snapshots.extend(response.data or [])
+        report = build_decision_value_integrity_audit(evaluations, snapshots)
+        report["sample_limit"] = limit
+        return report
+    except Exception as exc:
+        logger.exception("No se pudo auditar la integridad de probabilidad y EV del Centro de Decisión")
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible auditar la integridad. Comprueba las tablas decision_evaluations y prediction_snapshots.",
         ) from exc
