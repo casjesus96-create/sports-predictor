@@ -199,6 +199,46 @@ def nba_settle_pending():
     }
 
 
+@router.get("/audit/player-impact")
+def nba_player_impact_audit(limit: int = Query(500, ge=1, le=500)):
+    """Read-only chronological audit of persisted pregame player-impact observations."""
+    try:
+        rows = get_nba_predictions(limit=limit, model_version=MODEL_VERSION)
+        observations = []
+        for row in rows:
+            features = row.get("features") or {}
+            for entry in features.get("player_impact_history") or []:
+                if not isinstance(entry, dict):
+                    continue
+                game = features.get("game") or {}
+                observations.append({
+                    "event_id": str(row.get("event_id") or ""),
+                    "game": game.get("name") or f"{game.get('away', 'Visitante')} @ {game.get('home', 'Local')}",
+                    "kickoff": game.get("kickoff"), "captured_at": entry.get("captured_at"),
+                    "data_cutoff": entry.get("data_cutoff"), "result_status": row.get("result_status"),
+                    "actual_home_score": row.get("actual_home_score"), "actual_away_score": row.get("actual_away_score"),
+                    "official_home_probability": entry.get("official_home_probability"),
+                    "official_away_probability": entry.get("official_away_probability"),
+                    "impact": entry.get("impact"), "coverage": entry.get("coverage"),
+                })
+        observations.sort(key=lambda item: (item.get("kickoff") or "", item.get("captured_at") or ""))
+        settled = [item for item in observations if item.get("result_status") == "SETTLED" and item.get("actual_home_score") is not None and item.get("actual_away_score") is not None]
+        return {"success": True, "sport": "NBA", "model_version": MODEL_VERSION,
+            "mode": "read_only_chronological_shadow_audit", "official_probability_changed": False,
+            "summary": {"prediction_rows_scanned": len(rows), "historical_snapshots": len(observations),
+                "settled_predictions_with_snapshots": len({item['event_id'] for item in settled}),
+                "settled_snapshots": len(settled),
+                "pending_snapshots": sum(item.get("result_status") == "PENDING" for item in observations)},
+            "limitations": [
+                "Solo se incluyen snapshots capturados y guardados; no se reconstruyen señales pasadas con datos actuales.",
+                "La auditoría no modifica probabilidades ni demuestra mejora predictiva por sí sola.",
+                "Los refrescos generan varias observaciones por partido; para métricas por partido debe seleccionarse la última captura anterior al inicio.",
+            ], "observations": observations}
+    except Exception as exc:
+        logger.exception("Error auditando snapshots de impacto individual NBA")
+        raise HTTPException(status_code=500, detail="No fue posible auditar los snapshots de impacto individual NBA.") from exc
+
+
 @router.get("/performance")
 def nba_performance():
     try:
