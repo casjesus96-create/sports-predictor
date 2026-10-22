@@ -28,6 +28,12 @@ type PredictionRow = {
   actual_winner?: string | null;
   features?: { game?: Game; predicted_winner?: string; factors?: any; projections?: any };
 };
+type PlayerBoxscore = {
+  success?: boolean;
+  available?: boolean;
+  message?: string;
+  teams?: Array<{ team: string; abbreviation?: string; players: Array<{ player_id: string; name: string; position?: string | null; starter?: boolean; points?: number | null; assists?: number | null; rebounds?: number | null; blocks?: number | null; steals?: number | null }> }>;
+};
 type Performance = {
   summary?: {
     total_predictions?: number;
@@ -106,6 +112,8 @@ export default function NBAApp() {
   const [allGames, setAllGames] = useState(false);
   const [games, setGames] = useState<Game[]>([]);
   const [predictions, setPredictions] = useState<PredictionRow[]>([]);
+  const [playerBoxscores, setPlayerBoxscores] = useState<Record<string, PlayerBoxscore>>({});
+  const [boxscoreBusy, setBoxscoreBusy] = useState<string | null>(null);
   const [performance, setPerformance] = useState<Performance | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -220,6 +228,21 @@ export default function NBAApp() {
       setError(errorText(err));
     } finally {
       setBusy(null);
+    }
+  };
+
+  const loadPlayerBoxscore = async (game: Game) => {
+    setBoxscoreBusy(game.game_id);
+    setError("");
+    try {
+      const result = await api<PlayerBoxscore>(`/boxscore/${encodeURIComponent(game.game_id)}`);
+      setPlayerBoxscores((current) => ({ ...current, [String(game.game_id)]: result }));
+      if (!result.available) setMessage(result.message || "Las estadísticas individuales aún no están disponibles.");
+      else setMessage(`Estadísticas individuales cargadas para ${game.away || "visitante"} vs. ${game.home || "local"}.`);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBoxscoreBusy(null);
     }
   };
 
@@ -416,7 +439,36 @@ export default function NBAApp() {
                         </details>
                       </>
                     )}
+                    {playerBoxscores[String(game.game_id)] && (
+                      <section className="analysis-content">
+                        <h4>Estadísticas individuales · ESPN</h4>
+                        {!playerBoxscores[String(game.game_id)]?.available && (
+                          <p className="muted">{playerBoxscores[String(game.game_id)]?.message || "Estadísticas no disponibles para este encuentro."}</p>
+                        )}
+                        {(playerBoxscores[String(game.game_id)]?.teams || []).map((team) => (
+                          <div className="panel" key={team.abbreviation || team.team}>
+                            <b>{team.team}</b>
+                            <div style={{ overflowX: "auto" }}>
+                              <table>
+                                <thead><tr><th>Jugador</th><th>PTS</th><th>AST</th><th>REB</th><th>BLK</th><th>STL</th></tr></thead>
+                                <tbody>
+                                  {team.players.map((player) => (
+                                    <tr key={player.player_id || player.name}>
+                                      <td>{player.name}{player.position ? ` · ${player.position}` : ""}</td>
+                                      <td>{player.points ?? "—"}</td><td>{player.assists ?? "—"}</td>
+                                      <td>{player.rebounds ?? "—"}</td><td>{player.blocks ?? "—"}</td>
+                                      <td>{player.steals ?? "—"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ))}
+                      </section>
+                    )}
                     <div className="card-actions">
+                      <button className="secondary" type="button" disabled={!!boxscoreBusy} onClick={() => void loadPlayerBoxscore(game)}>{boxscoreBusy === game.game_id ? "Cargando estadísticas…" : "Ver estadísticas por jugador"}</button>
                       <button className="primary" type="button" disabled={!!busy} onClick={() => void analyze(game)}>{busy === game.game_id ? "Analizando…" : stored ? "Actualizar análisis estadístico" : "Analizar partido"}</button>
                       {pending && <button className="secondary" type="button" disabled={!!busy} onClick={() => stored && void settle(stored)}>{busy === `settle:${game.game_id}` ? "Liquidando…" : "Liquidar resultado"}</button>}
                     </div>
