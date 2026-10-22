@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 
 
-def build_decision_outcome_audit(evaluations: list[dict], snapshots: list[dict]) -> dict:
+def build_decision_outcome_audit(evaluations: list[dict], snapshots: list[dict], *, sport_filter: str = "MLB") -> dict:
     """Compare stored selections and odds with settled outcomes; never mutates data.
 
     ROI is hypothetical flat-stake ROI in units, not a forecast of future returns.
@@ -20,7 +20,7 @@ def build_decision_outcome_audit(evaluations: list[dict], snapshots: list[dict])
             excluded += 1
             continue
         sport = str(item.get("sport") or "").upper()
-        if sport != "MLB":
+        if sport != sport_filter.upper():
             continue
         side = str(item.get("selected_side") or "").lower()
         if side not in {"home", "away"}:
@@ -76,7 +76,7 @@ def build_decision_outcome_audit(evaluations: list[dict], snapshots: list[dict])
     positive_ev = [x for x in rows if x["expected_value_percent"] > 0]
     return {
         "success": True,
-        "sport_filter": "MLB",
+        "sport_filter": sport_filter.upper(),
         "matched_evaluations": len(rows),
         "excluded_evaluations": excluded,
         "overall": summarize(rows),
