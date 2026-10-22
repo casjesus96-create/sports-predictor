@@ -1,6 +1,11 @@
 """Read-only NBA player boxscore parsing from ESPN's public summary endpoint."""
 from __future__ import annotations
 
+import requests
+
+ESPN_SUMMARY_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
+TIMEOUT = 15
+
 
 PLAYER_STAT_ALIASES = {
     "points": {"pts", "points"},
@@ -27,6 +32,22 @@ def _stat_value(names, values, aliases):
         if normalized in aliases and index < len(values):
             return _as_number(values[index])
     return None
+
+
+
+def fetch_player_boxscore(game_id: str) -> dict:
+    """Fetch one game's current boxscore from ESPN; never writes to prediction history."""
+    normalized_id = str(game_id).strip()
+    if not normalized_id.isdigit():
+        raise ValueError("game_id NBA debe ser numérico.")
+    response = requests.get(
+        ESPN_SUMMARY_URL,
+        params={"event": normalized_id},
+        timeout=TIMEOUT,
+        headers={"User-Agent": "Sports-Predictor-NBA/1.0.0", "Accept": "application/json"},
+    )
+    response.raise_for_status()
+    return parse_player_boxscore(response.json(), normalized_id)
 
 
 def parse_player_boxscore(payload: dict, game_id: str) -> dict:
