@@ -10,6 +10,7 @@ def build_decision_value_integrity_audit(
     *,
     probability_tolerance: float = 1e-6,
     ev_tolerance_percentage_points: float = 0.001,
+    sport_filter: str = "MLB",
 ) -> dict:
     """Compare stored EV math and selected-side probability with immutable snapshots."""
     snapshots_by_id = {
@@ -33,7 +34,7 @@ def build_decision_value_integrity_audit(
     recent = []
 
     for item in evaluations:
-        if str(item.get("sport") or "").upper() != "MLB":
+        if str(item.get("sport") or "").upper() != sport_filter.upper():
             continue
         totals["evaluations_examined"] += 1
         model = str(item.get("model_version") or "manual_or_unknown")
@@ -166,7 +167,7 @@ def build_decision_value_integrity_audit(
 
     return {
         "success": True,
-        "sport_filter": "MLB",
+        "sport_filter": sport_filter.upper(),
         "audit": totals,
         "by_model": sorted(by_model.values(), key=lambda row: row["model_version"]),
         "recent_evaluations": recent[-100:],
