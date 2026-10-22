@@ -518,8 +518,11 @@ def decision_history(limit: int = Query(100, ge=1, le=500)):
 
 
 @router.get("/outcome-audit")
-def decision_outcome_audit(limit: int = Query(2000, ge=1, le=5000)):
-    """Read-only MLB audit comparing saved Decision Center picks with settled outcomes."""
+def decision_outcome_audit(
+    limit: int = Query(2000, ge=1, le=5000),
+    sport: Literal["MLB", "NBA", "NFL"] = Query("MLB"),
+):
+    """Read-only outcome audit for MLB, NBA, or NFL; MLB remains the default."""
     supabase = get_supabase_client()
     try:
         evaluations_response = (
@@ -529,7 +532,7 @@ def decision_outcome_audit(limit: int = Query(2000, ge=1, le=5000)):
                 "selected_team,model_probability,decimal_odds,classification,"
                 "expected_value_percent,evaluated_at"
             )
-            .eq("sport", "MLB")
+            .eq("sport", sport)
             .order("evaluated_at", desc=True)
             .limit(limit)
             .execute()
@@ -553,7 +556,7 @@ def decision_outcome_audit(limit: int = Query(2000, ge=1, le=5000)):
                 .execute()
             )
             snapshots.extend(response.data or [])
-        report = build_decision_outcome_audit(evaluations, snapshots)
+        report = build_decision_outcome_audit(evaluations, snapshots, sport_filter=sport)
         report["sample_limit"] = limit
         return report
     except Exception as exc:
@@ -566,14 +569,17 @@ def decision_outcome_audit(limit: int = Query(2000, ge=1, le=5000)):
 
 
 @router.get("/audit-coverage")
-def decision_audit_coverage(limit: int = Query(2000, ge=1, le=5000)):
-    """Read-only diagnostics explaining why evaluations are or are not auditable."""
+def decision_audit_coverage(
+    limit: int = Query(2000, ge=1, le=5000),
+    sport: Literal["MLB", "NBA", "NFL"] = Query("MLB"),
+):
+    """Read-only diagnostics for MLB, NBA, or NFL; MLB remains the default."""
     try:
         supabase = get_supabase_client()
         evaluations_response = (
             supabase.table("decision_evaluations")
             .select("id,prediction_snapshot_id,sport,model_version,selected_side")
-            .eq("sport", "MLB")
+            .eq("sport", sport)
             .order("evaluated_at", desc=True)
             .limit(limit)
             .execute()
@@ -594,7 +600,7 @@ def decision_audit_coverage(limit: int = Query(2000, ge=1, le=5000)):
                 .execute()
             )
             snapshots.extend(response.data or [])
-        report = build_decision_audit_coverage(evaluations, snapshots)
+        report = build_decision_audit_coverage(evaluations, snapshots, sport_filter=sport)
         report["sample_limit"] = limit
         return report
     except Exception as exc:
@@ -607,8 +613,11 @@ def decision_audit_coverage(limit: int = Query(2000, ge=1, le=5000)):
 
 
 @router.get("/value-integrity")
-def decision_value_integrity(limit: int = Query(2000, ge=1, le=5000)):
-    """Read-only audit of stored Decision Center EV math and selected-side probabilities."""
+def decision_value_integrity(
+    limit: int = Query(2000, ge=1, le=5000),
+    sport: Literal["MLB", "NBA", "NFL"] = Query("MLB"),
+):
+    """Read-only EV and probability integrity audit for MLB, NBA, or NFL."""
     try:
         supabase = get_supabase_client()
         evaluations_response = (
@@ -617,7 +626,7 @@ def decision_value_integrity(limit: int = Query(2000, ge=1, le=5000)):
                 "id,prediction_snapshot_id,sport,model_version,selected_side,"
                 "selected_team,model_probability,decimal_odds,expected_value_percent,evaluated_at"
             )
-            .eq("sport", "MLB")
+            .eq("sport", sport)
             .order("evaluated_at", desc=True)
             .limit(limit)
             .execute()
@@ -638,7 +647,7 @@ def decision_value_integrity(limit: int = Query(2000, ge=1, le=5000)):
                 .execute()
             )
             snapshots.extend(response.data or [])
-        report = build_decision_value_integrity_audit(evaluations, snapshots)
+        report = build_decision_value_integrity_audit(evaluations, snapshots, sport_filter=sport)
         report["sample_limit"] = limit
         return report
     except Exception as exc:
