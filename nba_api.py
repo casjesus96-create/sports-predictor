@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Query
 
 from nba_client import get_game, get_upcoming_games
+from nba_player_stats import fetch_player_boxscore
 from nba_analyzer import analyze_nba_game
 from nba_prediction import MODEL_VERSION
 from nba_repository import (
@@ -14,6 +15,22 @@ from nba_repository import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/nba", tags=["NBA"])
 UTC = timezone.utc
+
+
+@router.get("/boxscore/{game_id}")
+def nba_player_boxscore(game_id: str):
+    """Return ESPN boxscore player points, assists, rebounds, blocks, and steals."""
+    try:
+        report = fetch_player_boxscore(game_id)
+        if not report.get("available"):
+            return {**report, "message": "ESPN todavía no ofrece estadísticas individuales para este encuentro."}
+        return report
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error obteniendo estadísticas individuales NBA game_id=%s", game_id)
+        raise HTTPException(status_code=502, detail={"error": "NBA_BOXSCORE_ERROR",
+            "message": "No fue posible obtener las estadísticas individuales NBA.", "details": str(exc)}) from exc
 
 
 @router.get("/status")
