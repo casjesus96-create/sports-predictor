@@ -121,8 +121,12 @@ def build_decision_value_integrity_audit(
                 totals["probability_mismatches_snapshot"] += 1
                 group["probability_mismatches_snapshot"] += 1
 
+        # A linked evaluation is fully consistent only if its source snapshot
+        # exists and the same-side probability can be verified. Manual entries
+        # can pass the EV formula check but cannot be fully source-validated.
         fully_consistent = ev_matches and (
-            probability_matches is True if snapshot is not None and side in {"home", "away"} else True
+            (snapshot is not None and side in {"home", "away"} and probability_matches is True)
+            if snapshot_id else False
         )
         if fully_consistent:
             totals["fully_consistent"] += 1
