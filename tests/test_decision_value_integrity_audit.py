@@ -13,7 +13,7 @@ def test_integrity_audit_checks_ev_and_selected_side_snapshot_probability():
             "id": "e2", "sport": "MLB", "model_version": "2.0.0-matchup",
             "prediction_snapshot_id": "s2", "selected_side": "home",
             "selected_team": "Home", "model_probability": 0.60,
-            "decimal_odds": 2.0, "expected_value_percent": 25.0,
+            "decimal_odds": 2.0, "expected_value_percent": 20.0,
         },
     ]
     snapshots = [
