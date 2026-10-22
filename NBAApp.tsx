@@ -433,6 +433,43 @@ export default function NBAApp() {
                                 <div className="score-row"><span>Partidos históricos usados</span><b>{factors.historical_games_used ?? "—"}</b></div>
                                 <div className="score-row"><span>Factor estadístico de boxscore</span><b>{numberLabel(stored.features?.factors?.recent_boxscores_used, 0)} juegos/equipo combinados</b></div>
                                 <div className="score-row"><span>Ventaja de localía</span><b>{factors.home_advantage_used ? "Aplicada" : "No aplicada"}</b></div>
+                                <h4>Proyección individual por jugador</h4>
+                                <p className="muted">Promedios por aparición en hasta cinco boxscores finalizados anteriores al inicio. No son estadísticas confirmadas del partido ni garantías; no se ajustan automáticamente por lesiones o minutos esperados.</p>
+                                {!projections.player_projections?.available ? (
+                                  <div className="panel">
+                                    <b>Proyecciones individuales no disponibles</b>
+                                    <p className="muted">No se pudieron reunir boxscores individuales históricos suficientes desde ESPN. Actualiza el análisis más tarde; no se inventan valores.</p>
+                                  </div>
+                                ) : (
+                                  <div className="analysis-teams">
+                                    {projections.player_projections.teams.map((playerTeam: any) => (
+                                      <div className="panel" key={playerTeam.team_id || playerTeam.team}>
+                                        <b>{playerTeam.team} · promedios recientes por jugador</b>
+                                        <small className="muted">Boxscores consultados: {playerTeam.games_available ?? 0}</small>
+                                        <div style={{ overflowX: "auto" }}>
+                                          <table>
+                                            <thead>
+                                              <tr><th>Jugador</th><th>Muestra</th><th>PTS</th><th>AST</th><th>REB</th><th>BLK</th><th>STL</th></tr>
+                                            </thead>
+                                            <tbody>
+                                              {playerTeam.players.map((player: any) => (
+                                                <tr key={player.player_id || player.name}>
+                                                  <td>{player.name}{player.position ? ` · ${player.position}` : ""}</td>
+                                                  <td>{player.games_sampled}</td>
+                                                  <td>{numberLabel(player.projected_points)}</td>
+                                                  <td>{numberLabel(player.projected_assists)}</td>
+                                                  <td>{numberLabel(player.projected_rebounds)}</td>
+                                                  <td>{numberLabel(player.projected_blocks)}</td>
+                                                  <td>{numberLabel(player.projected_steals)}</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
