@@ -4,8 +4,9 @@ import NFLApp from "./NFLApp";
 import NBAApp from "./NBAApp";
 import TennisApp from "./TennisApp";
 import DecisionCenter from "./DecisionCenter";
+import ProbabilityDraws from "./ProbabilityDraws";
 
-type Sport = "MLB" | "NFL" | "NBA" | "TENNIS" | "DECISION";
+type Sport = "MLB" | "NFL" | "NBA" | "TENNIS" | "DECISION" | "DRAWS";
 
 export default function App() {
   const [sport, setSport] = useState<Sport>("NBA");
@@ -78,9 +79,17 @@ export default function App() {
         >
           📊 Centro de Decisión
         </button>
+        <button
+          type="button"
+          aria-pressed={sport === "DRAWS"}
+          onClick={() => setSport("DRAWS")}
+          style={buttonStyle(sport === "DRAWS")}
+        >
+          🎲 Probabilidad de Sorteos
+        </button>
       </nav>
 
-      {sport === "DECISION" ? <DecisionCenter /> : sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
+      {sport === "DRAWS" ? <ProbabilityDraws /> : sport === "DECISION" ? <DecisionCenter /> : sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
     </>
   );
 }
