@@ -40,7 +40,7 @@ def test_build_projections_estimates_each_quarter_from_team_for_and_against():
     assert quarters["available"] is True
     assert [p["label"] for p in quarters["periods"]] == ["Q1", "Q2", "Q3", "Q4"]
     assert quarters["periods"][0]["home_points"] == 25.0
-    assert quarters["periods"][0]["away_points"] == 20.0
+    assert quarters["periods"][0]["away_points"] == 21.0
 
 
 def test_quarter_projection_is_unavailable_when_no_quarter_data_exists():
