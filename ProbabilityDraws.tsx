@@ -30,12 +30,21 @@ const THEORETICAL: Record<Modality, { outcomes: number; note: string }> = {
 };
 
 function parseResults(raw: string, modality: Modality): string[] {
+  const tokens = raw.split(/[\\s,;|]+/).map((value) => value.trim()).filter(Boolean);
+  if (modality === "combinaciones") {
+    return tokens.flatMap((token) => {
+      const match = token.match(/^(\\d{1,2})[-/:](\\d{1,2})$/);
+      if (!match) return [];
+      const figure = Number(match[1]);
+      const terminal = Number(match[2]);
+      return figure <= 37 && terminal <= 99
+        ? [match[1].padStart(2, "0") + "-" + match[2].padStart(2, "0")]
+        : [];
+    });
+  }
   const width = modality === "animalitos" ? 2 : modality === "triples" ? 3 : 2;
-  const max = modality === "animalitos" ? 37 : modality === "terminales" ? 99 : modality === "triples" ? 999 : 999999;
-  return raw
-    .split(/[\s,;|]+/)
-    .map((value) => value.trim())
-    .filter(Boolean)
+  const max = modality === "animalitos" ? 37 : modality === "terminales" ? 99 : 999;
+  return tokens
     .map((value) => value.replace(/[^0-9]/g, ""))
     .filter((value) => value.length > 0 && Number(value) <= max)
     .map((value) => value.padStart(width, "0"));
@@ -54,10 +63,7 @@ export default function ProbabilityDraws() {
     results.forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1));
     return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [results]);
-  const normalizedCandidate = candidate.trim().replace(/[^0-9]/g, "").padStart(
-    modality === "triples" ? 3 : 2,
-    "0",
-  );
+  const normalizedCandidate = modality === "combinaciones" ? (() => { const match = candidate.trim().match(/^(\\d{1,2})[-/:](\\d{1,2})$/); return match && Number(match[1]) <= 37 && Number(match[2]) <= 99 ? match[1].padStart(2, "0") + "-" + match[2].padStart(2, "0") : ""; })() : candidate.trim().replace(/[^0-9]/g, "").padStart(modality === "triples" ? 3 : 2, "0");
   const candidateCount = results.filter((value) => value === normalizedCandidate).length;
   const candidateFrequency = results.length ? (candidateCount / results.length) * 100 : null;
   const formatPct = (value: number) => `${value.toLocaleString("es-ES", { maximumFractionDigits: 2 })}%`;
@@ -138,7 +144,7 @@ export default function ProbabilityDraws() {
           <textarea
             value={rawResults}
             onChange={(event) => setRawResults(event.target.value)}
-            placeholder={modality === "triples" ? "Ejemplo de formato: 123, 007, 840" : "Ejemplo de formato: 03, 17, 03, 22"}
+            placeholder={modality === "triples" ? "Ejemplo de formato: 123, 007, 840" : modality === "combinaciones" ? "Ejemplo: 03-27, 15-00 (figura-terminal)" : "Ejemplo de formato: 03, 17, 03, 22"}
             rows={4}
             style={{ ...field, resize: "vertical" }}
           />
@@ -165,7 +171,7 @@ export default function ProbabilityDraws() {
       <section style={card}>
         <h2 style={{ marginTop: 0 }}>3. Consultar un resultado específico</h2>
         <label style={label}>Resultado a revisar
-          <input value={candidate} onChange={(event) => setCandidate(event.target.value)} inputMode="numeric" placeholder={modality === "triples" ? "000–999" : "00–99"} style={field} />
+          <input value={candidate} onChange={(event) => setCandidate(event.target.value)} inputMode="numeric" placeholder={modality === "triples" ? "000–999" : modality === "combinaciones" ? "figura-terminal, ej. 03-27" : "00–99"} style={field} />
         </label>
         <div style={{ padding: 12, background: "#f8fafc", borderRadius: 8, lineHeight: 1.6 }}>
           En la muestra introducida, <strong>{normalizedCandidate || "—"}</strong> aparece <strong>{candidateCount}</strong> veces
