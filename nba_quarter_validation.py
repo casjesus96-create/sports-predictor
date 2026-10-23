@@ -55,7 +55,7 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
 
         kickoff = _parse_dt(game.get("kickoff"))
         cutoff = _parse_dt(row.get("data_cutoff") or features.get("analysis_data_cutoff"))
-        if kickoff and cutoff and cutoff >= kickoff:
+        if kickoff is None or cutoff is None or cutoff >= kickoff:
             skipped["invalid_or_postgame_cutoff"] += 1
             continue
         actual = (actual_quarters_by_game or {}).get(event_id)
