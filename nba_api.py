@@ -3,10 +3,11 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
-from nba_client import get_game, get_upcoming_games
+from nba_client import get_game, get_upcoming_games, _get_boxscore_for_game
 from nba_player_stats import fetch_player_boxscore
 from nba_analyzer import analyze_nba_game
 from nba_prediction import MODEL_VERSION
+from nba_quarter_validation import evaluate_quarter_projections
 from nba_repository import (
     save_nba_analysis, refresh_nba_analysis, get_nba_predictions, settle_nba_prediction,
     get_nba_performance,
@@ -246,3 +247,66 @@ def nba_performance():
     except Exception as exc:
         logger.exception("Error calculando rendimiento NBA")
         raise HTTPException(status_code=500, detail="No fue posible calcular el rendimiento NBA.") from exc
+
+
+@router.get("/audit/quarter-projections")
+def nba_quarter_projection_audit(limit: int = Query(100, ge=1, le=250)):
+    """Read-only MAE audit: immutable pregame quarter projections vs ESPN actuals."""
+    try:
+        rows = get_nba_predictions(status="SETTLED", limit=limit, model_version=MODEL_VERSION)
+        eligible = []
+        for row in rows:
+            features = row.get("features") or {}
+            quarters = ((features.get("projections") or {}).get("quarter_points") or {})
+            if quarters.get("available") and len(quarters.get("periods") or []) >= 4:
+                eligible.append(row)
+
+        actuals = {}
+        fetch_errors = []
+        # Bound concurrency to avoid hammering ESPN when many historical rows exist.
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {pool.submit(_get_boxscore_for_game, str(row.get("event_id"))): row for row in eligible if row.get("event_id")}
+            for future in as_completed(futures):
+                row = futures[future]
+                event_id = str(row.get("event_id") or "")
+                game = ((row.get("features") or {}).get("game") or {})
+                try:
+                    _, team_stats = future.result()
+                    home_id = str(game.get("home_team_id") or "")
+                    away_id = str(game.get("away_team_id") or "")
+                    home_stats = team_stats.get(home_id) or {}
+                    away_stats = team_stats.get(away_id) or {}
+                    home_quarters = home_stats.get("_quarter_points") or []
+                    away_quarters = away_stats.get("_quarter_points") or []
+                    if len(home_quarters) >= 4 and len(away_quarters) >= 4 and all(v is not None for v in home_quarters[:4] + away_quarters[:4]):
+                        actuals[event_id] = {home_id: home_quarters[:4], away_id: away_quarters[:4]}
+                    else:
+                        fetch_errors.append({"event_id": event_id, "reason": "ESPN no publicó los cuatro cuartos completos."})
+                except Exception as exc:
+                    logger.warning("Error obteniendo cuartos reales NBA game_id=%s: %s", event_id, exc)
+                    fetch_errors.append({"event_id": event_id, "reason": "No se pudo obtener el boxscore real de ESPN."})
+
+        report = evaluate_quarter_projections(eligible, actuals)
+        report["summary"] = {
+            "settled_snapshots_scanned": len(rows),
+            "snapshots_with_quarter_projection": len(eligible),
+            "games_with_actual_quarters": len(actuals),
+            "actual_data_fetch_issues": len(fetch_errors),
+        }
+        report["fetch_issues"] = fetch_errors
+        report["limitations"] = [
+            "Solo evalúa proyecciones guardadas antes del inicio; no reconstruye proyecciones con información posterior.",
+            "Los MAE son errores históricos descriptivos y no cambian el modelo oficial NBA-1.1.0.",
+            "La evaluación depende de que ESPN conserve los parciales por cuarto.",
+            "Si existen varias capturas históricas del mismo partido, cada snapshot se evalúa por separado; no deben interpretarse como partidos independientes.",
+        ]
+        return report
+    except Exception as exc:
+        logger.exception("Error auditando proyecciones por cuarto NBA")
+        raise HTTPException(status_code=500, detail={
+            "error": "NBA_QUARTER_AUDIT_ERROR",
+            "message": "No fue posible calcular la validación histórica de proyecciones por cuarto.",
+            "details": str(exc),
+        }) from exc
+
