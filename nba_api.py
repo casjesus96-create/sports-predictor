@@ -7,7 +7,8 @@ from nba_client import get_game, get_upcoming_games, _get_boxscore_for_game
 from nba_player_stats import fetch_player_boxscore
 from nba_analyzer import analyze_nba_game
 from nba_prediction import MODEL_VERSION
-from nba_quarter_validation import evaluate_quarter_projections\nfrom nba_repository import (
+from nba_quarter_validation import evaluate_quarter_projections
+from nba_repository import (
     save_nba_analysis, refresh_nba_analysis, get_nba_predictions, settle_nba_prediction,
     get_nba_performance,
 )
