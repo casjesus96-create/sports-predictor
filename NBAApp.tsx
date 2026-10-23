@@ -613,7 +613,7 @@ export default function NBAApp() {
                   ))}</tbody>
                 </table>
               </div>
-              <p className="muted">Snapshots históricos encontrados: {quarterAudit.summary?.settled_snapshots_scanned ?? "—"} · Con proyección de cuartos: {quarterAudit.summary?.snapshots_with_quarter_projection ?? "—"} · Con parciales reales: {quarterAudit.summary?.games_with_actual_quarters ?? "—"} · Problemas al consultar ESPN: {quarterAudit.summary?.actual_data_fetch_issues ?? 0}</p>
+              <p className="muted">Snapshots revisados: {quarterAudit.summary?.snapshots_scanned ?? "—"} · Liquidados: {quarterAudit.summary?.settled_snapshots_scanned ?? "—"} · Pendientes: {quarterAudit.summary?.pending_snapshots_scanned ?? "—"} · Con proyección Q1–Q4: {quarterAudit.summary?.snapshots_with_quarter_projection ?? "—"} · Pendientes con proyección: {quarterAudit.summary?.pending_with_quarter_projection ?? "—"} · Liquidados evaluables: {quarterAudit.summary?.settled_with_quarter_projection ?? "—"} · Con parciales reales: {quarterAudit.summary?.games_with_actual_quarters ?? "—"} · Problemas ESPN: {quarterAudit.summary?.actual_data_fetch_issues ?? 0}</p>
               {(quarterAudit.fetch_issues || []).length > 0 && <details><summary>Ver partidos sin parciales completos ({quarterAudit.fetch_issues.length})</summary><ul>{quarterAudit.fetch_issues.slice(0, 20).map((item: any) => <li key={item.event_id}>{item.event_id}: {item.reason}</li>)}</ul></details>}
               <div className="message notice"><b>Lectura correcta</b><p>La muestra puede incluir varias capturas del mismo partido; por eso no equivale necesariamente a partidos independientes. No se ajusta ningún modelo con estos resultados automáticamente.</p></div>
             </>
