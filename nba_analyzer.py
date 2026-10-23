@@ -39,6 +39,24 @@ def _team_metrics(team_id, games, boxscore_games=None):
     recent = detail[:5]
     recent_boxscores = list(boxscore_games or [])[:5]
 
+    quarter_for = []
+    quarter_against = []
+    for period in range(4):
+        own_values = [
+            (item.get("stats") or {}).get("_quarter_points", [])[period]
+            for item in recent_boxscores
+            if len((item.get("stats") or {}).get("_quarter_points", [])) > period
+            and (item.get("stats") or {}).get("_quarter_points", [])[period] is not None
+        ]
+        opponent_values = [
+            (item.get("opponent_stats") or {}).get("_quarter_points", [])[period]
+            for item in recent_boxscores
+            if len((item.get("opponent_stats") or {}).get("_quarter_points", [])) > period
+            and (item.get("opponent_stats") or {}).get("_quarter_points", [])[period] is not None
+        ]
+        quarter_for.append(round(sum(own_values) / len(own_values), 2) if own_values else None)
+        quarter_against.append(round(sum(opponent_values) / len(opponent_values), 2) if opponent_values else None)
+
     recent_stats = {}
     for key in STAT_KEYS:
         values = [
@@ -64,6 +82,9 @@ def _team_metrics(team_id, games, boxscore_games=None):
         "recent_point_diff_per_game": round(sum(x["point_diff"] for x in recent) / len(recent), 2) if recent else 0.0,
         "boxscore_games": len(recent_boxscores),
         "recent_stats_per_game": recent_stats,
+        "quarter_points_for_per_game": quarter_for,
+        "quarter_points_against_per_game": quarter_against,
+        "quarter_games_sampled": min(len(recent_boxscores), len([item for item in recent_boxscores if (item.get("stats") or {}).get("_quarter_points")])),
         "games_detail": detail[:10],
     }
 
@@ -94,6 +115,22 @@ def _build_projections(game, home_history, away_history):
         key: _project_stat(home_history, away_history, key)
         for key in STAT_KEYS
     }
+    projected_quarters = []
+    for period in range(4):
+        home_for = (home_history.get("quarter_points_for_per_game") or [None] * 4)[period]
+        away_allowed = (away_history.get("quarter_points_against_per_game") or [None] * 4)[period]
+        away_for = (away_history.get("quarter_points_for_per_game") or [None] * 4)[period]
+        home_allowed = (home_history.get("quarter_points_against_per_game") or [None] * 4)[period]
+        home_q = _mean_or_none([home_for, away_allowed])
+        away_q = _mean_or_none([away_for, home_allowed])
+        projected_quarters.append({
+            "period": period + 1,
+            "label": f"Q{period + 1}",
+            "home_points": home_q,
+            "away_points": away_q,
+        })
+    quarter_available = any(item["home_points"] is not None or item["away_points"] is not None for item in projected_quarters)
+
     return {
         "method": "Promedios de los últimos cinco partidos finalizados antes del inicio; no son garantías.",
         "sample_games_home": home_history.get("recent_games", 0),
@@ -101,6 +138,13 @@ def _build_projections(game, home_history, away_history):
         "home_points": home_points,
         "away_points": away_points,
         "total_points": round(home_points + away_points, 2) if home_points is not None and away_points is not None else None,
+        "quarter_points": {
+            "available": quarter_available,
+            "method": "Promedio por cuarto de partidos históricos recientes; estimación experimental.",
+            "sample_games_home": home_history.get("quarter_games_sampled", 0),
+            "sample_games_away": away_history.get("quarter_games_sampled", 0),
+            "periods": projected_quarters,
+        },
         "recent_average_stats": stats,
         "home_team_recent_stats": home_history.get("recent_stats_per_game") or {},
         "away_team_recent_stats": away_history.get("recent_stats_per_game") or {},
