@@ -253,13 +253,17 @@ def nba_performance():
 def nba_quarter_projection_audit(limit: int = Query(100, ge=1, le=250)):
     """Read-only MAE audit: immutable pregame quarter projections vs ESPN actuals."""
     try:
-        rows = get_nba_predictions(status="SETTLED", limit=limit, model_version=MODEL_VERSION)
-        eligible = []
-        for row in rows:
-            features = row.get("features") or {}
-            quarters = ((features.get("projections") or {}).get("quarter_points") or {})
-            if quarters.get("available") and len(quarters.get("periods") or []) >= 4:
-                eligible.append(row)
+        # Scan both PENDING and SETTLED snapshots so newly saved quarter projections
+        # are visible in coverage diagnostics before their games finish.
+        rows = get_nba_predictions(limit=500, model_version=MODEL_VERSION)
+        settled_rows = [row for row in rows if row.get("result_status") == "SETTLED"]
+        pending_rows = [row for row in rows if row.get("result_status") == "PENDING"]
+        has_quarter_projection = lambda row: (
+            (((row.get("features") or {}).get("projections") or {}).get("quarter_points") or {}).get("available")
+            and len((((row.get("features") or {}).get("projections") or {}).get("quarter_points") or {}).get("periods") or []) >= 4
+        )
+        eligible_all = [row for row in rows if has_quarter_projection(row)]
+        eligible = [row for row in settled_rows if has_quarter_projection(row)]
 
         actuals = {}
         fetch_errors = []
@@ -289,8 +293,12 @@ def nba_quarter_projection_audit(limit: int = Query(100, ge=1, le=250)):
 
         report = evaluate_quarter_projections(eligible, actuals)
         report["summary"] = {
-            "settled_snapshots_scanned": len(rows),
-            "snapshots_with_quarter_projection": len(eligible),
+            "snapshots_scanned": len(rows),
+            "settled_snapshots_scanned": len(settled_rows),
+            "pending_snapshots_scanned": len(pending_rows),
+            "snapshots_with_quarter_projection": len(eligible_all),
+            "pending_with_quarter_projection": sum(1 for row in pending_rows if has_quarter_projection(row)),
+            "settled_with_quarter_projection": len(eligible),
             "games_with_actual_quarters": len(actuals),
             "actual_data_fetch_issues": len(fetch_errors),
         }
