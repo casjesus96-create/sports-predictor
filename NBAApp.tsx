@@ -394,6 +394,23 @@ export default function NBAApp() {
                                   <div><span>Total de puntos</span><b>{numberLabel(projections.total_points)}</b></div>
                                 </div>
                                 <p className="muted">{projections.method || "Este registro se creó antes de añadir las estadísticas detalladas de boxscore."}</p>
+                                <h4>Proyección de puntos por cuarto</h4>
+                                {projections.quarter_points?.available ? (
+                                  <>
+                                    <p className="muted">Estimación prepartido basada en los parciales de encuentros anteriores. No es el marcador real ni modifica la probabilidad de victoria. Muestra: visitante {projections.quarter_points.sample_games_away ?? 0} partidos · local {projections.quarter_points.sample_games_home ?? 0} partidos.</p>
+                                    <div className="panel" style={{ overflowX: "auto" }}>
+                                      <table>
+                                        <thead><tr><th>Equipo</th>{projections.quarter_points.periods.map((period: any) => <th key={period.period}>{period.label}</th>)}<th>Total estimado</th></tr></thead>
+                                        <tbody>
+                                          <tr><td>{game.away || "Visitante"}</td>{projections.quarter_points.periods.map((period: any) => <td key={period.period}>{numberLabel(period.away_points)}</td>)}<td><b>{numberLabel(projections.quarter_points.periods.reduce((sum: number, period: any) => sum + (typeof period.away_points === "number" ? period.away_points : 0), 0))}</b></td></tr>
+                                          <tr><td>{game.home || "Local"}</td>{projections.quarter_points.periods.map((period: any) => <td key={period.period}>{numberLabel(period.home_points)}</td>)}<td><b>{numberLabel(projections.quarter_points.periods.reduce((sum: number, period: any) => sum + (typeof period.home_points === "number" ? period.home_points : 0), 0))}</b></td></tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <p className="muted">No hay suficientes parciales históricos de ESPN para estimar los puntos por cuarto. No se generan valores artificiales.</p>
+                                )}
                                 <h4>Promedios recientes por equipo</h4>
                                 {!hasStats && <p className="muted">Este registro histórico no contiene estadísticas detalladas de boxscore. Las nuevas proyecciones las solicitarán a la fuente cuando estén disponibles.</p>}
                                 <div className="analysis-teams">

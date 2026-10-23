@@ -269,12 +269,26 @@ def _get_boxscore_for_game(game_id):
     response.raise_for_status()
     payload = response.json()
     boxscore = payload.get("boxscore") or {}
+    header = payload.get("header") or {}
+    competitions = header.get("competitions") or []
+    competition = competitions[0] if competitions else {}
+    period_scores = {}
+    for competitor in competition.get("competitors") or []:
+        team = competitor.get("team") or {}
+        team_id = str(team.get("id") or "")
+        if not team_id:
+            continue
+        period_scores[team_id] = [
+            _score(line.get("displayValue", line.get("value")))
+            for line in (competitor.get("linescores") or [])[:4]
+        ]
     team_stats = {}
     for item in boxscore.get("teams") or []:
         team = item.get("team") or {}
         team_id = str(team.get("id") or item.get("id") or "")
         stats = _normalize_boxscore_stats(item.get("statistics") or [])
         if team_id and stats:
+            stats["_quarter_points"] = period_scores.get(team_id, [])
             team_stats[team_id] = stats
     return str(game_id), team_stats
 
