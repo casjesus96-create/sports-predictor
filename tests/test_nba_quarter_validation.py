@@ -34,6 +34,7 @@ def test_validation_calculates_quarter_mae_and_does_not_mutate_snapshot():
     assert result["home_points_mae"] == 0.5
     assert result["away_points_mae"] == 0
     assert result["team_points_mae"] == 0.25
+    assert result["quarter_total_mae"] == 0.5
     assert result["game_total_score_mae"] == 0
     assert [x["label"] for x in result["by_quarter"]] == ["Q1", "Q2", "Q3", "Q4"]
     assert repr(row) == original
