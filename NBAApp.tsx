@@ -30,6 +30,7 @@ type PredictionRow = {
 };
 type PlayerBoxscore = {
   success?: boolean;
+  quarter_scores?: { available?: boolean; away_total?: number | null; home_total?: number | null; periods?: Array<{ period: number; label: string; away_points?: number | null; home_points?: number | null }> };
   available?: boolean;
   message?: string;
   teams?: Array<{ team: string; abbreviation?: string; players: Array<{ player_id: string; name: string; position?: string | null; starter?: boolean; points?: number | null; assists?: number | null; rebounds?: number | null; blocks?: number | null; steals?: number | null }> }>;
@@ -494,6 +495,20 @@ export default function NBAApp() {
                     )}
                     {playerBoxscores[String(game.game_id)] && (
                       <section className="analysis-content">
+                        <h4>Puntos por cuarto · ESPN</h4>
+                        {playerBoxscores[String(game.game_id)]?.quarter_scores?.available ? (
+                          <div className="panel" style={{ overflowX: "auto" }}>
+                            <table>
+                              <thead><tr><th>Equipo</th>{playerBoxscores[String(game.game_id)]?.quarter_scores?.periods?.map((period) => <th key={period.period}>{period.label}</th>)}<th>Total</th></tr></thead>
+                              <tbody>
+                                <tr><td>{game.away || "Visitante"}</td>{playerBoxscores[String(game.game_id)]?.quarter_scores?.periods?.map((period) => <td key={period.period}>{period.away_points ?? "—"}</td>)}<td><b>{playerBoxscores[String(game.game_id)]?.quarter_scores?.away_total ?? "—"}</b></td></tr>
+                                <tr><td>{game.home || "Local"}</td>{playerBoxscores[String(game.game_id)]?.quarter_scores?.periods?.map((period) => <td key={period.period}>{period.home_points ?? "—"}</td>)}<td><b>{playerBoxscores[String(game.game_id)]?.quarter_scores?.home_total ?? "—"}</b></td></tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <p className="muted">ESPN todavía no publica parciales por cuarto para este encuentro.</p>
+                        )}
                         <h4>Estadísticas individuales · ESPN</h4>
                         {!playerBoxscores[String(game.game_id)]?.available && (
                           <p className="muted">{playerBoxscores[String(game.game_id)]?.message || "Estadísticas no disponibles para este encuentro."}</p>

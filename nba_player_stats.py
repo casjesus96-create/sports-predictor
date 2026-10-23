@@ -50,9 +50,51 @@ def fetch_player_boxscore(game_id: str) -> dict:
     return parse_player_boxscore(response.json(), normalized_id)
 
 
+def _parse_period_scores(payload: dict) -> dict:
+    """Extract actual quarter/overtime scores from ESPN competition linescores."""
+    header = payload.get("header") or {}
+    competitions = header.get("competitions") or []
+    competition = competitions[0] if competitions else {}
+    competitors = competition.get("competitors") or []
+    home = next((item for item in competitors if item.get("homeAway") == "home"), {})
+    away = next((item for item in competitors if item.get("homeAway") == "away"), {})
+
+    def periods(competitor):
+        result = {}
+        for index, line in enumerate(competitor.get("linescores") or [], start=1):
+            raw_period = line.get("period", index)
+            try:
+                period = int(raw_period)
+            except (TypeError, ValueError):
+                period = index
+            score = _as_number(line.get("displayValue", line.get("value")))
+            if score is not None and period > 0:
+                result[period] = score
+        return result
+
+    home_periods = periods(home)
+    away_periods = periods(away)
+    all_periods = sorted(set(home_periods) | set(away_periods))
+    scores = []
+    for period in all_periods:
+        scores.append({
+            "period": period,
+            "label": f"Q{period}" if period <= 4 else f"OT{period - 4}",
+            "away_points": away_periods.get(period),
+            "home_points": home_periods.get(period),
+        })
+    return {
+        "available": bool(scores),
+        "periods": scores,
+        "away_total": _as_number(away.get("score")),
+        "home_total": _as_number(home.get("score")),
+    }
+
+
 def parse_player_boxscore(payload: dict, game_id: str) -> dict:
-    """Normalize ESPN summary boxscore player stats without inventing missing values."""
+    """Normalize ESPN summary player stats and actual quarter scores without inventing values."""
     boxscore = payload.get("boxscore") or {}
+    quarter_scores = _parse_period_scores(payload)
     teams = []
     for team_group in boxscore.get("players") or []:
         team = team_group.get("team") or {}
@@ -99,6 +141,7 @@ def parse_player_boxscore(payload: dict, game_id: str) -> dict:
         "sport": "NBA",
         "game_id": str(game_id),
         "source": "ESPN public summary boxscore",
+        "quarter_scores": quarter_scores,
         "teams": teams,
         "player_count": sum(len(team["players"]) for team in teams),
         "available": bool(teams),
