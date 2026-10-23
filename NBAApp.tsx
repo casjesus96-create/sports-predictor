@@ -116,6 +116,8 @@ export default function NBAApp() {
   const [playerBoxscores, setPlayerBoxscores] = useState<Record<string, PlayerBoxscore>>({});
   const [boxscoreBusy, setBoxscoreBusy] = useState<string | null>(null);
   const [performance, setPerformance] = useState<Performance | null>(null);
+  const [quarterAudit, setQuarterAudit] = useState<any>(null);
+  const [quarterAuditBusy, setQuarterAuditBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -244,6 +246,24 @@ export default function NBAApp() {
       setError(errorText(err));
     } finally {
       setBoxscoreBusy(null);
+    }
+  };
+
+  const loadQuarterAudit = async () => {
+    setQuarterAuditBusy(true);
+    setError("");
+    try {
+      const result = await api<any>("/audit/quarter-projections?limit=100");
+      setQuarterAudit(result);
+      if (!result.evaluated_games) {
+        setMessage("La validación se ejecutó, pero todavía no hay suficientes snapshots liquidados con proyección por cuarto y parciales reales disponibles en ESPN.");
+      } else {
+        setMessage(`Validación histórica completada: ${result.evaluated_games} snapshots evaluados. El modelo oficial no fue modificado.`);
+      }
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setQuarterAuditBusy(false);
     }
   };
 
@@ -561,6 +581,42 @@ export default function NBAApp() {
                 );
               })}
             </div>
+          )}
+        </section>
+
+        <section className="panel" style={{ marginTop: 22 }}>
+          <div className="section-heading">
+            <div>
+              <div className="section-kicker">VALIDACIÓN HISTÓRICA</div>
+              <h2>Proyecciones por cuarto · Q1–Q4</h2>
+            </div>
+            <button className="primary" type="button" onClick={() => void loadQuarterAudit()} disabled={quarterAuditBusy}>
+              {quarterAuditBusy ? "Comparando con ESPN…" : "Validar proyecciones históricas"}
+            </button>
+          </div>
+          <p className="muted">Compara las proyecciones pregame guardadas con los puntos reales por cuarto. Se calculan errores absolutos medios (MAE); esta auditoría no modifica las probabilidades de NBA-1.1.0.</p>
+          {!quarterAudit ? (
+            <div className="panel empty">Ejecuta la validación para medir el error con los snapshots históricos ya liquidados.</div>
+          ) : (
+            <>
+              <div className="metrics-grid">
+                <div className="metric panel"><span>Snapshots evaluados</span><strong>{quarterAudit.evaluated_games ?? 0}</strong><small>Partidos con Q1–Q4 disponibles</small></div>
+                <div className="metric panel"><span>MAE puntos por equipo</span><strong>{numberLabel(quarterAudit.team_points_mae)}</strong><small>Menor es mejor</small></div>
+                <div className="metric panel"><span>MAE total del partido</span><strong>{numberLabel(quarterAudit.game_total_score_mae)}</strong><small>Proyección total vs marcador final</small></div>
+                <div className="metric panel"><span>MAE combinado por cuarto</span><strong>{numberLabel(quarterAudit.quarter_total_mae)}</strong><small>Ambos equipos sumados por periodo</small></div>
+              </div>
+              <div style={{ overflowX: "auto", marginTop: 12 }}>
+                <table>
+                  <thead><tr><th>Periodo</th><th>MAE por equipo</th><th>Observaciones</th></tr></thead>
+                  <tbody>{(quarterAudit.by_quarter || []).map((item: any) => (
+                    <tr key={item.period}><td>{item.label}</td><td>{numberLabel(item.team_points_mae)}</td><td>{item.observations ?? 0}</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <p className="muted">Snapshots históricos encontrados: {quarterAudit.summary?.settled_snapshots_scanned ?? "—"} · Con proyección de cuartos: {quarterAudit.summary?.snapshots_with_quarter_projection ?? "—"} · Con parciales reales: {quarterAudit.summary?.games_with_actual_quarters ?? "—"} · Problemas al consultar ESPN: {quarterAudit.summary?.actual_data_fetch_issues ?? 0}</p>
+              {(quarterAudit.fetch_issues || []).length > 0 && <details><summary>Ver partidos sin parciales completos ({quarterAudit.fetch_issues.length})</summary><ul>{quarterAudit.fetch_issues.slice(0, 20).map((item: any) => <li key={item.event_id}>{item.event_id}: {item.reason}</li>)}</ul></details>}
+              <div className="message notice"><b>Lectura correcta</b><p>La muestra puede incluir varias capturas del mismo partido; por eso no equivale necesariamente a partidos independientes. No se ajusta ningún modelo con estos resultados automáticamente.</p></div>
+            </>
           )}
         </section>
 
