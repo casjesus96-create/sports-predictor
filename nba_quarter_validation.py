@@ -36,7 +36,8 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
     No projection or snapshot is changed by this function.
     """
     team_pairs = {period: [] for period in range(1, 5)}
-    total_pairs = []
+    quarter_combined_pairs = []
+    game_total_pairs = []
     home_pairs = []
     away_pairs = []
     evaluated = []
@@ -73,6 +74,9 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
         valid_game = True
         projected_home_total = projected_away_total = 0.0
         actual_home_total = actual_away_total = 0.0
+        game_home_pairs = []
+        game_away_pairs = []
+        game_quarter_pairs = []
         for index in range(4):
             item = periods[index] or {}
             ph = _number(item.get("home_points"))
@@ -82,10 +86,9 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
             if None in (ph, pa, ah, aa):
                 valid_game = False
                 break
-            home_pairs.append((ph, ah))
-            away_pairs.append((pa, aa))
-            team_pairs[index + 1].extend([(ph, ah), (pa, aa)])
-            total_pairs.append((ph + pa, ah + aa))
+            game_home_pairs.append((ph, ah))
+            game_away_pairs.append((pa, aa))
+            game_quarter_pairs.append((ph + pa, ah + aa))
             projected_home_total += ph
             projected_away_total += pa
             actual_home_total += ah
@@ -99,22 +102,22 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
                 "combined_absolute_error": round(abs((ph + pa) - (ah + aa)), 3),
             })
         if not valid_game:
-            # Roll back this game from the aggregate arrays to avoid partial-game metrics.
-            for index in range(4):
-                del team_pairs[index + 1][-2:]
-            del home_pairs[-4:]
-            del away_pairs[-4:]
-            del total_pairs[-4:]
             skipped["missing_projection"] += 1
             continue
+
+        home_pairs.extend(game_home_pairs)
+        away_pairs.extend(game_away_pairs)
+        for index, pair in enumerate(game_quarter_pairs, start=1):
+            team_pairs[index].extend([game_home_pairs[index - 1], game_away_pairs[index - 1]])
+        quarter_combined_pairs.extend(game_quarter_pairs)
 
         stored_total = _number((features.get("projections") or {}).get("total_points"))
         actual_game_total = _number(row.get("actual_home_score"))
         actual_away_game_total = _number(row.get("actual_away_score"))
         if stored_total is not None and actual_game_total is not None and actual_away_game_total is not None:
-            total_pairs.append((stored_total, actual_game_total + actual_away_game_total))
+            game_total_pairs.append((stored_total, actual_game_total + actual_away_game_total))
         else:
-            total_pairs.append((projected_home_total + projected_away_total, actual_home_total + actual_away_total))
+            game_total_pairs.append((projected_home_total + projected_away_total, actual_home_total + actual_away_total))
         game_evaluated["projected_quarter_total"] = round(projected_home_total + projected_away_total, 2)
         game_evaluated["actual_quarter_total"] = round(actual_home_total + actual_away_total, 2)
         evaluated.append(game_evaluated)
@@ -135,8 +138,8 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
         "team_points_mae": _mae(home_pairs + away_pairs),
         "home_points_mae": _mae(home_pairs),
         "away_points_mae": _mae(away_pairs),
-        "quarter_total_mae": _mae([(sum(q.get("projected_home", 0) + q.get("projected_away", 0) for q in g["quarters"]), sum(q.get("actual_home", 0) + q.get("actual_away", 0) for q in g["quarters"])) for g in evaluated]),
-        "game_total_score_mae": _mae(total_pairs),
+        "quarter_total_mae": _mae(quarter_combined_pairs),
+        "game_total_score_mae": _mae(game_total_pairs),
         "by_quarter": by_quarter,
         "skipped": skipped,
         "games": evaluated,
