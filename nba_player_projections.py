@@ -42,15 +42,17 @@ def aggregate_player_projections(game_reports, team_histories, max_games=5):
                 break
 
     aggregates = defaultdict(lambda: defaultdict(lambda: {"name": "", "position": None, "games": set(), "totals": defaultdict(float), "counts": defaultdict(int), "stat_games": defaultdict(set)}))
+    # Only project players belonging to the two teams whose histories were requested.
+    # Historical boxscores also contain opponents; including them pollutes coverage.
+    target_team_ids = {str(team_id) for team_id in (team_histories or {})}
     team_game_ids = defaultdict(set)
-    team_game_counts = defaultdict(set)
 
     for game_id, report in (game_reports or {}).items():
         if not report or not report.get("available"):
             continue
         for team in report.get("teams") or []:
             team_id = str(team.get("team_id") or "")
-            if not team_id:
+            if not team_id or (target_team_ids and team_id not in target_team_ids):
                 continue
             team_game_ids[team_id].add(str(game_id))
             for player in team.get("players") or []:

@@ -38,3 +38,45 @@ def test_empty_or_unavailable_boxscores_return_no_fabricated_projections():
     assert result["available"] is False
     assert result["teams"] == []
     assert result["player_count"] == 0
+
+def test_projection_coverage_excludes_opponents_from_historical_boxscores():
+    histories = {
+        "home-id": [{
+            "game_id": "old-game",
+            "home_team_id": "home-id",
+            "home": "Home Team",
+            "kickoff": "2026-10-01T00:00:00Z",
+        }],
+        "away-id": [{
+            "game_id": "old-game",
+            "away_team_id": "away-id",
+            "away": "Away Team",
+            "kickoff": "2026-10-01T00:00:00Z",
+        }],
+    }
+    reports = {
+        "old-game": {
+            "available": True,
+            "teams": [
+                {"team_id": "home-id", "team": "Home Team", "players": [
+                    {"player_id": "h1", "name": "Home Player", "points": 20}
+                ]},
+                {"team_id": "away-id", "team": "Away Team", "players": [
+                    {"player_id": "a1", "name": "Away Player", "points": 10}
+                ]},
+                {"team_id": "opponent-id", "team": "Unrelated Opponent", "players": [
+                    {"player_id": "x1", "name": "Opponent Player", "points": 99}
+                ]},
+            ],
+        }
+    }
+
+    result = aggregate_player_projections(reports, histories)
+
+    assert {team["team_id"] for team in result["teams"]} == {"home-id", "away-id"}
+    assert result["player_count"] == 2
+    assert all(team["team"] != "Equipo" for team in result["teams"])
+    home = next(team for team in result["teams"] if team["team_id"] == "home-id")
+    assert home["statistical_coverage"]["points"] == 1
+    assert home["players"][0]["projected_points"] == 20
+
