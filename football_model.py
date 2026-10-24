@@ -10,9 +10,10 @@ import math
 from collections import defaultdict
 from typing import Any
 
-MODEL_VERSION = "FOOTBALL-POISSON-0.3.0"
+MODEL_VERSION = "FOOTBALL-POISSON-0.4.0"
 MAX_GOALS = 10
-MIN_TEAM_MATCHES = 3
+MIN_TEAM_MATCHES = 5
+PRIOR_MATCH_EQUIVALENT = 8.0
 
 
 def _poisson_pmf(rate: float, goals: int) -> float:
@@ -82,7 +83,7 @@ def predict_1x2(
         }
 
     def rate(total: float, count: float, prior: float) -> float:
-        return (total + prior * 4.0) / (count + 4.0)
+        return (total + prior * PRIOR_MATCH_EQUIVALENT) / (count + PRIOR_MATCH_EQUIVALENT)
 
     home_attack = rate(h["scored_home"], h["home_games"], league_home_avg)
     home_defence = rate(h["conceded_home"], h["home_games"], league_away_avg)
@@ -168,10 +169,11 @@ def predict_1x2(
         "sample": {
             "completed_matches_in_competition": len(parsed),
             "weighted_form": False,
+            "prior_match_equivalent": PRIOR_MATCH_EQUIVALENT,
             "home_team_matches": int(h["games"]),
             "away_team_matches": int(a["games"]),
         },
-        "method": "Distribución de Poisson independiente, tasas local/visitante y regresión a la media de la competición; versión 0.3 añade trazabilidad de versión, sin calibración demostrada",
+        "method": "Distribución de Poisson independiente con mayor regresión a la media para reducir sobreajuste en muestras pequeñas; no calibrada",
         "calibration": {
             "status": "not_calibrated",
             "note": "Las cuotas justas son inversos matemáticos de las probabilidades estimadas, no cuotas de mercado ni evidencia de valor esperado positivo.",
@@ -180,7 +182,7 @@ def predict_1x2(
         "limitations": [
             "Estimación experimental; no calibrada ni validada como rentable.",
             "No incorpora alineaciones, lesiones, xG, descanso, forma ponderada ni cuotas de mercado.",
-            "La versión 0.3 no debe interpretarse como una mejora de acierto demostrada; requiere validación cronológica.",
+            "La versión 0.4 refuerza la regresión a la media y exige cinco partidos por equipo; no demuestra por sí misma una mejora de acierto.",
             "Las probabilidades de mercados derivados proceden de la misma matriz de goles; no son señales independientes.",
         ],
     }
