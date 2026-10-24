@@ -168,7 +168,6 @@ def predict_1x2(
         "sample": {
             "completed_matches_in_competition": len(parsed),
             "weighted_form": False,
-            "weighted_form": False,
             "home_team_matches": int(h["games"]),
             "away_team_matches": int(a["games"]),
         },
