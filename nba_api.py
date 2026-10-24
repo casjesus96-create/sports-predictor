@@ -289,7 +289,15 @@ def nba_quarter_projection_audit(limit: int = Query(100, ge=1, le=250)):
                         fetch_errors.append({"event_id": event_id, "reason": "ESPN no publicó los cuatro cuartos completos."})
                 except Exception as exc:
                     logger.warning("Error obteniendo cuartos reales NBA game_id=%s: %s", event_id, exc)
-                    fetch_errors.append({"event_id": event_id, "reason": "No se pudo obtener el boxscore real de ESPN."})
+                    response = getattr(exc, "response", None)
+                    status_code = getattr(response, "status_code", None)
+                    fetch_errors.append({
+                        "event_id": event_id,
+                        "reason": "No se pudo obtener el boxscore real de ESPN.",
+                        "error_type": type(exc).__name__,
+                        "http_status": status_code,
+                        "details": str(exc)[:300],
+                    })
 
         report = evaluate_quarter_projections(eligible, actuals)
         report["summary"] = {
