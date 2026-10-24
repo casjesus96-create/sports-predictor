@@ -130,7 +130,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     </div>
     {error && <p role="alert" style={{ color: "#fecaca" }}>{error}</p>}
     {data && <>
-      <p style={{ color: "#9ca3af", fontSize: 12 }}>Muestra: {data.sample_size} partidos finalizados en esta competición. {data.history_scope}</p>
+      <p style={{ color: "#9ca3af", fontSize: 12 }}>Muestra: {data.sample_size} enfrentamientos directos finalizados encontrados. {data.history_scope}</p>
       {data.sample_size > 0 ? <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
           {[
@@ -149,7 +149,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
             <tbody>{data.meetings.map((item: any) => <tr key={item.id}><td style={cellStyle}>{item.date ? new Date(item.date).toLocaleDateString("es-ES") : "—"}</td><td style={cellStyle}>{item.home_team || "—"}</td><td style={cellStyle}><strong>{item.home_score}–{item.away_score}</strong></td><td style={cellStyle}>{item.away_team || "—"}</td><td style={cellStyle}>{item.total_goals}</td></tr>)}</tbody>
           </table>
         </div>
-      </> : <p>No hay enfrentamientos finalizados disponibles entre estos equipos en esta competición.</p>}
+      </> : <p>La API no devolvió enfrentamientos directos finalizados para esta pareja dentro de la muestra disponible. Esto puede deberse a límites de cobertura o profundidad histórica del proveedor; no significa que nunca se hayan enfrentado.</p>}
     </>}
   </section>;
 }
