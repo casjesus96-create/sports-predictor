@@ -56,16 +56,33 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
 
         kickoff = _parse_dt(game.get("kickoff"))
         cutoff = _parse_dt(row.get("data_cutoff") or features.get("analysis_data_cutoff"))
-        if kickoff is None or cutoff is None or cutoff >= kickoff:
+        captured_at = _parse_dt(row.get("created_at") or features.get("analysis_generated_at"))
+        # data_cutoff is the exclusive historical-data boundary, not the wall-clock
+        # time at which the snapshot was created. It may equal kickoff because
+        # historical queries explicitly include only games strictly before cutoff.
+        # The actual snapshot capture must still be strictly before kickoff.
+        invalid_reason = None
+        if kickoff is None:
+            invalid_reason = "missing_kickoff"
+        elif cutoff is None:
+            invalid_reason = "missing_or_invalid_data_cutoff"
+        elif cutoff > kickoff:
+            invalid_reason = "data_cutoff_after_kickoff"
+        elif captured_at is None:
+            invalid_reason = "missing_or_invalid_capture_timestamp"
+        elif captured_at >= kickoff:
+            invalid_reason = "snapshot_created_at_or_after_kickoff"
+        if invalid_reason:
             skipped["invalid_or_postgame_cutoff"] += 1
             skipped_details.append({
                 "event_id": event_id,
                 "game": game.get("name") or f"{game.get('away', 'Visitante')} @ {game.get('home', 'Local')}",
-                "reason": "missing_kickoff" if kickoff is None else "missing_or_invalid_data_cutoff" if cutoff is None else "cutoff_at_or_after_kickoff",
+                "reason": invalid_reason,
                 "kickoff": game.get("kickoff"),
                 "data_cutoff": row.get("data_cutoff"),
                 "analysis_data_cutoff": features.get("analysis_data_cutoff"),
                 "created_at": row.get("created_at"),
+                "capture_timestamp": row.get("created_at") or features.get("analysis_generated_at"),
             })
             continue
         actual = (actual_quarters_by_game or {}).get(event_id)
