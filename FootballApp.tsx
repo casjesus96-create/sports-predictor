@@ -211,7 +211,7 @@ export default function FootballApp() {
                 <div style={{ overflowX: "auto", marginTop: 10 }}>
                   <table style={tableStyle}>
                     <thead><tr><th style={cellStyle}>Mercado de goles</th><th style={cellStyle}>Probabilidad</th><th style={cellStyle}>Cuota justa estimada</th></tr></thead>
-                    <tbody>{[
+                    <tbody>{([
                       ["Más de 1.5 goles", prediction.goal_markets.total_goals?.over_1_5],
                       ["Más de 2.5 goles", prediction.goal_markets.total_goals?.over_2_5],
                       ["Más de 3.5 goles", prediction.goal_markets.total_goals?.over_3_5],
