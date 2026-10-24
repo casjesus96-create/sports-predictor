@@ -10,7 +10,7 @@ import math
 from collections import defaultdict
 from typing import Any
 
-MODEL_VERSION = "FOOTBALL-POISSON-0.4.0"
+MODEL_VERSION = "FOOTBALL-POISSON-0.5.0"
 MAX_GOALS = 10
 MIN_TEAM_MATCHES = 5
 PRIOR_MATCH_EQUIVALENT = 8.0
@@ -45,9 +45,9 @@ def predict_1x2(
     away_team: str,
     completed_matches: list[dict[str, Any]],
     *,
-    home_advantage: float = 1.08,
+    home_advantage: float = 1.0,
 ) -> dict[str, Any]:
-    """Estimate 1X2 and goal markets using independent Poisson score matrix."""
+    """Estimate 1X2 and goal markets using independent Poisson score matrix. League home/away scoring averages already encode average home advantage, so the explicit multiplier defaults to neutral (1.0) to avoid double counting. Non-neutral overrides are retained for controlled validation."""
     if not home_team.strip() or not away_team.strip() or home_team == away_team:
         raise ValueError("Se requieren dos equipos distintos y nombres válidos.")
     if not 0.8 <= home_advantage <= 1.3:
@@ -169,6 +169,8 @@ def predict_1x2(
         "sample": {
             "completed_matches_in_competition": len(parsed),
             "weighted_form": False,
+            "home_advantage_multiplier": home_advantage,
+            "home_advantage_policy": "neutral_multiplier_league_split_baseline",
             "prior_match_equivalent": PRIOR_MATCH_EQUIVALENT,
             "home_team_matches": int(h["games"]),
             "away_team_matches": int(a["games"]),
@@ -182,7 +184,7 @@ def predict_1x2(
         "limitations": [
             "Estimación experimental; no calibrada ni validada como rentable.",
             "No incorpora alineaciones, lesiones, xG, descanso, forma ponderada ni cuotas de mercado.",
-            "La versión 0.4 refuerza la regresión a la media y exige cinco partidos por equipo; no demuestra por sí misma una mejora de acierto.",
+            "La versión 0.5 neutraliza el multiplicador adicional de ventaja local porque las medias separadas local/visitante ya reflejan parte de esa ventaja; requiere backtesting cronológico.",
             "Las probabilidades de mercados derivados proceden de la misma matriz de goles; no son señales independientes.",
         ],
     }
