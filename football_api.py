@@ -267,37 +267,48 @@ def football_head_to_head(
     away_team_id: int = Query(..., gt=0),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Head-to-head across the team's competition history, not just the current season."""
+    """Historical head-to-head from each team's completed match feed."""
     if home_team_id == away_team_id:
         raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
+    code = competition.strip().upper()
+    if code not in LEAGUES:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.")
 
-    # Competition endpoint returns current-season fixtures only in many plans.
-    # Team match endpoints can expose historical seasons available to the API plan.
-    home_data = _provider_call(get_team_matches, home_team_id, competition, "FINISHED", 500)
-    away_data = _provider_call(get_team_matches, away_team_id, competition, "FINISHED", 500)
-    home_matches = home_data.get("matches", [])
-    away_ids = {
-        match.get("id") for match in away_data.get("matches", [])
-        if match.get("id") is not None
-    }
+    # Use both teams' provider feeds. Do not filter by the selected competition:
+    # historical H2H may have occurred in earlier seasons or cup competitions.
+    team_feeds = []
+    for team_id in (home_team_id, away_team_id):
+        payload = _provider_call(get_team_matches, team_id, 500)
+        team_feeds.append(payload.get("matches", []))
+
+    candidates = {}
+    for feed in team_feeds:
+        for match in feed:
+            match_id = match.get("id")
+            if match_id is not None:
+                candidates[match_id] = match
+
     meetings = []
-    for match in home_matches:
-        if match.get("id") not in away_ids:
-            continue
+    for match in candidates.values():
         if str(match.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
             continue
         home = match.get("homeTeam") or {}
         away = match.get("awayTeam") or {}
         if {home.get("id"), away.get("id")} != {home_team_id, away_team_id}:
             continue
-        score = (match.get("score") or {}).get("fullTime") or {}
-        hs, aws = score.get("home"), score.get("away")
-        if not isinstance(hs, int) or isinstance(hs, bool) or not isinstance(aws, int) or isinstance(aws, bool):
+        score = (match.get("score") or {})
+        full_time = score.get("fullTime") or {}
+        hs, aws = full_time.get("home"), full_time.get("away")
+        if not (isinstance(hs, int) and not isinstance(hs, bool)
+                and isinstance(aws, int) and not isinstance(aws, bool)):
             continue
         winner = "draw" if hs == aws else ("home" if hs > aws else "away")
         meetings.append({
             "id": match.get("id"),
             "date": match.get("utcDate"),
+            "competition": (match.get("competition") or {}).get("name"),
+            "competition_code": (match.get("competition") or {}).get("code"),
+            "season": (match.get("season") or {}).get("startDate"),
             "home_team": home.get("name"),
             "home_team_id": home.get("id"),
             "away_team": away.get("name"),
@@ -309,35 +320,45 @@ def football_head_to_head(
             "matchday": match.get("matchday"),
             "stage": match.get("stage"),
             "venue": match.get("venue"),
-            "half_time": (match.get("score") or {}).get("halfTime"),
-            "duration": (match.get("score") or {}).get("duration"),
+            "half_time": score.get("halfTime"),
+            "duration": score.get("duration"),
             "result_source": "football-data.org",
         })
 
     meetings.sort(key=lambda row: str(row.get("date") or ""), reverse=True)
     home_wins = draws = away_wins = home_goals = away_goals = total_goals = 0
+    both_scored = over_25 = under_25 = 0
     for row in meetings:
+        # Team statistics are from the selected home/away fixture perspective,
+        # independent of which club hosted the historical match.
         if row["home_team_id"] == home_team_id:
-            home_goals += row["home_score"]
-            away_goals += row["away_score"]
-            outcome = row["winner"]
+            selected_home_goals, selected_away_goals = row["home_score"], row["away_score"]
+            result_for_selected_home = row["winner"]
         else:
-            home_goals += row["away_score"]
-            away_goals += row["home_score"]
-            outcome = {"home": "away", "away": "home", "draw": "draw"}[row["winner"]]
-        if outcome == "home":
+            selected_home_goals, selected_away_goals = row["away_score"], row["home_score"]
+            result_for_selected_home = (
+                "away" if row["winner"] == "home"
+                else "home" if row["winner"] == "away"
+                else "draw"
+            )
+        home_goals += selected_home_goals
+        away_goals += selected_away_goals
+        total_goals += row["total_goals"]
+        if result_for_selected_home == "home":
             home_wins += 1
-        elif outcome == "away":
+        elif result_for_selected_home == "away":
             away_wins += 1
         else:
             draws += 1
-        total_goals += row["total_goals"]
+        both_scored += int(row["home_score"] > 0 and row["away_score"] > 0)
+        over_25 += int(row["total_goals"] >= 3)
+        under_25 += int(row["total_goals"] <= 2)
 
     count = len(meetings)
     return {
         "success": True,
         "provider": "football-data.org",
-        "competition": competition.strip().upper(),
+        "competition": code,
         "teams": {"home": {"id": home_team_id}, "away": {"id": away_team_id}},
         "sample_size": count,
         "summary": {
@@ -349,15 +370,20 @@ def football_head_to_head(
             "average_home_team_goals": round(home_goals / count, 3) if count else None,
             "average_away_team_goals": round(away_goals / count, 3) if count else None,
             "average_total_goals": round(total_goals / count, 3) if count else None,
-            "both_teams_scored_count": sum(1 for row in meetings if row["home_score"] > 0 and row["away_score"] > 0),
-            "over_2_5_count": sum(1 for row in meetings if row["total_goals"] >= 3),
-            "under_2_5_count": sum(1 for row in meetings if row["total_goals"] <= 2),
+            "both_teams_scored_count": both_scored,
+            "over_2_5_count": over_25,
+            "under_2_5_count": under_25,
         },
         "meetings": meetings[:limit],
-        "history_scope": "Enfrentamientos finalizados encontrados en el historial de ambos equipos dentro de la competición y temporadas disponibles en tu plan de football-data.org.",
+        "history_scope": "Enfrentamientos directos finalizados encontrados en los feeds recientes de ambos equipos, incluyendo distintas competiciones. La cobertura histórica depende del proveedor y no garantiza todos los partidos de todas las épocas.",
         "returned_matches": min(count, limit),
+        "coverage": {
+            "source": "football-data.org",
+            "team_feed_limit": 500,
+            "teams_queried": 2,
+            "includes_multiple_competitions": True,
+        },
     }
-
 
 @router.get("/standings")
 def football_standings(
