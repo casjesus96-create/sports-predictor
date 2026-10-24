@@ -102,6 +102,58 @@ const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collap
 const buttonStyle: React.CSSProperties = { minHeight: 42, padding: "9px 14px", borderRadius: 8, border: "1px solid #64748b", background: "#1d4ed8", color: "#fff", fontWeight: 700, cursor: "pointer" };
 const cardStyle: React.CSSProperties = { padding: 14, border: "1px solid #374151", borderRadius: 12, background: "#111827", marginBottom: 12 };
 
+
+function HeadToHeadPanel({ competition, match }: { competition: string; match: Match }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const homeId = match.homeTeam?.id;
+  const awayId = match.awayTeam?.id;
+
+  async function loadHistory() {
+    if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
+    setLoading(true); setError("");
+    try {
+      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&home_team_id=${homeId}&away_team_id=${awayId}&limit=10`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo cargar el historial.");
+      setData(body);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error consultando enfrentamientos históricos.");
+    } finally { setLoading(false); }
+  }
+
+  return <section style={{ marginTop: 12, padding: 12, border: "1px solid #475569", borderRadius: 8, background: "#0b1220" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+      <strong>Enfrentamientos históricos (H2H)</strong>
+      <button type="button" onClick={loadHistory} disabled={loading || !homeId || !awayId} style={buttonStyle}>{loading ? "Consultando…" : data ? "Actualizar historial" : "Consultar historial"}</button>
+    </div>
+    {error && <p role="alert" style={{ color: "#fecaca" }}>{error}</p>}
+    {data && <>
+      <p style={{ color: "#9ca3af", fontSize: 12 }}>Muestra: {data.sample_size} partidos finalizados en esta competición. {data.history_scope}</p>
+      {data.sample_size > 0 ? <>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+          {[
+            ["Victorias local seleccionado", data.summary.home_team_wins],
+            ["Empates", data.summary.draws],
+            ["Victorias visitante seleccionado", data.summary.away_team_wins],
+            ["Promedio goles local", data.summary.average_home_team_goals],
+            ["Promedio goles visitante", data.summary.average_away_team_goals],
+            ["Promedio goles totales", data.summary.average_total_goals],
+            ["Ambos marcaron", `${data.summary.both_teams_scored_count}/${data.sample_size}`],
+            ["Más de 2.5 goles", `${data.summary.over_2_5_count}/${data.sample_size}`],
+          ].map(([label, value]) => <div key={String(label)} style={{ background: "#111827", padding: 9, borderRadius: 7 }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{label}</div><strong>{value ?? "—"}</strong></div>)}
+        </div>
+        <div style={{ overflowX: "auto", marginTop: 10 }}>
+          <table style={tableStyle}><thead><tr>{["Fecha", "Local histórico", "Marcador", "Visitante histórico", "Total"].map((h) => <th key={h} style={cellStyle}>{h}</th>)}</tr></thead>
+            <tbody>{data.meetings.map((item: any) => <tr key={item.id}><td style={cellStyle}>{item.date ? new Date(item.date).toLocaleDateString("es-ES") : "—"}</td><td style={cellStyle}>{item.home_team || "—"}</td><td style={cellStyle}><strong>{item.home_score}–{item.away_score}</strong></td><td style={cellStyle}>{item.away_team || "—"}</td><td style={cellStyle}>{item.total_goals}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </> : <p>No hay enfrentamientos finalizados disponibles entre estos equipos en esta competición.</p>}
+    </>}
+  </section>;
+}
+
 export default function FootballApp() {
   const [competition, setCompetition] = useState("PL");
   const [selectedDate, setSelectedDate] = useState(todayInput());
@@ -232,6 +284,7 @@ export default function FootballApp() {
                 <div style={{ fontWeight: 700 }}>{away}</div><small style={{ color: "#9ca3af" }}>{match.awayTeam?.tla || ""}</small>
               </div>
             </div>
+            <HeadToHeadPanel competition={competition} match={match} />
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
               <strong>Probabilidades 1X2</strong>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>

@@ -259,6 +259,101 @@ def football_games(
     }
 
 
+@router.get("/head-to-head")
+def football_head_to_head(
+    competition: str = Query(..., description="Código de liga, por ejemplo PL o PD"),
+    home_team_id: int = Query(..., gt=0),
+    away_team_id: int = Query(..., gt=0),
+    limit: int = Query(10, ge=1, le=50),
+):
+    """Historical meetings between these teams within the selected competition."""
+    if home_team_id == away_team_id:
+        raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
+
+    data = _provider_call(get_matches, competition)
+    all_matches = data.get("matches", [])
+    meetings = []
+    for match in all_matches:
+        if str(match.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
+            continue
+        home = match.get("homeTeam") or {}
+        away = match.get("awayTeam") or {}
+        if {home.get("id"), away.get("id")} != {home_team_id, away_team_id}:
+            continue
+        score = (match.get("score") or {}).get("fullTime") or {}
+        hs, aws = score.get("home"), score.get("away")
+        if not isinstance(hs, int) or isinstance(hs, bool) or not isinstance(aws, int) or isinstance(aws, bool):
+            continue
+        winner = "draw" if hs == aws else ("home" if hs > aws else "away")
+        meetings.append({
+            "id": match.get("id"),
+            "date": match.get("utcDate"),
+            "home_team": home.get("name"),
+            "home_team_id": home.get("id"),
+            "away_team": away.get("name"),
+            "away_team_id": away.get("id"),
+            "home_score": hs,
+            "away_score": aws,
+            "total_goals": hs + aws,
+            "winner": winner,
+            "matchday": match.get("matchday"),
+            "stage": match.get("stage"),
+            "venue": match.get("venue"),
+            "half_time": (match.get("score") or {}).get("halfTime"),
+            "duration": (match.get("score") or {}).get("duration"),
+            "result_source": "football-data.org",
+        })
+
+    meetings.sort(key=lambda row: str(row.get("date") or ""), reverse=True)
+    home_wins = draws = away_wins = home_goals = away_goals = total_goals = 0
+    for row in meetings:
+        # Outcomes are from the selected home/away team's perspective, not each historical fixture's venue.
+        if row["home_team_id"] == home_team_id:
+            home_goals += row["home_score"]
+            away_goals += row["away_score"]
+            if row["winner"] == "home":
+                home_wins += 1
+            elif row["winner"] == "away":
+                away_wins += 1
+            else:
+                draws += 1
+        else:
+            home_goals += row["away_score"]
+            away_goals += row["home_score"]
+            if row["winner"] == "away":
+                home_wins += 1
+            elif row["winner"] == "home":
+                away_wins += 1
+            else:
+                draws += 1
+        total_goals += row["total_goals"]
+
+    count = len(meetings)
+    return {
+        "success": True,
+        "provider": "football-data.org",
+        "competition": competition.strip().upper(),
+        "teams": {"home": {"id": home_team_id}, "away": {"id": away_team_id}},
+        "sample_size": count,
+        "summary": {
+            "home_team_wins": home_wins,
+            "draws": draws,
+            "away_team_wins": away_wins,
+            "home_team_goals": home_goals,
+            "away_team_goals": away_goals,
+            "average_home_team_goals": round(home_goals / count, 3) if count else None,
+            "average_away_team_goals": round(away_goals / count, 3) if count else None,
+            "average_total_goals": round(total_goals / count, 3) if count else None,
+            "both_teams_scored_count": sum(1 for row in meetings if row["home_score"] > 0 and row["away_score"] > 0),
+            "over_2_5_count": sum(1 for row in meetings if row["total_goals"] >= 3),
+            "under_2_5_count": sum(1 for row in meetings if row["total_goals"] <= 2),
+        },
+        "meetings": meetings[:limit],
+        "history_scope": "Solo enfrentamientos finalizados devueltos por football-data.org para esta competición; no equivale necesariamente al historial completo entre ambos clubes.",
+        "returned_matches": min(count, limit),
+    }
+
+
 @router.get("/standings")
 def football_standings(
     competition: str = Query(..., description="Código de liga, por ejemplo PL o PD"),
