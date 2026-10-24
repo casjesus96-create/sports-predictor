@@ -124,7 +124,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     try {
       const requestedHomeId = homeId;
       const requestedAwayId = awayId;
-      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&home_team_id=${requestedHomeId}&away_team_id=${requestedAwayId}&limit=10`);
+      const response = await fetch(`${API}/head-to-head?match_id=${match.id}&limit=10`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo cargar el historial.");
       // Ignore a late response if React has reused this panel for a different fixture.
