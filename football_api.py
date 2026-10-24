@@ -267,19 +267,26 @@ def football_head_to_head(
     away_team_id: int = Query(..., gt=0),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Historical meetings across competitions, intersecting each team's finished fixtures."""
+    """Historical meetings found in each team's recent finished fixtures."""
     if home_team_id == away_team_id:
         raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
     code = competition.strip().upper()
     if code not in LEAGUES:
         raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.")
 
-    # Use the home team's finished-match feed as the source of truth, then
-    # filter directly for the opponent. Intersecting two independently truncated
-    # feeds can incorrectly return zero when the same match falls outside one feed.
+    # Search both teams' result feeds. A single team's feed may omit a fixture
+    # because the provider limits history or its ordering differs.
     home_data = _provider_call(get_team_matches, home_team_id, 500)
+    away_data = _provider_call(get_team_matches, away_team_id, 500)
+    candidates = {}
+    for payload in (home_data, away_data):
+        for match in payload.get("matches", []):
+            match_id = match.get("id")
+            if match_id is not None:
+                candidates[match_id] = match
+
     meetings = []
-    for match in home_data.get("matches", []):
+    for match in candidates.values():
         if str(match.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
             continue
         home = match.get("homeTeam") or {}
@@ -318,17 +325,21 @@ def football_head_to_head(
         if row["home_team_id"] == home_team_id:
             home_goals += row["home_score"]
             away_goals += row["away_score"]
-            result_for_home_team = row["winner"]
+            result_for_selected_home = row["winner"]
         else:
             home_goals += row["away_score"]
             away_goals += row["home_score"]
-            result_for_home_team = "away" if row["winner"] == "home" else "home" if row["winner"] == "away" else "draw"
-        if result_for_home_team == "draw":
-            draws += 1
-        elif result_for_home_team == "home":
+            result_for_selected_home = (
+                "away" if row["winner"] == "home"
+                else "home" if row["winner"] == "away"
+                else "draw"
+            )
+        if result_for_selected_home == "home":
             home_wins += 1
-        else:
+        elif result_for_selected_home == "away":
             away_wins += 1
+        else:
+            draws += 1
         total_goals += row["total_goals"]
 
     count = len(meetings)
@@ -336,7 +347,7 @@ def football_head_to_head(
         "success": True,
         "provider": "football-data.org",
         "competition": code,
-        "history_scope": "Enfrentamientos finalizados encontrados en los últimos partidos devueltos para ambos equipos, entre todas las competiciones; el proveedor limita la profundidad del historial.",
+        "history_scope": "Enfrentamientos directos finalizados encontrados en los últimos resultados disponibles de ambos equipos, incluyendo competiciones distintas. La profundidad depende de la cobertura y los límites del proveedor.",
         "teams": {"home": {"id": home_team_id}, "away": {"id": away_team_id}},
         "sample_size": count,
         "summary": {
