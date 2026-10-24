@@ -67,7 +67,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 const statusLabel = (value?: string) => {
   const status = String(value || "").toUpperCase();
-  return STATUS_LABELS[status] || (status ? status.replaceAll("_", " ") : "Estado desconocido");
+  return STATUS_LABELS[status] || (status ? status.replace(/_/g, " ") : "Estado desconocido");
 };
 const matchScore = (match: Match) => {
   const score = match.score;
