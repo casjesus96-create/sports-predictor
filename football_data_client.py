@@ -139,6 +139,13 @@ def get_matches(
     return _get(f"/competitions/{code}/matches", params)
 
 
+def get_match(match_id: int) -> dict[str, Any]:
+    """Fetch one official match by provider ID when list endpoints are stale."""
+    if not isinstance(match_id, int) or match_id <= 0:
+        raise FootballDataError("ID de partido no válido.", 400)
+    return _get(f"/matches/{match_id}")
+
+
 def get_standings(competition: str) -> dict[str, Any]:
     code = competition.strip().upper()
     if code not in LEAGUES:
