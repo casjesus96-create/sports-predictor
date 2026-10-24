@@ -139,6 +139,15 @@ def get_matches(
     return _get(f"/competitions/{code}/matches", params)
 
 
+def get_team_matches(team_id: int, limit: int = 100) -> dict[str, Any]:
+    """Fetch a team's recent fixtures/results across competitions."""
+    if isinstance(team_id, bool) or not isinstance(team_id, int) or team_id <= 0:
+        raise FootballDataError("Identificador de equipo no válido.", 400)
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+        raise FootballDataError("Límite de partidos no válido.", 400)
+    return _get(f"/teams/{team_id}/matches", {"status": "FINISHED", "limit": limit})
+
+
 def get_match(match_id: int) -> dict[str, Any]:
     """Fetch one provider match; cached to avoid repeat calls for the same ID."""
     if isinstance(match_id, bool) or not isinstance(match_id, int) or match_id <= 0:
