@@ -58,6 +58,31 @@ type Standing = {
 };
 
 const localDate = (value?: string) => value ? new Date(value).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" }) : "Fecha por confirmar";
+const STATUS_LABELS: Record<string, string> = {
+  SCHEDULED: "Programado", TIMED: "Programado", IN_PLAY: "En juego",
+  PAUSED: "Descanso", EXTRA_TIME: "Prórroga", PENALTY_SHOOTOUT: "Penales",
+  FINISHED: "Finalizado", AWARDED: "Finalizado por resolución",
+  POSTPONED: "Aplazado", SUSPENDED: "Suspendido", CANCELLED: "Cancelado",
+  CANCELED: "Cancelado", NOT_STARTED: "No iniciado", TBD: "Por confirmar",
+};
+const statusLabel = (value?: string) => {
+  const status = String(value || "").toUpperCase();
+  return STATUS_LABELS[status] || (status ? status.replaceAll("_", " ") : "Estado desconocido");
+};
+const matchScore = (match: Match) => {
+  const score = match.score;
+  const full = score?.fullTime;
+  const regular = (score as any)?.regularTime;
+  const penalties = (score as any)?.penalties;
+  const home = full?.home ?? regular?.home;
+  const away = full?.away ?? regular?.away;
+  if (typeof home === "number" && typeof away === "number") {
+    const penaltyHome = penalties?.home;
+    const penaltyAway = penalties?.away;
+    return { text: `${home} : ${away}`, detail: typeof penaltyHome === "number" && typeof penaltyAway === "number" ? `Penales ${penaltyHome} : ${penaltyAway}` : "" };
+  }
+  return { text: "Marcador no disponible", detail: "" };
+};
 const todayInput = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const percent = (value?: number) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
 const cellStyle: React.CSSProperties = { padding: "10px 8px", borderBottom: "1px solid #374151", textAlign: "left", verticalAlign: "top" };
@@ -173,12 +198,12 @@ export default function FootballApp() {
           const prediction = match.prediction;
           const home = match.homeTeam?.name || "Local";
           const away = match.awayTeam?.name || "Visitante";
-          const fullTime = match.score?.fullTime;
+          const result = matchScore(match);
           const halfTime = match.score?.halfTime;
           return <article key={match.id} style={cardStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", color: "#9ca3af", fontSize: 12 }}>
               <span>{selectedLeague.name} · Jornada {match.matchday ?? "—"} · {match.stage || "Etapa no informada"}</span>
-              <span>{match.status || "Estado desconocido"} · {localDate(match.utcDate)}</span>
+              <span><strong style={{ color: ["FINISHED", "AWARDED"].includes(String(match.status || "").toUpperCase()) ? "#86efac" : "#cbd5e1" }}>{statusLabel(match.status)}</strong> · {localDate(match.utcDate)}</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)", alignItems: "center", gap: 8, margin: "14px 0" }}>
               <div style={{ textAlign: "center" }}>
@@ -186,7 +211,8 @@ export default function FootballApp() {
                 <div style={{ fontWeight: 700 }}>{home}</div><small style={{ color: "#9ca3af" }}>{match.homeTeam?.tla || ""}</small>
               </div>
               <div style={{ textAlign: "center", fontSize: 20, fontWeight: 800, whiteSpace: "nowrap" }}>
-                {fullTime?.home ?? "—"} : {fullTime?.away ?? "—"}
+                <span style={{ color: result.text === "Marcador no disponible" ? "#fbbf24" : "#f9fafb", fontSize: result.text === "Marcador no disponible" ? 12 : 20 }}>{result.text}</span>
+                {result.detail && <div style={{ fontSize: 11, color: "#cbd5e1" }}>{result.detail}</div>}
                 {halfTime && <div style={{ fontSize: 11, color: "#9ca3af" }}>Descanso {halfTime.home ?? "—"} : {halfTime.away ?? "—"}</div>}
               </div>
               <div style={{ textAlign: "center" }}>
@@ -239,7 +265,7 @@ export default function FootballApp() {
             </section> : <p style={{ color: "#fbbf24", fontSize: 13 }}>Probabilidad no disponible: {prediction?.reason || "faltan resultados finalizados suficientes."}</p>}
             <div style={{ marginTop: 10, fontSize: 13 }}>
               <div>Estadio: {match.venue || "No informado"} · Árbitro: {match.referees?.map((ref) => ref.name).filter(Boolean).join(", ") || "No informado"}</div>
-              <div>Ganador oficial del proveedor: {match.score?.winner || "sin resultado"} · Duración: {match.score?.duration || "—"}</div>
+              <div>Ganador oficial del proveedor: {match.score?.winner || "no informado"} · Duración: {match.score?.duration || "—"}</div>
             </div>
             <details style={{ marginTop: 12 }}>
               <summary style={{ cursor: "pointer", fontWeight: 700 }}>Datos completos de la API</summary>
