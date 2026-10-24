@@ -140,8 +140,8 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
             ["Promedio goles local", data.summary.average_home_team_goals],
             ["Promedio goles visitante", data.summary.average_away_team_goals],
             ["Promedio goles totales", data.summary.average_total_goals],
-            ["Ambos marcaron", \`\${data.summary.both_teams_scored_count}/\${data.sample_size}\`],
-            ["Más de 2.5 goles", \`\${data.summary.over_2_5_count}/\${data.sample_size}\`],
+            ["Ambos marcaron", `${data.summary.both_teams_scored_count}/${data.sample_size}`],
+            ["Más de 2.5 goles", `${data.summary.over_2_5_count}/${data.sample_size}`],
           ].map(([label, value]) => <div key={String(label)} style={{ background: "#111827", padding: 9, borderRadius: 7 }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{label}</div><strong>{value ?? "—"}</strong></div>)}
         </div>
         <div style={{ overflowX: "auto", marginTop: 10 }}>
