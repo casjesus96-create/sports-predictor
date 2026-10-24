@@ -24,6 +24,8 @@ LEAGUES = {
     "FL1": {"name": "Ligue 1", "country": "France"},
     "DED": {"name": "Eredivisie", "country": "Netherlands"},
     "PPL": {"name": "Primeira Liga", "country": "Portugal"},
+    "BSA": {"name": "Brasileirão Série A", "country": "Brazil"},
+    "CL": {"name": "UEFA Champions League", "country": "Europe"},
 }
 
 _cache: dict[tuple, tuple[float, Any]] = {}

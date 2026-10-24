@@ -82,3 +82,19 @@ def test_network_failure_is_sanitized(monkeypatch):
     with pytest.raises(FootballDataError) as error:
         client.get_competitions()
     assert "token" not in str(error.value).lower()
+
+
+def test_brazil_and_champions_league_codes_are_supported(monkeypatch):
+    response = Mock()
+    response.status_code = 200
+    response.json.return_value = {"matches": []}
+    request = Mock(return_value=response)
+    monkeypatch.setattr(client.requests, "get", request)
+
+    client.get_matches("BSA", "2026-10-24", "2026-10-24")
+    assert request.call_args.args[0].endswith("/competitions/BSA/matches")
+    assert request.call_args.kwargs["params"] == {"dateFrom": "2026-10-24", "dateTo": "2026-10-24"}
+
+    client.clear_cache()
+    client.get_matches("CL")
+    assert request.call_args.args[0].endswith("/competitions/CL/matches")
