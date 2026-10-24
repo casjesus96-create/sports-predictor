@@ -65,7 +65,7 @@ def test_no_finished_matches_returns_unavailable():
 def test_goal_markets_are_consistent_and_expose_fair_odds():
     result = predict_1x2("A", "B", sample_matches())
     assert result["available"] is True
-    assert result["model_version"] == "FOOTBALL-POISSON-0.2.0"
+    assert result["model_version"] == "FOOTBALL-POISSON-0.3.0"
     assert abs(result["expected_goals"]["total"] - (
         result["expected_goals"]["home"] + result["expected_goals"]["away"]
     )) < 0.01
