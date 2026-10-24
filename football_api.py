@@ -13,7 +13,7 @@ from football_data_client import (
     get_matches,
     get_standings,
 )
-from football_model import predict_1x2
+from football_model import MODEL_VERSION, predict_1x2
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/football", tags=["Football"])
@@ -123,7 +123,7 @@ def football_games(
         "count": data.get("resultSet", {}).get("count", len(matches)),
         "filters": {"dateFrom": date_from.isoformat() if date_from else None,
                     "dateTo": date_to.isoformat() if date_to else None},
-        "prediction_model": "FOOTBALL-POISSON-0.1.0",
+        "prediction_model": MODEL_VERSION,
         "matches": enriched_matches,
     }
 
