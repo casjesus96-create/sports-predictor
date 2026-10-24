@@ -12,6 +12,7 @@ from tennis_history_api import router as tennis_history_router
 from decision_api import router as decision_router
 from prediction_audit_api import router as prediction_audit_router
 from football_api import router as football_router
+from football_evaluation_api import router as football_evaluation_router
 
 from analyzer import analyze_mlb_game
 from nfl_api import router as nfl_router
@@ -46,6 +47,7 @@ app.include_router(tennis_history_router)
 app.include_router(decision_router)
 app.include_router(prediction_audit_router)
 app.include_router(football_router)
+app.include_router(football_evaluation_router)
 
 # =========================================================
 # NFL ROUTER
