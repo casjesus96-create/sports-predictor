@@ -302,6 +302,7 @@ def nba_quarter_projection_audit(limit: int = Query(100, ge=1, le=250)):
             "games_with_actual_quarters": len(actuals),
             "actual_data_fetch_issues": len(fetch_errors),
         }
+        report["summary"]["evaluation_skipped"] = report.get("skipped") or {}
         report["fetch_issues"] = fetch_errors
         report["limitations"] = [
             "Solo evalúa proyecciones guardadas antes del inicio; no reconstruye proyecciones con información posterior.",
