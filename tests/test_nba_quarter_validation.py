@@ -5,6 +5,7 @@ def snapshot(event_id="g1", cutoff="2026-01-01T00:00:00+00:00"):
     return {
         "event_id": event_id,
         "data_cutoff": cutoff,
+        "created_at": "2026-01-01T01:00:00+00:00",
         "actual_home_score": 100,
         "actual_away_score": 90,
         "features": {
@@ -56,3 +57,22 @@ def test_validation_does_not_treat_missing_projection_as_zero():
     result = evaluate_quarter_projections([row], actual)
     assert result["evaluated_games"] == 0
     assert result["skipped"]["missing_projection"] == 1
+
+
+
+def test_validation_allows_cutoff_equal_to_kickoff_when_snapshot_was_captured_before_game():
+    row = snapshot(cutoff="2026-01-02T00:00:00+00:00")
+    actual = {"g1": {"H": [24, 26, 25, 25], "A": [20, 22, 23, 25]}}
+    result = evaluate_quarter_projections([row], actual)
+    assert result["evaluated_games"] == 1
+    assert result["skipped"]["invalid_or_postgame_cutoff"] == 0
+
+
+def test_validation_still_rejects_snapshot_created_at_or_after_kickoff():
+    row = snapshot(cutoff="2026-01-02T00:00:00+00:00")
+    row["created_at"] = "2026-01-02T00:00:00+00:00"
+    actual = {"g1": {"H": [24, 26, 25, 25], "A": [20, 22, 23, 25]}}
+    result = evaluate_quarter_projections([row], actual)
+    assert result["evaluated_games"] == 0
+    assert result["skipped"]["invalid_or_postgame_cutoff"] == 1
+    assert result["skipped_details"][0]["reason"] == "snapshot_created_at_or_after_kickoff"
