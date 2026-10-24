@@ -17,7 +17,16 @@ type Prediction = {
   reason?: string;
   model_version?: string;
   probabilities?: { home: number; draw: number; away: number };
-  expected_goals?: { home: number; away: number };
+  expected_goals?: { home: number; away: number; total?: number };
+  goal_markets?: {
+    both_teams_to_score?: { yes?: { probability: number; fair_odds?: number | null }; no?: { probability: number; fair_odds?: number | null } };
+    total_goals?: Record<string, { probability: number; fair_odds?: number | null }>;
+    team_goals?: Record<string, { probability: number; fair_odds?: number | null }>;
+    clean_sheet?: { home?: { probability: number; fair_odds?: number | null }; away?: { probability: number; fair_odds?: number | null } };
+  };
+  double_chance?: Record<string, { probability: number; fair_odds?: number | null }>;
+  most_likely_scorelines?: Array<{ home: number; away: number; probability: number }>;
+  calibration?: { status?: string; note?: string; required_next_step?: string };
   sample?: { completed_matches_in_competition: number; home_team_matches: number; away_team_matches: number };
   method?: string;
   limitations?: string[];
@@ -121,8 +130,8 @@ export default function FootballApp() {
         <h1 style={{ marginBottom: 6 }}>⚽ Football Predictor</h1>
         <p style={{ marginTop: 0, color: "#9ca3af" }}>Partidos, datos del proveedor y probabilidades 1X2 por encuentro</p>
         <div style={{ padding: 12, border: "1px solid #475569", borderRadius: 10, background: "#172033" }}>
-          <strong>Modelo experimental · { "FOOTBALL-POISSON-0.1.0" }</strong>
-          <p style={{ margin: "6px 0 0" }}>Victoria local, empate y victoria visitante; goles esperados calculados con resultados finalizados de la competición. No incorpora todavía alineaciones, lesiones ni cuotas y no está calibrado para apuestas.</p>
+          <strong>Motor experimental · FOOTBALL-POISSON-0.2.0</strong>
+          <p style={{ margin: "6px 0 0" }}>Proyecta 1X2, goles por equipo, total de goles, ambos marcan, porterías a cero, doble oportunidad y marcadores probables. Las cuotas justas son cálculos matemáticos, no cuotas reales. Aún no está calibrado ni validado para apuestas.</p>
         </div>
       </header>
 
@@ -182,8 +191,43 @@ export default function FootballApp() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>
                 {[{ label: "Gana local", value: prediction.probabilities.home }, { label: "Empate", value: prediction.probabilities.draw }, { label: "Gana visitante", value: prediction.probabilities.away }].map((item) => <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: 9, textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><div style={{ fontSize: 19, fontWeight: 800 }}>{percent(item.value)}</div><div style={{ height: 5, borderRadius: 5, background: "#334155", marginTop: 6 }}><div style={{ height: 5, borderRadius: 5, background: "#60a5fa", width: percent(item.value) }} /></div></div>)}
               </div>
-              <p style={{ marginBottom: 0, fontSize: 13 }}>Goles esperados: <strong>{home} {prediction.expected_goals.home}</strong> · <strong>{away} {prediction.expected_goals.away}</strong></p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
+                {[{ label: "Goles local", value: prediction.expected_goals.home }, { label: "Goles visitante", value: prediction.expected_goals.away }, { label: "Total esperado", value: prediction.expected_goals.total ?? (prediction.expected_goals.home + prediction.expected_goals.away) }].map((item) => <div key={item.label} style={{ padding: 9, borderRadius: 8, background: "#0f172a", textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 20 }}>{item.value.toFixed(2)}</strong></div>)}
+              </div>
+              {prediction.goal_markets && <section style={{ marginTop: 12 }}>
+                <strong>Mercados derivados del modelo</strong>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
+                  <div style={{ background: "#0f172a", padding: 10, borderRadius: 8 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>Ambos equipos marcan</div>
+                    <div>Sí: <strong>{percent(prediction.goal_markets.both_teams_to_score?.yes?.probability)}</strong> · Cuota justa {prediction.goal_markets.both_teams_to_score?.yes?.fair_odds ?? "—"}</div>
+                    <div>No: <strong>{percent(prediction.goal_markets.both_teams_to_score?.no?.probability)}</strong> · Cuota justa {prediction.goal_markets.both_teams_to_score?.no?.fair_odds ?? "—"}</div>
+                  </div>
+                  <div style={{ background: "#0f172a", padding: 10, borderRadius: 8 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>Portería a cero</div>
+                    <div>{home}: <strong>{percent(prediction.goal_markets.clean_sheet?.home?.probability)}</strong></div>
+                    <div>{away}: <strong>{percent(prediction.goal_markets.clean_sheet?.away?.probability)}</strong></div>
+                  </div>
+                </div>
+                <div style={{ overflowX: "auto", marginTop: 10 }}>
+                  <table style={tableStyle}>
+                    <thead><tr><th style={cellStyle}>Mercado de goles</th><th style={cellStyle}>Probabilidad</th><th style={cellStyle}>Cuota justa estimada</th></tr></thead>
+                    <tbody>{[
+                      ["Más de 1.5 goles", prediction.goal_markets.total_goals?.over_1_5],
+                      ["Más de 2.5 goles", prediction.goal_markets.total_goals?.over_2_5],
+                      ["Más de 3.5 goles", prediction.goal_markets.total_goals?.over_3_5],
+                      ["Menos de 2.5 goles", prediction.goal_markets.total_goals?.under_2_5],
+                      [home + " marca +0.5", prediction.goal_markets.team_goals?.home_over_0_5],
+                      [home + " marca +1.5", prediction.goal_markets.team_goals?.home_over_1_5],
+                      [away + " marca +0.5", prediction.goal_markets.team_goals?.away_over_0_5],
+                      [away + " marca +1.5", prediction.goal_markets.team_goals?.away_over_1_5],
+                    ].map(([label, market]) => <tr key={String(label)}><td style={cellStyle}>{label}</td><td style={cellStyle}><strong>{percent((market as { probability?: number } | undefined)?.probability)}</strong></td><td style={cellStyle}>{(market as { fair_odds?: number | null } | undefined)?.fair_odds ?? "—"}</td></tr>)}</tbody>
+                  </table>
+                </div>
+                {prediction.most_likely_scorelines && <div style={{ marginTop: 10 }}><strong>Marcadores exactos más probables</strong><div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>{prediction.most_likely_scorelines.map((score) => <div key={score.home + "-" + score.away} style={{ padding: "8px 10px", background: "#0f172a", borderRadius: 8 }}><strong>{score.home}–{score.away}</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>{percent(score.probability)}</div></div>)}</div></div>}
+                {prediction.double_chance && <div style={{ marginTop: 10, fontSize: 13 }}><strong>Doble oportunidad:</strong> 1X {percent(prediction.double_chance.home_or_draw?.probability)} · X2 {percent(prediction.double_chance.draw_or_away?.probability)} · 12 {percent(prediction.double_chance.home_or_away?.probability)}</div>}
+              </section>}
               <p style={{ marginBottom: 0, fontSize: 11, color: "#9ca3af" }}>Muestra: {prediction.sample?.home_team_matches ?? 0} partidos del local y {prediction.sample?.away_team_matches ?? 0} del visitante · {prediction.model_version}</p>
+              {prediction.calibration?.note && <p style={{ marginBottom: 0, fontSize: 11, color: "#fbbf24" }}>{prediction.calibration.note}</p>
             </section> : <p style={{ color: "#fbbf24", fontSize: 13 }}>Probabilidad no disponible: {prediction?.reason || "faltan resultados finalizados suficientes."}</p>}
             <div style={{ marginTop: 10, fontSize: 13 }}>
               <div>Estadio: {match.venue || "No informado"} · Árbitro: {match.referees?.map((ref) => ref.name).filter(Boolean).join(", ") || "No informado"}</div>
@@ -204,7 +248,7 @@ export default function FootballApp() {
       </table></div>}
 
       <footer style={{ marginTop: 24, paddingTop: 12, borderTop: "1px solid #374151", color: "#9ca3af", fontSize: 12 }}>
-        Data provided by football-data.org. Probabilidades de prototipo, no calibradas; el modelo usa únicamente marcadores finalizados y no incluye alineaciones, lesiones, xG ni cuotas. La cobertura y campos disponibles dependen del plan de API.
+        Data provided by football-data.org. Modelo FOOTBALL-POISSON-0.2.0 experimental y no calibrado. Las cuotas justas no son cuotas de mercado ni garantizan valor esperado positivo. Solo se usan marcadores finalizados; no se incorporan alineaciones, lesiones, xG ni cuotas reales. La cobertura depende del plan de API.
       </footer>
     </main>
   );
