@@ -13,6 +13,7 @@ from football_data_client import (
     get_matches,
     get_match,
     get_standings,
+    get_team_matches,
 )
 from football_model import MODEL_VERSION, predict_1x2
 from football_history import record_pregame_snapshot, settle_official_result
@@ -266,14 +267,26 @@ def football_head_to_head(
     away_team_id: int = Query(..., gt=0),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Historical meetings between these teams within the selected competition."""
+    """Historical meetings across competitions, intersecting each team's finished fixtures."""
     if home_team_id == away_team_id:
         raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
+    code = competition.strip().upper()
+    if code not in LEAGUES:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.")
 
-    data = _provider_call(get_matches, competition)
-    all_matches = data.get("matches", [])
+    # /competitions/{code}/matches only covers the provider's available season window.
+    # Team endpoints return recent finished fixtures across competitions, so intersect
+    # both lists by match ID to obtain actual head-to-heads instead of falsely showing 0.
+    home_data = _provider_call(get_team_matches, home_team_id, 500)
+    away_data = _provider_call(get_team_matches, away_team_id, 500)
+    away_ids = {
+        row.get("id") for row in away_data.get("matches", [])
+        if row.get("id") is not None
+    }
     meetings = []
-    for match in all_matches:
+    for match in home_data.get("matches", []):
+        if match.get("id") not in away_ids:
+            continue
         if str(match.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
             continue
         home = match.get("homeTeam") or {}
@@ -288,6 +301,8 @@ def football_head_to_head(
         meetings.append({
             "id": match.get("id"),
             "date": match.get("utcDate"),
+            "competition": (match.get("competition") or {}).get("name"),
+            "competition_code": (match.get("competition") or {}).get("code"),
             "home_team": home.get("name"),
             "home_team_id": home.get("id"),
             "away_team": away.get("name"),
@@ -307,32 +322,28 @@ def football_head_to_head(
     meetings.sort(key=lambda row: str(row.get("date") or ""), reverse=True)
     home_wins = draws = away_wins = home_goals = away_goals = total_goals = 0
     for row in meetings:
-        # Outcomes are from the selected home/away team's perspective, not each historical fixture's venue.
         if row["home_team_id"] == home_team_id:
             home_goals += row["home_score"]
             away_goals += row["away_score"]
-            if row["winner"] == "home":
-                home_wins += 1
-            elif row["winner"] == "away":
-                away_wins += 1
-            else:
-                draws += 1
+            result_for_home_team = row["winner"]
         else:
             home_goals += row["away_score"]
             away_goals += row["home_score"]
-            if row["winner"] == "away":
-                home_wins += 1
-            elif row["winner"] == "home":
-                away_wins += 1
-            else:
-                draws += 1
+            result_for_home_team = "away" if row["winner"] == "home" else "home" if row["winner"] == "away" else "draw"
+        if result_for_home_team == "draw":
+            draws += 1
+        elif result_for_home_team == "home":
+            home_wins += 1
+        else:
+            away_wins += 1
         total_goals += row["total_goals"]
 
     count = len(meetings)
     return {
         "success": True,
         "provider": "football-data.org",
-        "competition": competition.strip().upper(),
+        "competition": code,
+        "history_scope": "Enfrentamientos finalizados encontrados en los últimos partidos devueltos para ambos equipos, entre todas las competiciones; el proveedor limita la profundidad del historial.",
         "teams": {"home": {"id": home_team_id}, "away": {"id": away_team_id}},
         "sample_size": count,
         "summary": {
@@ -349,7 +360,6 @@ def football_head_to_head(
             "under_2_5_count": sum(1 for row in meetings if row["total_goals"] <= 2),
         },
         "meetings": meetings[:limit],
-        "history_scope": "Solo enfrentamientos finalizados devueltos por football-data.org para esta competición; no equivale necesariamente al historial completo entre ambos clubes.",
         "returned_matches": min(count, limit),
     }
 
