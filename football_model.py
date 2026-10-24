@@ -1,7 +1,8 @@
-"""Experimental, deterministic football 1X2 engine based on recent league scores.
+"""Football Poisson goal-market engine.
 
-This module is intentionally pure: it does not call APIs, persist predictions, or
-claim calibration/profitability. It consumes completed matches supplied by the caller.
+Produces mathematical estimates from completed competition scores only. These
+outputs are not calibrated probabilities or betting advice until evaluated with
+chronological, immutable pre-match snapshots and a sufficiently large sample.
 """
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ import math
 from collections import defaultdict
 from typing import Any
 
-MODEL_VERSION = "FOOTBALL-POISSON-0.1.0"
+MODEL_VERSION = "FOOTBALL-POISSON-0.2.0"
 MAX_GOALS = 10
 MIN_TEAM_MATCHES = 3
 
@@ -25,14 +26,17 @@ def _match_goals(match: dict[str, Any]) -> tuple[str, str, int, int] | None:
         return None
     home = (match.get("homeTeam") or {}).get("name")
     away = (match.get("awayTeam") or {}).get("name")
-    score = match.get("score") or {}
-    full_time = score.get("fullTime") or {}
-    home_goals, away_goals = full_time.get("home"), full_time.get("away")
-    if not home or not away or not isinstance(home_goals, int) or not isinstance(away_goals, int):
+    full_time = ((match.get("score") or {}).get("fullTime") or {})
+    hg, ag = full_time.get("home"), full_time.get("away")
+    if not home or not away or not isinstance(hg, int) or not isinstance(ag, int):
         return None
-    if home_goals < 0 or away_goals < 0:
+    if hg < 0 or ag < 0:
         return None
-    return str(home), str(away), home_goals, away_goals
+    return str(home), str(away), hg, ag
+
+
+def _fair_odds(probability: float) -> float | None:
+    return round(1.0 / probability, 2) if probability > 0 else None
 
 
 def predict_1x2(
@@ -42,11 +46,7 @@ def predict_1x2(
     *,
     home_advantage: float = 1.08,
 ) -> dict[str, Any]:
-    """Estimate home/draw/away probabilities from finished matches only.
-
-    Team scoring/conceding rates are shrunk toward league averages. Returns
-    unavailable when either side has too little completed-match history.
-    """
+    """Estimate 1X2 and goal markets using independent Poisson score matrix."""
     if not home_team.strip() or not away_team.strip() or home_team == away_team:
         raise ValueError("Se requieren dos equipos distintos y nombres válidos.")
     if not 0.8 <= home_advantage <= 1.3:
@@ -56,10 +56,9 @@ def predict_1x2(
     if not parsed:
         return {"available": False, "reason": "No hay partidos finalizados válidos.", "model_version": MODEL_VERSION}
 
-    total_goals = sum(h + a for _, _, h, a in parsed)
     league_home_avg = sum(h for _, _, h, _ in parsed) / len(parsed)
     league_away_avg = sum(a for _, _, _, a in parsed) / len(parsed)
-    league_avg = max(0.2, total_goals / (2 * len(parsed)))
+    league_avg = max(0.2, (league_home_avg + league_away_avg) / 2)
 
     stats: dict[str, dict[str, float]] = defaultdict(lambda: {
         "scored_home": 0, "conceded_home": 0, "home_games": 0,
@@ -82,8 +81,6 @@ def predict_1x2(
             "model_version": MODEL_VERSION,
         }
 
-    # Shrink overall rates toward league average to limit extreme estimates
-    # with small samples; use home/away splits only when there is evidence.
     def rate(total: float, count: float, prior: float) -> float:
         return (total + prior * 4.0) / (count + 4.0)
 
@@ -92,45 +89,96 @@ def predict_1x2(
     away_attack = rate(a["scored_away"], a["away_games"], league_away_avg)
     away_defence = rate(a["conceded_away"], a["away_games"], league_home_avg)
 
-    expected_home = max(0.15, min(4.5, league_avg * (home_attack / max(0.2, league_home_avg)) * (away_defence / max(0.2, league_home_avg)) * home_advantage))
-    expected_away = max(0.15, min(4.5, league_avg * (away_attack / max(0.2, league_away_avg)) * (home_defence / max(0.2, league_away_avg)) / home_advantage))
+    expected_home = max(0.15, min(4.5, league_home_avg * (home_attack / max(0.2, league_home_avg)) * (away_defence / max(0.2, league_away_avg)) * home_advantage))
+    expected_away = max(0.15, min(4.5, league_away_avg * (away_attack / max(0.2, league_away_avg)) * (home_defence / max(0.2, league_home_avg)) / home_advantage))
 
-    home_win = draw = away_win = 0.0
-    for hg in range(MAX_GOALS + 1):
-        ph = _poisson_pmf(expected_home, hg)
-        for ag in range(MAX_GOALS + 1):
-            probability = ph * _poisson_pmf(expected_away, ag)
-            if hg > ag:
-                home_win += probability
-            elif hg == ag:
-                draw += probability
-            else:
-                away_win += probability
-    total = home_win + draw + away_win
-    probs = [home_win / total, draw / total, away_win / total]
+    home_pmf = [_poisson_pmf(expected_home, goals) for goals in range(MAX_GOALS + 1)]
+    away_pmf = [_poisson_pmf(expected_away, goals) for goals in range(MAX_GOALS + 1)]
+    matrix = [[home_pmf[hg] * away_pmf[ag] for ag in range(MAX_GOALS + 1)] for hg in range(MAX_GOALS + 1)]
+    # Normalize the truncated score matrix so every market is internally consistent.
+    matrix_total = sum(sum(row) for row in matrix)
+    matrix = [[p / matrix_total for p in row] for row in matrix]
+
+    home_win = sum(matrix[hg][ag] for hg in range(MAX_GOALS + 1) for ag in range(MAX_GOALS + 1) if hg > ag)
+    draw = sum(matrix[g][g] for g in range(MAX_GOALS + 1))
+    away_win = sum(matrix[hg][ag] for hg in range(MAX_GOALS + 1) for ag in range(MAX_GOALS + 1) if hg < ag)
+
+    def total_goals_probability(predicate) -> float:
+        return sum(matrix[hg][ag] for hg in range(MAX_GOALS + 1) for ag in range(MAX_GOALS + 1) if predicate(hg + ag))
+
+    def home_goals_probability(predicate) -> float:
+        return sum(matrix[hg][ag] for hg in range(MAX_GOALS + 1) for ag in range(MAX_GOALS + 1) if predicate(hg))
+
+    def away_goals_probability(predicate) -> float:
+        return sum(matrix[hg][ag] for hg in range(MAX_GOALS + 1) for ag in range(MAX_GOALS + 1) if predicate(ag))
+
+    btts_yes = sum(matrix[hg][ag] for hg in range(1, MAX_GOALS + 1) for ag in range(1, MAX_GOALS + 1))
+    btts_no = 1.0 - btts_yes
+    total_expected = expected_home + expected_away
+    scorelines = sorted(
+        ((matrix[hg][ag], hg, ag) for hg in range(MAX_GOALS + 1) for ag in range(MAX_GOALS + 1)),
+        reverse=True,
+    )[:5]
+    scorelines = [{"home": hg, "away": ag, "probability": round(p, 6)} for p, hg, ag in scorelines]
+
+    def market(probability: float) -> dict[str, Any]:
+        return {"probability": round(probability, 6), "fair_odds": _fair_odds(probability)}
+
+    goal_totals = {
+        "over_1_5": market(total_goals_probability(lambda n: n >= 2)),
+        "under_1_5": market(total_goals_probability(lambda n: n <= 1)),
+        "over_2_5": market(total_goals_probability(lambda n: n >= 3)),
+        "under_2_5": market(total_goals_probability(lambda n: n <= 2)),
+        "over_3_5": market(total_goals_probability(lambda n: n >= 4)),
+        "under_3_5": market(total_goals_probability(lambda n: n <= 3)),
+        "over_4_5": market(total_goals_probability(lambda n: n >= 5)),
+        "under_4_5": market(total_goals_probability(lambda n: n <= 4)),
+    }
+    team_goals = {
+        "home_over_0_5": market(home_goals_probability(lambda n: n >= 1)),
+        "home_over_1_5": market(home_goals_probability(lambda n: n >= 2)),
+        "home_over_2_5": market(home_goals_probability(lambda n: n >= 3)),
+        "away_over_0_5": market(away_goals_probability(lambda n: n >= 1)),
+        "away_over_1_5": market(away_goals_probability(lambda n: n >= 2)),
+        "away_over_2_5": market(away_goals_probability(lambda n: n >= 3)),
+    }
+    probabilities = {"home": home_win, "draw": draw, "away": away_win}
     return {
         "available": True,
         "model_version": MODEL_VERSION,
         "home_team": home_team,
         "away_team": away_team,
-        "probabilities": {
-            "home": round(probs[0], 6),
-            "draw": round(probs[1], 6),
-            "away": round(probs[2], 6),
+        "probabilities": {key: round(value, 6) for key, value in probabilities.items()},
+        "expected_goals": {"home": round(expected_home, 3), "away": round(expected_away, 3), "total": round(total_expected, 3)},
+        "goal_markets": {
+            "both_teams_to_score": {"yes": market(btts_yes), "no": market(btts_no)},
+            "total_goals": goal_totals,
+            "team_goals": team_goals,
+            "clean_sheet": {
+                "home": market(away_goals_probability(lambda n: n == 0)),
+                "away": market(home_goals_probability(lambda n: n == 0)),
+            },
         },
-        "expected_goals": {
-            "home": round(expected_home, 3),
-            "away": round(expected_away, 3),
+        "double_chance": {
+            "home_or_draw": market(home_win + draw),
+            "draw_or_away": market(draw + away_win),
+            "home_or_away": market(home_win + away_win),
         },
+        "most_likely_scorelines": scorelines,
         "sample": {
             "completed_matches_in_competition": len(parsed),
             "home_team_matches": int(h["games"]),
             "away_team_matches": int(a["games"]),
         },
-        "method": "Poisson de goles con tasas de ataque/defensa y regresión a la media de la liga",
+        "method": "Distribución de Poisson independiente, tasas local/visitante y regresión a la media de la competición",
+        "calibration": {
+            "status": "not_calibrated",
+            "note": "Las cuotas justas son inversos matemáticos de las probabilidades estimadas, no cuotas de mercado ni evidencia de valor esperado positivo.",
+            "required_next_step": "Guardar snapshots prepartido inmutables y evaluar cronológicamente Brier, log loss, calibración y rendimiento contra cuotas históricas disponibles.",
+        },
         "limitations": [
-            "Prototipo experimental no calibrado.",
-            "No incorpora alineaciones, lesiones, xG ni cuotas.",
-            "No debe interpretarse como recomendación de apuesta.",
+            "Estimación experimental; no calibrada ni validada como rentable.",
+            "No incorpora alineaciones, lesiones, xG, descanso, forma ponderada ni cuotas de mercado.",
+            "Las probabilidades de mercados derivados proceden de la misma matriz de goles; no son señales independientes.",
         ],
     }

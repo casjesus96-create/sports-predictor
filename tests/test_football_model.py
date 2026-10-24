@@ -59,3 +59,32 @@ def test_invalid_same_team_raises():
 def test_no_finished_matches_returns_unavailable():
     result = predict_1x2("A", "B", [match("A", "B", 1, 0, status="SCHEDULED")])
     assert result["available"] is False
+
+
+
+def test_goal_markets_are_consistent_and_expose_fair_odds():
+    result = predict_1x2("A", "B", sample_matches())
+    assert result["available"] is True
+    assert result["model_version"] == "FOOTBALL-POISSON-0.2.0"
+    assert abs(result["expected_goals"]["total"] - (
+        result["expected_goals"]["home"] + result["expected_goals"]["away"]
+    )) < 0.01
+    markets = result["goal_markets"]
+    both = markets["both_teams_to_score"]
+    assert 0 <= both["yes"]["probability"] <= 1
+    assert 0 <= both["no"]["probability"] <= 1
+    assert abs(both["yes"]["probability"] + both["no"]["probability"] - 1) < 0.01
+    assert both["yes"]["fair_odds"] is not None
+    assert "over_2_5" in markets["total_goals"]
+    assert "home_over_1_5" in markets["team_goals"]
+    assert len(result["most_likely_scorelines"]) == 5
+    assert result["calibration"]["status"] == "not_calibrated"
+
+
+def test_market_probabilities_are_monotonic_for_goal_thresholds():
+    result = predict_1x2("A", "B", sample_matches())
+    totals = result["goal_markets"]["total_goals"]
+    assert totals["over_1_5"]["probability"] >= totals["over_2_5"]["probability"]
+    assert totals["over_2_5"]["probability"] >= totals["over_3_5"]["probability"]
+    assert totals["under_1_5"]["probability"] <= totals["under_2_5"]["probability"]
+    assert totals["under_2_5"]["probability"] <= totals["under_3_5"]["probability"]
