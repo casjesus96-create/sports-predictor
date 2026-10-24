@@ -147,15 +147,27 @@ def football_games(
     refreshed_matches = []
     for match in reconciled_matches:
         status = str(match.get("status", "")).upper()
-        has_result = _has_numeric_full_time(match)
+        kickoff = match.get("utcDate")
+        kickoff_passed = False
+        if kickoff:
+            try:
+                kickoff_dt = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00"))
+                if kickoff_dt.tzinfo is None:
+                    kickoff_dt = kickoff_dt.replace(tzinfo=UTC)
+                kickoff_passed = kickoff_dt <= datetime.now(UTC)
+            except (TypeError, ValueError):
+                logger.warning("Invalid kickoff datetime for football match %s", match.get("id"))
+
+        # Refresh every already-started fixture whose status is not terminal,
+        # even if the stale payload contains a partial/placeholder score.
+        # This is important when the competition/date endpoints disagree.
         needs_detail = (
-            status in {"FINISHED", "AWARDED"} and not has_result
+            status in {"FINISHED", "AWARDED"} and not _has_numeric_full_time(match)
         ) or (
-            status in {"SCHEDULED", "TIMED", "IN_PLAY", "PAUSED"}
-            and not has_result
+            status in {"SCHEDULED", "TIMED", "IN_PLAY", "PAUSED",
+                       "EXTRA_TIME", "PENALTY_SHOOTOUT"}
+            and kickoff_passed
             and match.get("id") is not None
-            and match.get("utcDate") is not None
-            and str(match.get("utcDate", "")) <= datetime.now(UTC).isoformat()
         )
         if needs_detail:
             try:
