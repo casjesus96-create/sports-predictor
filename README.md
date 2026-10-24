@@ -29,3 +29,5 @@ Endpoints iniciales:
 Códigos admitidos: `PL`, `PD`, `SA`, `BL1`, `FL1`, `DED`, `PPL`. La presencia de un código en la interfaz no garantiza que la suscripción permita consultar todos sus recursos; el backend reporta los permisos reales y no simula datos. El cliente mantiene una caché en memoria de 60 segundos para reducir llamadas en el plan gratuito (10 solicitudes/minuto).
 
 Esta entrega es una integración de datos, **no activa todavía un modelo predictivo de fútbol ni afirma rentabilidad**. El modelo se implementará tras validar cobertura, disponibilidad histórica y esquema de persistencia. Atribución visible: “Data provided by football-data.org”.
+
+Configuración en el servicio backend: define `FOOTBALL_DATA_API_KEY` como secreto de entorno. No uses `VITE_` para esta credencial ni la guardes en el repositorio. Endpoint de comprobación: `/api/v1/football/health`; devuelve únicamente si la clave está configurada, nunca su valor.
