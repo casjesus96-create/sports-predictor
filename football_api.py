@@ -265,25 +265,53 @@ def football_head_to_head(
     competition: str = Query(..., description="Código de liga, por ejemplo PL o PD"),
     home_team_id: int = Query(..., gt=0),
     away_team_id: int = Query(..., gt=0),
+    match_id: int | None = Query(None, gt=0),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Head-to-head across the team's competition history, not just the current season."""
+    """Return direct meetings from the provider's H2H endpoint for this fixture."""
     if home_team_id == away_team_id:
         raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
 
-    # Competition endpoint returns current-season fixtures only in many plans.
-    # Team match endpoints can expose historical seasons available to the API plan.
-    home_data = _provider_call(get_team_matches, home_team_id, competition, "FINISHED", 500)
-    away_data = _provider_call(get_team_matches, away_team_id, competition, "FINISHED", 500)
-    home_matches = home_data.get("matches", [])
-    away_ids = {
-        match.get("id") for match in away_data.get("matches", [])
-        if match.get("id") is not None
-    }
+    source = "football-data.org"
+    raw_matches = []
+    history_scope = (
+        "Enfrentamientos directos que football-data.org devuelve para este partido; "
+        "la profundidad depende de la cobertura y del plan de API."
+    )
+
+    # Use the provider's dedicated H2H endpoint when the selected fixture ID is
+    # known. This avoids intersecting two team feeds filtered to the selected
+    # competition, which omitted historical meetings outside that competition.
+    if match_id is not None:
+        try:
+            h2h_data = _provider_call(get_match_head_to_head, match_id, limit)
+            raw_matches = h2h_data.get("matches", [])
+        except HTTPException as exc:
+            logger.warning(
+                "Provider H2H endpoint unavailable for match %s; falling back to team history: %s",
+                match_id, exc.detail,
+            )
+
+    # Compatibility fallback for clients that do not send a fixture ID or if
+    # the provider H2H endpoint is unavailable. Results remain explicitly scoped.
+    if not raw_matches:
+        home_data = _provider_call(get_team_matches, home_team_id, competition, "FINISHED", 500)
+        away_data = _provider_call(get_team_matches, away_team_id, competition, "FINISHED", 500)
+        away_ids = {
+            item.get("id") for item in away_data.get("matches", [])
+            if item.get("id") is not None
+        }
+        raw_matches = [
+            item for item in home_data.get("matches", [])
+            if item.get("id") in away_ids
+        ]
+        history_scope = (
+            "Historial accesible dentro de la competición seleccionada como alternativa; "
+            "no equivale al historial completo entre ambos clubes."
+        )
+
     meetings = []
-    for match in home_matches:
-        if match.get("id") not in away_ids:
-            continue
+    for match in raw_matches:
         if str(match.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
             continue
         home = match.get("homeTeam") or {}
@@ -292,12 +320,18 @@ def football_head_to_head(
             continue
         score = (match.get("score") or {}).get("fullTime") or {}
         hs, aws = score.get("home"), score.get("away")
-        if not isinstance(hs, int) or isinstance(hs, bool) or not isinstance(aws, int) or isinstance(aws, bool):
+        if (
+            not isinstance(hs, int) or isinstance(hs, bool)
+            or not isinstance(aws, int) or isinstance(aws, bool)
+        ):
             continue
         winner = "draw" if hs == aws else ("home" if hs > aws else "away")
+        comp = match.get("competition") or {}
         meetings.append({
             "id": match.get("id"),
             "date": match.get("utcDate"),
+            "competition": comp.get("name") or comp.get("code") or competition.upper(),
+            "competition_code": comp.get("code"),
             "home_team": home.get("name"),
             "home_team_id": home.get("id"),
             "away_team": away.get("name"),
@@ -311,10 +345,14 @@ def football_head_to_head(
             "venue": match.get("venue"),
             "half_time": (match.get("score") or {}).get("halfTime"),
             "duration": (match.get("score") or {}).get("duration"),
-            "result_source": "football-data.org",
+            "result_source": source,
         })
 
+    # Deduplicate by fixture ID in case the upstream payload repeats a match.
+    unique = {row["id"]: row for row in meetings if row.get("id") is not None}
+    meetings = list(unique.values())
     meetings.sort(key=lambda row: str(row.get("date") or ""), reverse=True)
+
     home_wins = draws = away_wins = home_goals = away_goals = total_goals = 0
     for row in meetings:
         if row["home_team_id"] == home_team_id:
@@ -336,7 +374,7 @@ def football_head_to_head(
     count = len(meetings)
     return {
         "success": True,
-        "provider": "football-data.org",
+        "provider": source,
         "competition": competition.strip().upper(),
         "teams": {"home": {"id": home_team_id}, "away": {"id": away_team_id}},
         "sample_size": count,
@@ -354,7 +392,7 @@ def football_head_to_head(
             "under_2_5_count": sum(1 for row in meetings if row["total_goals"] <= 2),
         },
         "meetings": meetings[:limit],
-        "history_scope": "Enfrentamientos finalizados encontrados en el historial de ambos equipos dentro de la competición y temporadas disponibles en tu plan de football-data.org.",
+        "history_scope": history_scope,
         "returned_matches": min(count, limit),
     }
 
