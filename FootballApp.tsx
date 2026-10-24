@@ -74,12 +74,24 @@ const matchScore = (match: Match) => {
   const full = score?.fullTime;
   const regular = (score as any)?.regularTime;
   const penalties = (score as any)?.penalties;
-  const home = full?.home ?? regular?.home;
-  const away = full?.away ?? regular?.away;
+  const status = String(match.status || "").toUpperCase();
+  // football-data.org can leave fullTime null during play. Prefer a current
+  // regular-time score when present; at halftime, expose the official halfTime
+  // score rather than incorrectly claiming that no score exists.
+  const partial = score?.halfTime;
+  const home = full?.home ?? regular?.home ??
+    (status === "PAUSED" ? partial?.home : undefined);
+  const away = full?.away ?? regular?.away ??
+    (status === "PAUSED" ? partial?.away : undefined);
   if (typeof home === "number" && typeof away === "number") {
     const penaltyHome = penalties?.home;
     const penaltyAway = penalties?.away;
-    return { text: `${home} : ${away}`, detail: typeof penaltyHome === "number" && typeof penaltyAway === "number" ? `Penales ${penaltyHome} : ${penaltyAway}` : "" };
+    const detail = typeof penaltyHome === "number" && typeof penaltyAway === "number"
+      ? `Penales ${penaltyHome} : ${penaltyAway}`
+      : status === "PAUSED" && typeof full?.home !== "number"
+        ? "Marcador al descanso; pendiente del resultado final"
+        : "";
+    return { text: `${home} : ${away}`, detail };
   }
   return { text: "Marcador no disponible", detail: "" };
 };
