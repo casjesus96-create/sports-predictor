@@ -220,7 +220,7 @@ export default function FootballApp() {
                       [home + " marca +1.5", prediction.goal_markets.team_goals?.home_over_1_5],
                       [away + " marca +0.5", prediction.goal_markets.team_goals?.away_over_0_5],
                       [away + " marca +1.5", prediction.goal_markets.team_goals?.away_over_1_5],
-                    ].map(([label, market]) => <tr key={String(label)}><td style={cellStyle}>{label}</td><td style={cellStyle}><strong>{percent((market as { probability?: number } | undefined)?.probability)}</strong></td><td style={cellStyle}>{(market as { fair_odds?: number | null } | undefined)?.fair_odds ?? "—"}</td></tr>)}</tbody>
+                    ] as Array<[string, { probability: number; fair_odds?: number | null } | undefined]>).map(([label, market]) => <tr key={label}><td style={cellStyle}>{label}</td><td style={cellStyle}><strong>{percent((market as { probability?: number } | undefined)?.probability)}</strong></td><td style={cellStyle}>{(market as { fair_odds?: number | null } | undefined)?.fair_odds ?? "—"}</td></tr>)}</tbody>
                   </table>
                 </div>
                 {prediction.most_likely_scorelines && <div style={{ marginTop: 10 }}><strong>Marcadores exactos más probables</strong><div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>{prediction.most_likely_scorelines.map((score) => <div key={score.home + "-" + score.away} style={{ padding: "8px 10px", background: "#0f172a", borderRadius: 8 }}><strong>{score.home}–{score.away}</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>{percent(score.probability)}</div></div>)}</div></div>}
