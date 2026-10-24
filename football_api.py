@@ -278,7 +278,7 @@ def football_head_to_head(
     # historical H2H may have occurred in earlier seasons or cup competitions.
     team_feeds = []
     for team_id in (home_team_id, away_team_id):
-        payload = _provider_call(get_team_matches, team_id, 500)
+        payload = _provider_call(get_team_matches, team_id, code, "FINISHED", 500)
         team_feeds.append(payload.get("matches", []))
 
     candidates = {}
