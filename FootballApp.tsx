@@ -110,13 +110,25 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
   const homeId = match.homeTeam?.id;
   const awayId = match.awayTeam?.id;
 
+  // Cards are reused by React while the selected fixtures change. Never leave
+  // another fixture's history visible while the new request is pending.
+  useEffect(() => {
+    setData(null);
+    setError("");
+    setLoading(false);
+  }, [competition, homeId, awayId]);
+
   async function loadHistory() {
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
     setLoading(true); setError("");
     try {
-      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&home_team_id=${homeId}&away_team_id=${awayId}&limit=10`);
+      const requestedHomeId = homeId;
+      const requestedAwayId = awayId;
+      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&home_team_id=${requestedHomeId}&away_team_id=${requestedAwayId}&limit=10`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo cargar el historial.");
+      // Ignore a late response if React has reused this panel for a different fixture.
+      if (match.homeTeam?.id !== requestedHomeId || match.awayTeam?.id !== requestedAwayId) return;
       setData(body);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error consultando enfrentamientos históricos.");
