@@ -145,6 +145,11 @@ def football_games(
     # Fetch individual details only for suspicious matches, not every fixture,
     # and rely on the client's TTL cache to protect the free API quota.
     refreshed_matches = []
+    # Keep detail refreshes bounded: each request already calls the date list
+    # and competition history. Unbounded per-match lookups can exhaust the
+    # provider quota and make later fixtures lose fresh scores.
+    detail_refresh_budget = 2
+    detail_refreshes = 0
     for match in reconciled_matches:
         status = str(match.get("status", "")).upper()
         kickoff = match.get("utcDate")
@@ -169,7 +174,8 @@ def football_games(
             and kickoff_passed
             and match.get("id") is not None
         )
-        if needs_detail:
+        if needs_detail and detail_refreshes < detail_refresh_budget:
+            detail_refreshes += 1
             try:
                 detail = _provider_call(get_match, int(match["id"]))
                 detail_match = detail.get("match", detail)
