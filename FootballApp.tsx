@@ -72,7 +72,7 @@ export default function FootballApp() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
   const [view, setView] = useState<"games" | "standings">("games");
-  const [matchFilter, setMatchFilter] = useState<"upcoming" | "all" | "finished">("upcoming");
+  const [matchFilter, setMatchFilter] = useState<"upcoming" | "all" | "finished">("all");
   const [loading, setLoading] = useState(false);
   const [loadingCompetitions, setLoadingCompetitions] = useState(true);
   const [error, setError] = useState("");

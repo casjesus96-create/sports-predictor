@@ -88,8 +88,14 @@ def football_games(
         date_to.isoformat() if date_to else None,
     )
     matches = data.get("matches", [])
+
+    # The selected-date response usually contains only that day's fixtures. It
+    # is not a valid training sample, so fetch the competition's current-season
+    # match history separately and build probabilities from completed matches
+    # only. The provider client caches both calls to protect the free-tier quota.
+    history = _provider_call(get_matches, competition)
     completed = [
-        match for match in matches
+        match for match in history.get("matches", [])
         if str(match.get("status", "")).upper() == "FINISHED"
         and isinstance(((match.get("score") or {}).get("fullTime") or {}).get("home"), int)
         and isinstance(((match.get("score") or {}).get("fullTime") or {}).get("away"), int)
@@ -124,6 +130,7 @@ def football_games(
         "filters": {"dateFrom": date_from.isoformat() if date_from else None,
                     "dateTo": date_to.isoformat() if date_to else None},
         "prediction_model": MODEL_VERSION,
+        "training_sample": {"completed_matches": len(completed), "source": "historial de la competición devuelto por el proveedor"},
         "matches": enriched_matches,
     }
 
