@@ -9,6 +9,8 @@ const LEAGUES = [
   { code: "FL1", name: "Ligue 1" },
   { code: "DED", name: "Eredivisie" },
   { code: "PPL", name: "Primeira Liga" },
+  { code: "BSA", name: "Brasileirão Série A" },
+  { code: "CL", name: "UEFA Champions League" },
 ];
 
 type CompetitionStatus = { code: string; available_in_plan: boolean; name: string };
@@ -55,7 +57,8 @@ type Standing = {
   }>;
 };
 
-const localDate = (value?: string) => value ? new Date(value).toLocaleString() : "Fecha por confirmar";
+const localDate = (value?: string) => value ? new Date(value).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" }) : "Fecha por confirmar";
+const todayInput = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const percent = (value?: number) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
 const cellStyle: React.CSSProperties = { padding: "10px 8px", borderBottom: "1px solid #374151", textAlign: "left", verticalAlign: "top" };
 const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", background: "#111827", fontSize: 13 };
@@ -64,6 +67,7 @@ const cardStyle: React.CSSProperties = { padding: 14, border: "1px solid #374151
 
 export default function FootballApp() {
   const [competition, setCompetition] = useState("PL");
+  const [selectedDate, setSelectedDate] = useState(todayInput());
   const [availability, setAvailability] = useState<CompetitionStatus[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
@@ -96,7 +100,7 @@ export default function FootballApp() {
     setLoading(true); setError(""); setNotice(""); setView(nextView);
     try {
       const response = await fetch(nextView === "games"
-        ? `${API}/games?competition=${competition}`
+        ? `${API}/games?competition=${competition}&dateFrom=${selectedDate}&dateTo=${selectedDate}`
         : `${API}/standings?competition=${competition}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No fue posible cargar los datos.");
@@ -137,6 +141,10 @@ export default function FootballApp() {
 
       <section style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12, marginBottom: 14 }}>
         <label style={{ display: "grid", gap: 6, fontWeight: 700 }}>
+          Fecha de partidos
+          <input type="date" value={selectedDate} onChange={(event) => { setSelectedDate(event.target.value); setMatches([]); setError(""); setNotice(""); }} style={{ minHeight: 44, padding: 10, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#f9fafb", colorScheme: "dark" }} />
+        </label>
+        <label style={{ display: "grid", gap: 6, fontWeight: 700 }}>
           Competición
           <select value={competition} onChange={(event) => { setCompetition(event.target.value); setMatches([]); setStandings([]); setError(""); setNotice(""); }}
             style={{ minHeight: 44, padding: 10, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#f9fafb" }}>
@@ -150,7 +158,7 @@ export default function FootballApp() {
       </section>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
-        <button type="button" onClick={() => loadData("games")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "games" ? "Cargando…" : "Cargar partidos y probabilidades"}</button>
+        <button type="button" onClick={() => loadData("games")} disabled={loading || loadingCompetitions || !selectedDate} style={buttonStyle}>{loading && view === "games" ? "Cargando…" : `Buscar partidos del ${selectedDate}`}</button>
         <button type="button" onClick={() => loadData("standings")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "standings" ? "Cargando…" : "Ver clasificación"}</button>
       </div>
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: "#451a1a", color: "#fecaca" }}>{error}</p>}
@@ -160,7 +168,7 @@ export default function FootballApp() {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "14px 0" }}>
           {(["upcoming", "all", "finished"] as const).map((filter) => <button key={filter} type="button" onClick={() => setMatchFilter(filter)} style={{ ...buttonStyle, background: matchFilter === filter ? "#2563eb" : "#1f2937" }}>{filter === "upcoming" ? "Próximos / en juego" : filter === "all" ? "Todas las jornadas" : "Finalizados"}</button>)}
         </div>
-        <p style={{ color: "#9ca3af", fontSize: 13 }}>Encuentros mostrados: {visibleMatches.length}. Abre “Datos completos de la API” en cada tarjeta para consultar la respuesta íntegra disponible del proveedor.</p>
+        <p style={{ color: "#9ca3af", fontSize: 13 }}>Fecha consultada: {selectedDate}. Encuentros mostrados: {visibleMatches.length}. Abre “Datos completos de la API” en cada tarjeta para consultar la respuesta íntegra disponible del proveedor.</p>
         {visibleMatches.map((match) => {
           const prediction = match.prediction;
           const home = match.homeTeam?.name || "Local";
