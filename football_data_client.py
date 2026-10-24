@@ -155,6 +155,16 @@ def get_match(match_id: int) -> dict[str, Any]:
     return _get(f"/matches/{match_id}")
 
 
+
+def get_head_to_head(match_id: int, limit: int = 10) -> dict[str, Any]:
+    """Fetch the provider's dedicated historical head-to-head resource."""
+    if isinstance(match_id, bool) or not isinstance(match_id, int) or match_id <= 0:
+        raise FootballDataError("Identificador de partido no válido.", 400)
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
+        raise FootballDataError("Límite de enfrentamientos no válido.", 400)
+    return _get(f"/matches/{match_id}/head2head", {"limit": limit})
+
+
 def get_standings(competition: str) -> dict[str, Any]:
     code = competition.strip().upper()
     if code not in LEAGUES:
