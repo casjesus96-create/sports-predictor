@@ -42,6 +42,7 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
     away_pairs = []
     evaluated = []
     skipped = {"missing_projection": 0, "missing_actual_quarters": 0, "invalid_or_postgame_cutoff": 0}
+    skipped_details = []
 
     for row in rows or []:
         features = row.get("features") or {}
@@ -57,6 +58,15 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
         cutoff = _parse_dt(row.get("data_cutoff") or features.get("analysis_data_cutoff"))
         if kickoff is None or cutoff is None or cutoff >= kickoff:
             skipped["invalid_or_postgame_cutoff"] += 1
+            skipped_details.append({
+                "event_id": event_id,
+                "game": game.get("name") or f"{game.get('away', 'Visitante')} @ {game.get('home', 'Local')}",
+                "reason": "missing_kickoff" if kickoff is None else "missing_or_invalid_data_cutoff" if cutoff is None else "cutoff_at_or_after_kickoff",
+                "kickoff": game.get("kickoff"),
+                "data_cutoff": row.get("data_cutoff"),
+                "analysis_data_cutoff": features.get("analysis_data_cutoff"),
+                "created_at": row.get("created_at"),
+            })
             continue
         actual = (actual_quarters_by_game or {}).get(event_id)
         if not actual:
@@ -142,5 +152,6 @@ def evaluate_quarter_projections(rows, actual_quarters_by_game):
         "game_total_score_mae": _mae(game_total_pairs),
         "by_quarter": by_quarter,
         "skipped": skipped,
+        "skipped_details": skipped_details[:50],
         "games": evaluated,
     }
