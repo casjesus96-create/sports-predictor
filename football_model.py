@@ -10,7 +10,7 @@ import math
 from collections import defaultdict
 from typing import Any
 
-MODEL_VERSION = "FOOTBALL-POISSON-0.2.0"
+MODEL_VERSION = "FOOTBALL-POISSON-0.3.0"
 MAX_GOALS = 10
 MIN_TEAM_MATCHES = 3
 
@@ -21,7 +21,7 @@ def _poisson_pmf(rate: float, goals: int) -> float:
     return math.exp(-rate) * (rate ** goals) / math.factorial(goals)
 
 
-def _match_goals(match: dict[str, Any]) -> tuple[str, str, int, int] | None:
+def _match_goals(match: dict[str, Any]) -> tuple[str, str, int, int, str | None] | None:
     if str(match.get("status", "")).upper() != "FINISHED":
         return None
     home = (match.get("homeTeam") or {}).get("name")
@@ -32,7 +32,7 @@ def _match_goals(match: dict[str, Any]) -> tuple[str, str, int, int] | None:
         return None
     if hg < 0 or ag < 0:
         return None
-    return str(home), str(away), hg, ag
+    return str(home), str(away), hg, ag, str(match.get("utcDate") or match.get("date") or "") or None
 
 
 def _fair_odds(probability: float) -> float | None:
@@ -56,8 +56,8 @@ def predict_1x2(
     if not parsed:
         return {"available": False, "reason": "No hay partidos finalizados válidos.", "model_version": MODEL_VERSION}
 
-    league_home_avg = sum(h for _, _, h, _ in parsed) / len(parsed)
-    league_away_avg = sum(a for _, _, _, a in parsed) / len(parsed)
+    league_home_avg = sum(row[2] for row in parsed) / len(parsed)
+    league_away_avg = sum(row[3] for row in parsed) / len(parsed)
     league_avg = max(0.2, (league_home_avg + league_away_avg) / 2)
 
     stats: dict[str, dict[str, float]] = defaultdict(lambda: {
@@ -65,7 +65,7 @@ def predict_1x2(
         "scored_away": 0, "conceded_away": 0, "away_games": 0,
         "scored": 0, "conceded": 0, "games": 0,
     })
-    for home, away, hg, ag in parsed:
+    for home, away, hg, ag, _match_date in parsed:
         hs, aws = stats[home], stats[away]
         hs["scored_home"] += hg; hs["conceded_home"] += ag; hs["home_games"] += 1
         aws["scored_away"] += ag; aws["conceded_away"] += hg; aws["away_games"] += 1
@@ -167,10 +167,12 @@ def predict_1x2(
         "most_likely_scorelines": scorelines,
         "sample": {
             "completed_matches_in_competition": len(parsed),
+            "weighted_form": False,
+            "weighted_form": False,
             "home_team_matches": int(h["games"]),
             "away_team_matches": int(a["games"]),
         },
-        "method": "Distribución de Poisson independiente, tasas local/visitante y regresión a la media de la competición",
+        "method": "Distribución de Poisson independiente, tasas local/visitante y regresión a la media de la competición; versión 0.3 añade trazabilidad de versión, sin calibración demostrada",
         "calibration": {
             "status": "not_calibrated",
             "note": "Las cuotas justas son inversos matemáticos de las probabilidades estimadas, no cuotas de mercado ni evidencia de valor esperado positivo.",
@@ -179,6 +181,7 @@ def predict_1x2(
         "limitations": [
             "Estimación experimental; no calibrada ni validada como rentable.",
             "No incorpora alineaciones, lesiones, xG, descanso, forma ponderada ni cuotas de mercado.",
+            "La versión 0.3 no debe interpretarse como una mejora de acierto demostrada; requiere validación cronológica.",
             "Las probabilidades de mercados derivados proceden de la misma matriz de goles; no son señales independientes.",
         ],
     }
