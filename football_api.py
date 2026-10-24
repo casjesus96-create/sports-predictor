@@ -13,6 +13,7 @@ from football_data_client import (
     get_matches,
     get_standings,
 )
+from football_model import predict_1x2
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/football", tags=["Football"])
@@ -86,15 +87,44 @@ def football_games(
         date_from.isoformat() if date_from else None,
         date_to.isoformat() if date_to else None,
     )
+    matches = data.get("matches", [])
+    completed = [
+        match for match in matches
+        if str(match.get("status", "")).upper() == "FINISHED"
+        and isinstance(((match.get("score") or {}).get("fullTime") or {}).get("home"), int)
+        and isinstance(((match.get("score") or {}).get("fullTime") or {}).get("away"), int)
+    ]
+    enriched_matches = []
+    for match in matches:
+        item = dict(match)
+        status = str(match.get("status", "")).upper()
+        home = (match.get("homeTeam") or {}).get("name")
+        away = (match.get("awayTeam") or {}).get("name")
+        if status in {"SCHEDULED", "TIMED"} and home and away:
+            try:
+                item["prediction"] = predict_1x2(home, away, completed)
+            except (TypeError, ValueError):
+                item["prediction"] = {
+                    "available": False,
+                    "reason": "No se pudo calcular una estimación válida con los datos disponibles.",
+                }
+        else:
+            item["prediction"] = {
+                "available": False,
+                "reason": "Las probabilidades prepartido solo se muestran para encuentros no iniciados.",
+            }
+        enriched_matches.append(item)
+
     return {
         "success": True,
         "provider": "football-data.org",
         "competition": competition.upper(),
         "generated_at": datetime.now(UTC).isoformat(),
-        "count": data.get("resultSet", {}).get("count", len(data.get("matches", []))),
+        "count": data.get("resultSet", {}).get("count", len(matches)),
         "filters": {"dateFrom": date_from.isoformat() if date_from else None,
                     "dateTo": date_to.isoformat() if date_to else None},
-        "matches": data.get("matches", []),
+        "prediction_model": "FOOTBALL-POISSON-0.1.0",
+        "matches": enriched_matches,
     }
 
 
