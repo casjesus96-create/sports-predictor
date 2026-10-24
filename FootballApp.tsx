@@ -114,7 +114,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
     setLoading(true); setError("");
     try {
-      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&home_team_id=${homeId}&away_team_id=${awayId}&limit=10`);
+      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&match_id=${match.id}&home_team_id=${homeId}&away_team_id=${awayId}&limit=10`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo cargar el historial.");
       setData(body);
@@ -130,7 +130,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     </div>
     {error && <p role="alert" style={{ color: "#fecaca" }}>{error}</p>}
     {data && <>
-      <p style={{ color: "#9ca3af", fontSize: 12 }}>Muestra: {data.sample_size} partidos finalizados en esta competición. {data.history_scope}</p>
+      <p style={{ color: "#9ca3af", fontSize: 12 }}>Muestra: {data.sample_size} enfrentamientos finalizados encontrados. {data.history_scope}</p>
       {data.sample_size > 0 ? <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
           {[
@@ -149,7 +149,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
             <tbody>{data.meetings.map((item: any) => <tr key={item.id}><td style={cellStyle}>{item.date ? new Date(item.date).toLocaleDateString("es-ES") : "—"}</td><td style={cellStyle}>{item.home_team || "—"}</td><td style={cellStyle}><strong>{item.home_score}–{item.away_score}</strong></td><td style={cellStyle}>{item.away_team || "—"}</td><td style={cellStyle}>{item.total_goals}</td></tr>)}</tbody>
           </table>
         </div>
-      </> : <p>No hay enfrentamientos finalizados disponibles entre estos equipos en esta competición.</p>}
+      </> : <p>El proveedor no devolvió enfrentamientos finalizados en la muestra accesible. Esto no significa que los clubes nunca se hayan enfrentado.</p>}
     </>}
   </section>;
 }
