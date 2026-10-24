@@ -227,7 +227,7 @@ export default function FootballApp() {
                 {prediction.double_chance && <div style={{ marginTop: 10, fontSize: 13 }}><strong>Doble oportunidad:</strong> 1X {percent(prediction.double_chance.home_or_draw?.probability)} · X2 {percent(prediction.double_chance.draw_or_away?.probability)} · 12 {percent(prediction.double_chance.home_or_away?.probability)}</div>}
               </section>}
               <p style={{ marginBottom: 0, fontSize: 11, color: "#9ca3af" }}>Muestra: {prediction.sample?.home_team_matches ?? 0} partidos del local y {prediction.sample?.away_team_matches ?? 0} del visitante · {prediction.model_version}</p>
-              {prediction.calibration?.note && <p style={{ marginBottom: 0, fontSize: 11, color: "#fbbf24" }}>{prediction.calibration.note}</p>
+              {prediction.calibration?.note && <p style={{ marginBottom: 0, fontSize: 11, color: "#fbbf24" }}>{prediction.calibration.note}</p>}
             </section> : <p style={{ color: "#fbbf24", fontSize: 13 }}>Probabilidad no disponible: {prediction?.reason || "faltan resultados finalizados suficientes."}</p>}
             <div style={{ marginTop: 10, fontSize: 13 }}>
               <div>Estadio: {match.venue || "No informado"} · Árbitro: {match.referees?.map((ref) => ref.name).filter(Boolean).join(", ") || "No informado"}</div>
