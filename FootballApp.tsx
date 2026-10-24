@@ -130,7 +130,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     </div>
     {error && <p role="alert" style={{ color: "#fecaca" }}>{error}</p>}
     {data && <>
-      <p style={{ color: "#9ca3af", fontSize: 12 }}>Muestra: {data.sample_size} partidos finalizados en esta competición. {data.history_scope}</p>
+      <p style={{ color: "#9ca3af", fontSize: 12 }}>Muestra: {data.sample_size} enfrentamientos finalizados encontrados. {data.history_scope}</p>
       {data.sample_size > 0 ? <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
           {[
@@ -145,8 +145,8 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
           ].map(([label, value]) => <div key={String(label)} style={{ background: "#111827", padding: 9, borderRadius: 7 }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{label}</div><strong>{value ?? "—"}</strong></div>)}
         </div>
         <div style={{ overflowX: "auto", marginTop: 10 }}>
-          <table style={tableStyle}><thead><tr>{["Fecha", "Local histórico", "Marcador", "Visitante histórico", "Total"].map((h) => <th key={h} style={cellStyle}>{h}</th>)}</tr></thead>
-            <tbody>{data.meetings.map((item: any) => <tr key={item.id}><td style={cellStyle}>{item.date ? new Date(item.date).toLocaleDateString("es-ES") : "—"}</td><td style={cellStyle}>{item.home_team || "—"}</td><td style={cellStyle}><strong>{item.home_score}–{item.away_score}</strong></td><td style={cellStyle}>{item.away_team || "—"}</td><td style={cellStyle}>{item.total_goals}</td></tr>)}</tbody>
+          <table style={tableStyle}><thead><tr>{["Fecha", "Competición", "Local histórico", "Marcador", "Visitante histórico", "Total"].map((h) => <th key={h} style={cellStyle}>{h}</th>)}</tr></thead>
+            <tbody>{data.meetings.map((item: any) => <tr key={item.id}><td style={cellStyle}>{item.date ? new Date(item.date).toLocaleDateString("es-ES") : "—"}</td><td style={cellStyle}>{item.competition || item.competition_code || "—"}</td><td style={cellStyle}>{item.home_team || "—"}</td><td style={cellStyle}><strong>{item.home_score}–{item.away_score}</strong></td><td style={cellStyle}>{item.away_team || "—"}</td><td style={cellStyle}>{item.total_goals}</td></tr>)}</tbody>
           </table>
         </div>
       </> : <p>No hay enfrentamientos finalizados disponibles entre estos equipos en esta competición.</p>}
