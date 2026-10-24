@@ -41,6 +41,46 @@ def _provider_call(function, *args, **kwargs):
         ) from exc
 
 
+def _has_numeric_full_time(match: dict) -> bool:
+    full_time = (match.get("score") or {}).get("fullTime") or {}
+    return (
+        isinstance(full_time.get("home"), int)
+        and isinstance(full_time.get("away"), int)
+    )
+
+
+def _reconcile_match(selected_match: dict, history_by_id: dict) -> dict:
+    """Prefer completed/current history data over a stale date-filter response."""
+    item = dict(selected_match)
+    historical = history_by_id.get(item.get("id"))
+    if not historical:
+        return item
+
+    selected_status = str(item.get("status", "")).upper()
+    historical_status = str(historical.get("status", "")).upper()
+    historical_has_result = (
+        historical_status in {"FINISHED", "AWARDED"}
+        and _has_numeric_full_time(historical)
+    )
+
+    # A date-filtered fixture can lag behind the competition endpoint. When
+    # history has a verified final score, use its status and score together.
+    if historical_has_result:
+        item["status"] = historical_status
+        item["score"] = historical.get("score")
+        for key in ("lastUpdated", "utcDate", "matchday", "stage"):
+            if historical.get(key) is not None:
+                item[key] = historical[key]
+    elif selected_status not in {"FINISHED", "AWARDED"} and historical_status in {
+        "IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT",
+        "POSTPONED", "SUSPENDED", "CANCELLED",
+    }:
+        item["status"] = historical_status
+        if historical.get("score") is not None:
+            item["score"] = historical["score"]
+    return item
+
+
 @router.get("/health")
 def football_health():
     """Reports integration configuration without exposing credentials."""
@@ -89,23 +129,28 @@ def football_games(
     )
     matches = data.get("matches", [])
 
-    # The selected-date response usually contains only that day's fixtures. It
-    # is not a valid training sample, so fetch the competition's current-season
-    # match history separately and build probabilities from completed matches
-    # only. The provider client caches both calls to protect the free-tier quota.
+    # Query competition history separately: selected-date results are fixtures,
+    # not a sufficient training sample and can lag behind final score updates.
     history = _provider_call(get_matches, competition)
-    completed = [
-        match for match in history.get("matches", [])
-        if str(match.get("status", "")).upper() == "FINISHED"
-        and isinstance(((match.get("score") or {}).get("fullTime") or {}).get("home"), int)
-        and isinstance(((match.get("score") or {}).get("fullTime") or {}).get("away"), int)
+    history_matches = history.get("matches", [])
+    history_by_id = {
+        match.get("id"): match for match in history_matches if match.get("id") is not None
+    }
+    reconciled_matches = [
+        _reconcile_match(match, history_by_id) for match in matches
     ]
+    completed = [
+        match for match in history_matches
+        if str(match.get("status", "")).upper() == "FINISHED"
+        and _has_numeric_full_time(match)
+    ]
+
     enriched_matches = []
-    for match in matches:
+    for match in reconciled_matches:
         item = dict(match)
-        status = str(match.get("status", "")).upper()
-        home = (match.get("homeTeam") or {}).get("name")
-        away = (match.get("awayTeam") or {}).get("name")
+        status = str(item.get("status", "")).upper()
+        home = (item.get("homeTeam") or {}).get("name")
+        away = (item.get("awayTeam") or {}).get("name")
         if status in {"SCHEDULED", "TIMED"} and home and away:
             try:
                 item["prediction"] = predict_1x2(home, away, completed)
@@ -127,10 +172,15 @@ def football_games(
         "competition": competition.upper(),
         "generated_at": datetime.now(UTC).isoformat(),
         "count": data.get("resultSet", {}).get("count", len(matches)),
-        "filters": {"dateFrom": date_from.isoformat() if date_from else None,
-                    "dateTo": date_to.isoformat() if date_to else None},
+        "filters": {
+            "dateFrom": date_from.isoformat() if date_from else None,
+            "dateTo": date_to.isoformat() if date_to else None,
+        },
         "prediction_model": MODEL_VERSION,
-        "training_sample": {"completed_matches": len(completed), "source": "historial de la competición devuelto por el proveedor"},
+        "training_sample": {
+            "completed_matches": len(completed),
+            "source": "historial de la competición devuelto por el proveedor",
+        },
         "matches": enriched_matches,
     }
 
