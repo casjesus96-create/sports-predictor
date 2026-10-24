@@ -274,19 +274,12 @@ def football_head_to_head(
     if code not in LEAGUES:
         raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.")
 
-    # /competitions/{code}/matches only covers the provider's available season window.
-    # Team endpoints return recent finished fixtures across competitions, so intersect
-    # both lists by match ID to obtain actual head-to-heads instead of falsely showing 0.
+    # Use the home team's finished-match feed as the source of truth, then
+    # filter directly for the opponent. Intersecting two independently truncated
+    # feeds can incorrectly return zero when the same match falls outside one feed.
     home_data = _provider_call(get_team_matches, home_team_id, 500)
-    away_data = _provider_call(get_team_matches, away_team_id, 500)
-    away_ids = {
-        row.get("id") for row in away_data.get("matches", [])
-        if row.get("id") is not None
-    }
     meetings = []
     for match in home_data.get("matches", []):
-        if match.get("id") not in away_ids:
-            continue
         if str(match.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
             continue
         home = match.get("homeTeam") or {}
