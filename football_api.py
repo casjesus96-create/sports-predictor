@@ -267,23 +267,25 @@ def football_head_to_head(
     away_team_id: int = Query(..., gt=0),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Head-to-head across the team's competition history, not just the current season."""
+    """Historical meetings found in each team's recent finished fixtures."""
     if home_team_id == away_team_id:
         raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
+    code = competition.strip().upper()
+    if code not in LEAGUES:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.")
 
-    # Competition endpoint returns current-season fixtures only in many plans.
-    # Team match endpoints can expose historical seasons available to the API plan.
-    home_data = _provider_call(get_team_matches, home_team_id, competition, "FINISHED", 500)
-    away_data = _provider_call(get_team_matches, away_team_id, competition, "FINISHED", 500)
-    home_matches = home_data.get("matches", [])
-    away_ids = {
-        match.get("id") for match in away_data.get("matches", [])
-        if match.get("id") is not None
-    }
+    # Query both teams' result feeds because either feed can be truncated.
+    home_data = _provider_call(get_team_matches, home_team_id, 500)
+    away_data = _provider_call(get_team_matches, away_team_id, 500)
+    candidates = {}
+    for payload in (home_data, away_data):
+        for match in payload.get("matches", []):
+            match_id = match.get("id")
+            if match_id is not None:
+                candidates[match_id] = match
+
     meetings = []
-    for match in home_matches:
-        if match.get("id") not in away_ids:
-            continue
+    for match in candidates.values():
         if str(match.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
             continue
         home = match.get("homeTeam") or {}
@@ -298,6 +300,8 @@ def football_head_to_head(
         meetings.append({
             "id": match.get("id"),
             "date": match.get("utcDate"),
+            "competition": (match.get("competition") or {}).get("name"),
+            "competition_code": (match.get("competition") or {}).get("code"),
             "home_team": home.get("name"),
             "home_team_id": home.get("id"),
             "away_team": away.get("name"),
@@ -320,14 +324,14 @@ def football_head_to_head(
         if row["home_team_id"] == home_team_id:
             home_goals += row["home_score"]
             away_goals += row["away_score"]
-            outcome = row["winner"]
+            result_for_home = row["winner"]
         else:
             home_goals += row["away_score"]
             away_goals += row["home_score"]
-            outcome = {"home": "away", "away": "home", "draw": "draw"}[row["winner"]]
-        if outcome == "home":
+            result_for_home = "away" if row["winner"] == "home" else "home" if row["winner"] == "away" else "draw"
+        if result_for_home == "home":
             home_wins += 1
-        elif outcome == "away":
+        elif result_for_home == "away":
             away_wins += 1
         else:
             draws += 1
@@ -337,7 +341,8 @@ def football_head_to_head(
     return {
         "success": True,
         "provider": "football-data.org",
-        "competition": competition.strip().upper(),
+        "competition": code,
+        "history_scope": "Enfrentamientos directos finalizados encontrados en los últimos resultados disponibles de ambos equipos, incluyendo competiciones distintas. La profundidad depende de la cobertura y los límites del proveedor.",
         "teams": {"home": {"id": home_team_id}, "away": {"id": away_team_id}},
         "sample_size": count,
         "summary": {
@@ -354,7 +359,6 @@ def football_head_to_head(
             "under_2_5_count": sum(1 for row in meetings if row["total_goals"] <= 2),
         },
         "meetings": meetings[:limit],
-        "history_scope": "Enfrentamientos finalizados encontrados en el historial de ambos equipos dentro de la competición y temporadas disponibles en tu plan de football-data.org.",
         "returned_matches": min(count, limit),
     }
 
