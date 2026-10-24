@@ -15,6 +15,7 @@ from football_data_client import (
     get_standings,
 )
 from football_model import MODEL_VERSION, predict_1x2
+from football_history import record_pregame_snapshot, settle_official_result
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/football", tags=["Football"])
@@ -230,6 +231,13 @@ def football_games(
                 "available": False,
                 "reason": "Las probabilidades prepartido solo se muestran para encuentros no iniciados.",
             }
+
+        # Persist the original pre-match estimate once; never overwrite it after kickoff.
+        if status in {"SCHEDULED", "TIMED"} and item.get("prediction", {}).get("available"):
+            record_pregame_snapshot(item, competition, item["prediction"])
+
+        # Only official full-time numeric scores can settle a previously saved snapshot.
+        settle_official_result(item, competition)
         enriched_matches.append(item)
 
     return {
