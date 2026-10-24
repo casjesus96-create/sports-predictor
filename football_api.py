@@ -13,6 +13,7 @@ from football_data_client import (
     get_matches,
     get_team_matches,
     get_match,
+    get_match_head_to_head,
     get_standings,
 )
 from football_model import MODEL_VERSION, predict_1x2
