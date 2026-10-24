@@ -287,9 +287,17 @@ def _get_boxscore_for_game(game_id):
         team = item.get("team") or {}
         team_id = str(team.get("id") or item.get("id") or "")
         stats = _normalize_boxscore_stats(item.get("statistics") or [])
-        if team_id and stats:
+        if team_id:
+            # Quarter scores live in header.competitions[].competitors[].linescores.
+            # Preserve them even when ESPN omits team statistics in boxscore.teams.
             stats["_quarter_points"] = period_scores.get(team_id, [])
             team_stats[team_id] = stats
+    # Some ESPN responses include period scores in the header but omit a team's
+    # boxscore entry entirely. Keep a minimal entry so quarter auditing can still
+    # use the official linescores without inventing points.
+    for team_id, quarters in period_scores.items():
+        if team_id not in team_stats:
+            team_stats[team_id] = {"_quarter_points": quarters}
     return str(game_id), team_stats
 
 
