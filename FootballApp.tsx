@@ -114,7 +114,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
     setLoading(true); setError("");
     try {
-      const response = await fetch(\`\${API}/head-to-head?competition=\${encodeURIComponent(competition)}&home_team_id=\${homeId}&away_team_id=\${awayId}&limit=10\`);
+      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&home_team_id=${homeId}&away_team_id=${awayId}&limit=10`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo cargar el historial.");
       setData(body);
