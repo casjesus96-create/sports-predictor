@@ -11,6 +11,7 @@ from football_data_client import (
     FootballDataError,
     get_competitions,
     get_matches,
+    get_match,
     get_standings,
 )
 from football_model import MODEL_VERSION, predict_1x2
@@ -139,6 +140,53 @@ def football_games(
     reconciled_matches = [
         _reconcile_match(match, history_by_id) for match in matches
     ]
+
+    # The date-filtered list and competition history can both lag behind.
+    # Fetch individual details only for suspicious matches, not every fixture,
+    # and rely on the client's TTL cache to protect the free API quota.
+    refreshed_matches = []
+    for match in reconciled_matches:
+        status = str(match.get("status", "")).upper()
+        has_result = _has_numeric_full_time(match)
+        needs_detail = (
+            status in {"FINISHED", "AWARDED"} and not has_result
+        ) or (
+            status in {"SCHEDULED", "TIMED", "IN_PLAY", "PAUSED"}
+            and not has_result
+            and match.get("id") is not None
+            and match.get("utcDate") is not None
+            and str(match.get("utcDate", "")) <= datetime.now(UTC).isoformat()
+        )
+        if needs_detail:
+            try:
+                detail = _provider_call(get_match, int(match["id"]))
+                detail_match = detail.get("match", detail)
+                if (
+                    detail_match.get("id") == match.get("id")
+                    and str(detail_match.get("status", "")).upper() in {"FINISHED", "AWARDED"}
+                    and _has_numeric_full_time(detail_match)
+                ):
+                    match = dict(match)
+                    match["status"] = str(detail_match["status"]).upper()
+                    match["score"] = detail_match.get("score")
+                    for key in ("lastUpdated", "utcDate", "matchday", "stage"):
+                        if detail_match.get(key) is not None:
+                            match[key] = detail_match[key]
+                elif detail_match.get("id") == match.get("id") and str(detail_match.get("status", "")).upper() in {
+                    "IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT",
+                    "POSTPONED", "SUSPENDED", "CANCELLED",
+                }:
+                    match = dict(match)
+                    match["status"] = str(detail_match["status"]).upper()
+                    if detail_match.get("score") is not None:
+                        match["score"] = detail_match["score"]
+            except HTTPException as exc:
+                # A detail lookup is best-effort. Keep the list/history result
+                # usable if the provider blocks the optional request.
+                logger.warning("Could not refresh football match %s: %s", match.get("id"), exc.detail)
+        refreshed_matches.append(match)
+    reconciled_matches = refreshed_matches
+
     completed = [
         match for match in history_matches
         if str(match.get("status", "")).upper() == "FINISHED"
