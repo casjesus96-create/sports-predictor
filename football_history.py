@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from repository import get_supabase_client
+from football_model import MODEL_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ def settle_official_result(match: dict[str, Any], competition: str) -> bool:
         client = get_supabase_client()
         existing = client.table("football_prediction_snapshots").select("id,result_status").eq(
             "provider_match_id", match["id"]
-        ).eq("model_version", "FOOTBALL-POISSON-0.2.0").execute()
+        ).eq("model_version", MODEL_VERSION).eq("result_status", "PENDING").execute()
         if not (existing.data or []):
             return False
         client.table("football_prediction_snapshots").update({
@@ -71,7 +72,7 @@ def settle_official_result(match: dict[str, Any], competition: str) -> bool:
             "result_source": "football-data.org",
             "settled_at": datetime.now(timezone.utc).isoformat(),
         }).eq("provider_match_id", match["id"]).eq(
-            "model_version", "FOOTBALL-POISSON-0.2.0"
+            "model_version", MODEL_VERSION
         ).execute()
         return True
     except Exception:
