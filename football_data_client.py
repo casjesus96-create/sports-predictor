@@ -139,6 +139,26 @@ def get_matches(
     return _get(f"/competitions/{code}/matches", params)
 
 
+
+def get_team_matches(
+    team_id: int,
+    competition: str,
+    status: str = "FINISHED",
+    limit: int = 500,
+) -> dict[str, Any]:
+    """Fetch a team's completed matches in a competition, including past seasons where available."""
+    if isinstance(team_id, bool) or not isinstance(team_id, int) or team_id <= 0:
+        raise FootballDataError("Identificador de equipo no válido.", 400)
+    code = competition.strip().upper()
+    if code not in LEAGUES:
+        raise FootballDataError(
+            f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.",
+            400,
+        )
+    params = {"competitions": code, "status": status.upper(), "limit": max(1, min(int(limit), 500))}
+    return _get(f"/teams/{team_id}/matches", params)
+
+
 def get_match(match_id: int) -> dict[str, Any]:
     """Fetch one provider match; cached to avoid repeat calls for the same ID."""
     if isinstance(match_id, bool) or not isinstance(match_id, int) or match_id <= 0:
