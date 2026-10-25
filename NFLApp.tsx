@@ -289,7 +289,8 @@ export default function NFLApp() {
   const rest = factors?.rest || {};
   const quarterback = factors?.quarterback || {};
   const weather = factors?.weather || {};
-  const market = factors?.market || {};\n  const scoreProjection = factors?.score_projection || {};
+  const market = factors?.market || {};
+  const scoreProjection = factors?.score_projection || {};
 
   async function analyzeAndSave(gameId: string) {
     const existing = predictionByGame.get(gameId);
