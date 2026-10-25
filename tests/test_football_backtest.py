@@ -39,7 +39,7 @@ def test_backtest_is_chronological_and_scores_both_models_on_same_sample():
 def test_h2h_never_uses_the_target_or_later_matches():
     rows = history_with_repeated_pair()
     result = run_chronological_backtest(rows)
-    by_id = {row["id"]: row for row in result["per_match"]}
+    by_id = {row["match_id"]: row for row in result["per_match"]}
     for match_id, scored in by_id.items():
         assert scored["h2h_valid_meetings"] <= match_id - 1
     assert all(row["match_id"] not in {None} for row in result["per_match"])
