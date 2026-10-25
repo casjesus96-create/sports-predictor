@@ -9,6 +9,7 @@ from nfl_client import get_game, get_upcoming_games
 from nfl_analyzer import analyze_nfl_game
 from nfl_data_coverage import audit_nfl_data_coverage
 from nfl_advanced_data import inspect_nfl_advanced_sources
+from nfl_pregame_feature_audit import audit_nfl_pregame_feature_coverage
 from nfl_repository import (
     save_nfl_analysis,
     settle_nfl_prediction,
@@ -548,6 +549,29 @@ def nfl_advanced_data_audit(season: int = 2026):
             detail={
                 "error": "NFL_ADVANCED_DATA_AUDIT_ERROR",
                 "message": "No fue posible inspeccionar las fuentes avanzadas NFL.",
+                "details": str(exc),
+            },
+        ) from exc
+
+
+@router.get("/pregame-feature-coverage")
+def nfl_pregame_feature_coverage(season: int = 2026):
+    """Audita cobertura de variables NFL con corte estricto pre-kickoff."""
+    if season < 1999 or season > 2100:
+        raise HTTPException(
+            status_code=400,
+            detail="season debe estar entre 1999 y 2100.",
+        )
+
+    try:
+        return audit_nfl_pregame_feature_coverage(season=season)
+    except Exception as exc:
+        logger.exception("Error auditando cobertura pregame NFL season=%s", season)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "NFL_PREGAME_FEATURE_AUDIT_ERROR",
+                "message": "No fue posible auditar la cobertura pregame NFL.",
                 "details": str(exc),
             },
         ) from exc
