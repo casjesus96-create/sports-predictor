@@ -298,7 +298,7 @@ export default function FootballApp() {
         <h1 style={{ marginBottom: 6 }}>⚽ Football Predictor</h1>
         <p style={{ marginTop: 0, color: "#9ca3af" }}>Partidos, datos del proveedor y probabilidades 1X2 por encuentro</p>
         <div style={{ padding: 12, border: "1px solid #475569", borderRadius: 10, background: "#172033" }}>
-          <strong>Motor experimental · FOOTBALL-POISSON-0.2.0</strong>
+          <strong>Motor experimental · FOOTBALL-POISSON-0.5.0</strong>
           <p style={{ margin: "6px 0 0" }}>Proyecta 1X2, goles por equipo, total de goles, ambos marcan, porterías a cero, doble oportunidad y marcadores probables. Las cuotas justas son cálculos matemáticos, no cuotas reales. Aún no está calibrado ni validado para apuestas.</p>
         </div>
       </header>
