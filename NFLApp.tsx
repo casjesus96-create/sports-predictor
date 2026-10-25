@@ -290,6 +290,7 @@ export default function NFLApp() {
   const quarterback = factors?.quarterback || {};
   const weather = factors?.weather || {};
   const market = factors?.market || {};
+  const scoreProjection = factors?.score_projection || {};
 
   async function analyzeAndSave(gameId: string) {
     const existing = predictionByGame.get(gameId);
@@ -922,6 +923,28 @@ export default function NFLApp() {
                       {formatKickoff(detail?.storedPrediction?.settled_at)}
                     </p>
                   </div>
+                )}
+
+                <h3 className="detail-heading">Líneas del mercado vs. proyección propia</h3>
+                <div className="factor-grid">
+                  <TeamFactor label="Spread del mercado (fuente externa)" value={scoreProjection?.market?.spread_line ?? market?.spread_line ?? detailGame?.spread_line ?? "—"} />
+                  <TeamFactor label="Total del mercado" value={scoreProjection?.market?.total_line ?? market?.total_line ?? detailGame?.total_line ?? "—"} />
+                  {scoreProjection?.available ? (
+                    <>
+                      <TeamFactor label="Puntos proyectados · local" value={number(scoreProjection.projected_home_points, 1)} />
+                      <TeamFactor label="Puntos proyectados · visitante" value={number(scoreProjection.projected_away_points, 1)} />
+                      <TeamFactor label="Margen proyectado (local − visitante)" value={number(scoreProjection.projected_home_margin, 1)} />
+                      <TeamFactor label="Total proyectado Sports Predictor" value={number(scoreProjection.projected_total_points, 1)} />
+                      <TeamFactor label="Diferencia total vs. mercado" value={scoreProjection.market_comparison?.total_difference == null ? "—" : number(scoreProjection.market_comparison.total_difference, 1)} />
+                    </>
+                  ) : (
+                    <TeamFactor label="Proyección propia de puntos" value={scoreProjection?.reason || "No disponible en esta proyección guardada"} />
+                  )}
+                </div>
+                {scoreProjection?.formula && (
+                  <p className="model-note">
+                    Fórmula de referencia: {scoreProjection.formula}. Muestra histórica: local {scoreProjection?.sample?.home_games ?? "—"} partidos; visitante {scoreProjection?.sample?.away_games ?? "—"}. Esta estimación es experimental y no modifica la probabilidad del ganador de NFL-1.0.0.
+                  </p>
                 )}
 
                 <h3 className="detail-heading">Historial de temporada</h3>
