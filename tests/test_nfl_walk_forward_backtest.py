@@ -41,6 +41,6 @@ def test_score_reports_brier_log_loss_and_accuracy():
     result = backtest._score([0.8, 0.2], [1, 0])
     assert result["sample_size"] == 2
     assert result["accuracy_pct"] == 100.0
-    assert result["brier_score"] == 0.04
+    assert abs(result["brier_score"] - 0.04) < 1e-9
     assert result["log_loss"] > 0
     assert result["calibration"]
