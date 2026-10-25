@@ -193,15 +193,6 @@ def _baseline(game, season_games):
 def _fit_logistic(rows, dimensions):
     if len(rows) < 2:
         return None
-    xs = [row[0] for row in rows]
-    ys = [row[1] for row in rows]
-    means = [sum(x[j] for x in xs) / len(xs) for j in range(dimensions)]
-    scales = []
-    for j in range(dimensions):
-        variance = sum((x[j] - means[j]) ** 2 for x in xs) / len(xs)
-        scales.append(math.sqrt(variance) or 1.0)
-    normalized = [[(x[j] - means[j]) / scales[j] for j in range(dimensions)] for x in xs]
-    weights = [0.0] * (dimensions + 1)
     # Deterministic batch gradient descent; training data strictly precedes target kickoff.
     # Bound computation for a synchronous API request; train on the most recent 300 prior games.
     rows = rows[-300:]
