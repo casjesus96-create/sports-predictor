@@ -45,3 +45,14 @@ def test_score_reports_brier_log_loss_and_accuracy():
     assert abs(result["brier_score"] - 0.04) < 1e-9
     assert result["log_loss"] > 0
     assert result["calibration"]
+
+
+def test_candidate_vector_distinguishes_missing_metrics_from_real_zero():
+    vector = backtest._candidate_vector(
+        home_values=[0.0, 4.0],
+        away_values=[0.0, 2.0],
+        home_coverage=[0, 3],
+        away_coverage=[2, 0],
+    )
+    # Value differences, then home availability, then away availability.
+    assert vector == [0.0, 2.0, 0.0, 1.0, 1.0, 0.0]
