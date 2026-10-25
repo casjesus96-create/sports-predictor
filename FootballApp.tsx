@@ -226,6 +226,9 @@ export default function FootballApp() {
   const [loadingCompetitions, setLoadingCompetitions] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [backtest, setBacktest] = useState<any>(null);
+  const [backtestLoading, setBacktestLoading] = useState(false);
+  const [backtestError, setBacktestError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -263,6 +266,18 @@ export default function FootballApp() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error consultando football-data.org.");
     } finally { setLoading(false); }
+  }
+
+  async function loadBacktest() {
+    setBacktestLoading(true); setBacktestError(""); setBacktest(null);
+    try {
+      const response = await fetch(`${API}/backtest?competition=${encodeURIComponent(competition)}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo evaluar el histórico.");
+      setBacktest(body);
+    } catch (err: unknown) {
+      setBacktestError(err instanceof Error ? err.message : "Error ejecutando el backtest cronológico.");
+    } finally { setBacktestLoading(false); }
   }
 
   const visibleMatches = useMemo(() => {
@@ -309,9 +324,49 @@ export default function FootballApp() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <button type="button" onClick={() => loadData("games")} disabled={loading || loadingCompetitions || !selectedDate} style={buttonStyle}>{loading && view === "games" ? "Cargando…" : `Buscar partidos del ${selectedDate}`}</button>
         <button type="button" onClick={() => loadData("standings")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "standings" ? "Cargando…" : "Ver clasificación"}</button>
+        <button type="button" onClick={loadBacktest} disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
       </div>
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: "#451a1a", color: "#fecaca" }}>{error}</p>}
       {notice && <p role="status" style={{ color: "#cbd5e1" }}>{notice}</p>}
+      {backtestError && <p role="alert" style={{ padding: 12, borderRadius: 8, background: "#451a1a", color: "#fecaca" }}>{backtestError}</p>}
+      {backtest && (() => {
+        const result = backtest.backtest || {};
+        const metrics = result.metrics || {};
+        const base = metrics.base || {};
+        const candidate = metrics.h2h_candidate || {};
+        const delta = metrics.delta_candidate_minus_base || {};
+        const metricRows = [
+          { label: "Accuracy (más alto es mejor)", base: percent(base.accuracy), candidate: percent(candidate.accuracy), delta: typeof delta.accuracy === "number" ? `${delta.accuracy > 0 ? "+" : ""}${(delta.accuracy * 100).toFixed(2)} pp` : "—" },
+          { label: "Brier Score (más bajo es mejor)", base: typeof base.brier_score === "number" ? base.brier_score.toFixed(4) : "—", candidate: typeof candidate.brier_score === "number" ? candidate.brier_score.toFixed(4) : "—", delta: typeof delta.brier_score === "number" ? `${delta.brier_score > 0 ? "+" : ""}${delta.brier_score.toFixed(4)}` : "—" },
+          { label: "Log Loss (más bajo es mejor)", base: typeof base.log_loss === "number" ? base.log_loss.toFixed(4) : "—", candidate: typeof candidate.log_loss === "number" ? candidate.log_loss.toFixed(4) : "—", delta: typeof delta.log_loss === "number" ? `${delta.log_loss > 0 ? "+" : ""}${delta.log_loss.toFixed(4)}` : "—" },
+        ];
+        const outcomes = [
+          { key: "home", label: "Local" }, { key: "draw", label: "Empate" }, { key: "away", label: "Visitante" },
+        ];
+        return <section style={{ ...cardStyle, borderColor: "#7c3aed" }}>
+          <h2 style={{ marginTop: 0 }}>Backtest cronológico · {backtest.competition}</h2>
+          <p style={{ color: "#cbd5e1" }}>Partidos evaluados: <strong>{result.scored_matches ?? 0}</strong> de {result.eligible_finished_matches ?? 0} finalizados válidos. Se omiten encuentros sin suficiente historial previo para el modelo base.</p>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Métrica</th><th style={cellStyle}>Poisson oficial</th><th style={cellStyle}>Candidato H2H</th><th style={cellStyle}>Cambio</th></tr></thead>
+              <tbody>{metricRows.map((row) => <tr key={row.label}><td style={cellStyle}>{row.label}</td><td style={cellStyle}>{row.base}</td><td style={cellStyle}><strong>{row.candidate}</strong></td><td style={cellStyle}>{row.delta}</td></tr>)}</tbody>
+            </table>
+          </div>
+          <h3>Calibración por resultado</h3>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Resultado</th><th style={cellStyle}>Base: prob. media</th><th style={cellStyle}>Base: frecuencia real</th><th style={cellStyle}>H2H: prob. media</th><th style={cellStyle}>H2H: frecuencia real</th></tr></thead>
+              <tbody>{outcomes.map((outcome) => {
+                const b = base.outcome_calibration?.[outcome.key] || {};
+                const c = candidate.outcome_calibration?.[outcome.key] || {};
+                return <tr key={outcome.key}><td style={cellStyle}>{outcome.label}</td><td style={cellStyle}>{percent(b.mean_predicted_probability)}</td><td style={cellStyle}>{percent(b.observed_rate)}</td><td style={cellStyle}>{percent(c.mean_predicted_probability)}</td><td style={cellStyle}>{percent(c.observed_rate)}</td></tr>;
+              })}</tbody>
+            </table>
+          </div>
+          <p style={{ color: "#fbbf24", fontSize: 12 }}>{backtest.history_scope}</p>
+          <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 0 }}>Solo lectura: no modifica snapshots ni las probabilidades oficiales. Para Brier Score y Log Loss, un cambio negativo favorece al candidato; para Accuracy, uno positivo. La muestra corresponde al historial que el proveedor devuelve en esta competición y no incluye H2H externos que no estén en ese conjunto.</p>
+        </section>;
+      })()}
 
       {view === "games" && <>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "14px 0" }}>
