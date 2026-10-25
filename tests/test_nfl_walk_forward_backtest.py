@@ -14,12 +14,13 @@ def test_team_features_excludes_same_kickoff_and_future_games():
         ("BUF", "g1"): {"passing_epa": 2.0, "point_diff": 10.0},
         ("BUF", "g2"): {"passing_epa": 1000.0, "point_diff": 7.0},
     }
-    values, count = backtest._team_features(
+    values, count, coverage = backtest._team_features(
         "BUF", backtest._time(games[1]["kickoff"]), games, metrics
     )
     assert count == 1
     assert values[0] == 2.0
     assert values[-1] == 10.0
+    assert coverage[0] == 1
 
 
 def test_logistic_fit_predict_is_finite_and_deterministic():
