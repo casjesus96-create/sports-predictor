@@ -310,7 +310,7 @@ export default function FootballApp() {
         </label>
         <label style={{ display: "grid", gap: 6, fontWeight: 700 }}>
           Competición
-          <select value={competition} onChange={(event) => { setCompetition(event.target.value); setMatches([]); setStandings([]); setError(""); setNotice(""); }}
+          <select value={competition} onChange={(event) => { setCompetition(event.target.value); setMatches([]); setStandings([]); setError(""); setNotice(""); setBacktest(null); setBacktestError(""); }}
             style={{ minHeight: 44, padding: 10, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#f9fafb" }}>
             {LEAGUES.map((league) => {
               const item = availability.find((entry) => entry.code === league.code);
