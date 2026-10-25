@@ -124,7 +124,10 @@ def _metrics(rows: list[dict[str, Any]], probability_key: str) -> dict[str, Any]
     }
 
 
-def run_chronological_backtest(matches: list[dict[str, Any]]) -> dict[str, Any]:
+def run_chronological_backtest(
+    matches: list[dict[str, Any]],
+    external_h2h_by_match_id: dict[int, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     """Evaluate both 1X2 variants without look-ahead leakage or database writes.
 
     Only fixtures with valid timezone-aware kickoff, FINISHED status, and numeric
@@ -145,6 +148,7 @@ def run_chronological_backtest(matches: list[dict[str, Any]]) -> dict[str, Any]:
         normalized.append((kickoff, match, score))
     normalized.sort(key=lambda item: (item[0], str(item[1].get("id", ""))))
 
+    external_h2h_by_match_id = external_h2h_by_match_id or {}
     scored_rows: list[dict[str, Any]] = []
     skipped_unavailable = 0
     for kickoff, target, score in normalized:
@@ -160,8 +164,12 @@ def run_chronological_backtest(matches: list[dict[str, Any]]) -> dict[str, Any]:
         if not base.get("available"):
             skipped_unavailable += 1
             continue
+        target_id = target.get("id")
+        has_external_h2h = isinstance(target_id, int) and target_id in external_h2h_by_match_id
+        h2h_source = "provider_external_h2h" if has_external_h2h else "competition_history"
+        candidate_history = external_h2h_by_match_id.get(target_id, history) if isinstance(target_id, int) else history
         candidate = evaluate_h2h_candidate(
-            home_name, away_name, kickoff.isoformat(), base, history
+            home_name, away_name, kickoff.isoformat(), base, candidate_history
         )
         base_probs = _probabilities(base, "probabilities")
         candidate_probs = _probabilities(candidate, "candidate_probabilities")
@@ -179,10 +187,16 @@ def run_chronological_backtest(matches: list[dict[str, Any]]) -> dict[str, Any]:
             "base": base_probs,
             "candidate": candidate_probs,
             "h2h_valid_meetings": (candidate.get("h2h") or {}).get("valid_meetings", 0),
+            "h2h_source": h2h_source,
+            "h2h_adjusted": any(abs(candidate_probs[key] - base_probs[key]) > 1e-9 for key in OUTCOMES),
+            "h2h_status": candidate.get("status", "UNKNOWN"),
         })
 
     base_metrics = _metrics(scored_rows, "base")
     candidate_metrics = _metrics(scored_rows, "candidate")
+    h2h_adjusted = sum(1 for row in scored_rows if row["h2h_adjusted"])
+    h2h_insufficient = sum(1 for row in scored_rows if row["h2h_status"] == "INSUFFICIENT_H2H")
+    external_rows = sum(1 for row in scored_rows if row["h2h_source"] == "provider_external_h2h")
     return {
         "status": "COMPLETED" if scored_rows else "INSUFFICIENT_DATA",
         "evaluation_type": "chronological_walk_forward",
@@ -196,6 +210,14 @@ def run_chronological_backtest(matches: list[dict[str, Any]]) -> dict[str, Any]:
         "scored_matches": len(scored_rows),
         "excluded_invalid_or_unfinished_targets": excluded_targets,
         "skipped_base_unavailable_or_invalid": skipped_unavailable,
+        "h2h_diagnostics": {
+            "matches_with_probability_adjustment": h2h_adjusted,
+            "matches_unchanged_from_base": len(scored_rows) - h2h_adjusted,
+            "matches_with_insufficient_h2h": h2h_insufficient,
+            "matches_using_external_provider_h2h": external_rows,
+            "matches_using_competition_history_only": len(scored_rows) - external_rows,
+            "external_h2h_coverage_rate": round(external_rows / len(scored_rows), 6) if scored_rows else None,
+        },
         "metrics": {
             "base": base_metrics,
             "h2h_candidate": candidate_metrics,
@@ -212,7 +234,7 @@ def run_chronological_backtest(matches: list[dict[str, Any]]) -> dict[str, Any]:
         "per_match": scored_rows,
         "limitations": [
             "Backtest sobre el conjunto de partidos suministrado; no descarga datos ni escribe en Supabase.",
-            "La variante H2H usa solo enfrentamientos presentes en el mismo conjunto de entrada y anteriores al kickoff.",
+            "Por defecto, la variante H2H usa solo enfrentamientos presentes en el mismo conjunto de entrada y anteriores al kickoff; si se suministra H2H externo por partido, se usa únicamente para esos objetivos y siempre con filtro cronológico.",
             "Si el proveedor no entrega temporadas históricas completas, los resultados no representan toda la historia de la competición.",
             "No constituye evidencia de rentabilidad ni autoriza activar el candidato como modelo oficial.",
         ],
