@@ -3,6 +3,7 @@ import csv
 import gzip
 import io
 import math
+import zlib
 from datetime import datetime, timezone
 
 import requests
@@ -202,7 +203,18 @@ def _fit_logistic(rows, dimensions):
     normalized = [[(x[j] - means[j]) / scales[j] for j in range(dimensions)] for x in xs]
     weights = [0.0] * (dimensions + 1)
     # Deterministic batch gradient descent; training data strictly precedes target kickoff.
-    for _ in range(350):
+    # Bound computation for a synchronous API request; train on the most recent 300 prior games.
+    rows = rows[-300:]
+    xs = [row[0] for row in rows]
+    ys = [row[1] for row in rows]
+    means = [sum(x[j] for x in xs) / len(xs) for j in range(dimensions)]
+    scales = []
+    for j in range(dimensions):
+        variance = sum((x[j] - means[j]) ** 2 for x in xs) / len(xs)
+        scales.append(math.sqrt(variance) or 1.0)
+    normalized = [[(x[j] - means[j]) / scales[j] for j in range(dimensions)] for x in xs]
+    weights = [0.0] * (dimensions + 1)
+    for _ in range(35):
         gradients = [0.0] * len(weights)
         for x, y in zip(normalized, ys):
             z = max(-20.0, min(20.0, weights[0] + sum(weights[j + 1] * x[j] for j in range(dimensions))))
@@ -259,7 +271,7 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
             season_metrics = _metric_map(team_rows, pbp_rows, completed)
             metrics.update(season_metrics)
             source_status.append({"season": season, "available": True, "team_rows": len(team_rows), "pbp_rows": len(pbp_rows), "error": None})
-        except (requests.RequestException, OSError, EOFError, csv.Error, ValueError) as exc:
+        except (requests.RequestException, OSError, EOFError, csv.Error, ValueError, zlib.error) as exc:
             source_status.append({"season": season, "available": False, "team_rows": 0, "pbp_rows": 0, "error": type(exc).__name__})
         for game in games:
             if game.get("game_type") == "REG" and game.get("home") and game.get("away") and _time(game.get("kickoff")):
