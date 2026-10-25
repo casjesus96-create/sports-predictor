@@ -37,6 +37,8 @@ def test_backtest_is_chronological_and_scores_both_models_on_same_sample():
     diagnostics = result["h2h_diagnostics"]
     assert diagnostics["matches_with_probability_adjustment"] + diagnostics["matches_unchanged_from_base"] == result["scored_matches"]
     assert diagnostics["matches_using_external_provider_h2h"] == 0
+    assert result["external_h2h_comparison"]["queried_sample_size"] == 0
+    assert result["external_h2h_comparison"]["eligible_sample"]["sample_size"] == 0
 
 
 def test_h2h_never_uses_the_target_or_later_matches():
