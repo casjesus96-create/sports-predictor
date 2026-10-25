@@ -42,6 +42,9 @@ def test_backtest_external_h2h_is_opt_in_and_bounded(monkeypatch):
     import football_api
 
     matches = [fixture(i, "Alpha" if i % 2 else "Beta", "Beta" if i % 2 else "Alpha", i % 3, (i + 1) % 3, f"2026-01-{i:02d}T15:00:00Z") for i in range(1, 9)]
+    for match in matches:
+        match["homeTeam"]["id"] = 1 if match["homeTeam"]["name"] == "Alpha" else 2
+        match["awayTeam"]["id"] = 1 if match["awayTeam"]["name"] == "Alpha" else 2
     calls = []
 
     def fake_provider_call(function, *args, **kwargs):
