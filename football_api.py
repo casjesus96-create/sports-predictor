@@ -18,6 +18,7 @@ from football_data_client import (
 )
 from football_model import MODEL_VERSION, predict_1x2
 from football_history import record_pregame_snapshot, settle_official_result
+from football_h2h_experiment import evaluate_h2h_candidate, EXPERIMENT_VERSION
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/football", tags=["Football"])
@@ -395,6 +396,72 @@ def football_head_to_head(
         "meetings": meetings[:limit],
         "history_scope": history_scope,
         "returned_matches": min(count, limit),
+    }
+
+
+@router.get("/experimental-h2h")
+def football_experimental_h2h(
+    competition: str = Query(..., description="Código de liga, por ejemplo BL1"),
+    home_team_id: int = Query(..., gt=0),
+    away_team_id: int = Query(..., gt=0),
+    match_id: int = Query(..., gt=0),
+    home_team: str = Query(..., min_length=1, max_length=120),
+    away_team: str = Query(..., min_length=1, max_length=120),
+    kickoff_at: str = Query(..., min_length=10, max_length=40),
+):
+    """Compare the official baseline with the isolated H2H candidate on demand."""
+    if home_team_id == away_team_id or home_team.strip().casefold() == away_team.strip().casefold():
+        raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
+
+    kickoff = datetime.fromisoformat(kickoff_at.strip().replace("Z", "+00:00"))
+    if kickoff.tzinfo is None:
+        raise HTTPException(status_code=400, detail="kickoff_at debe incluir zona horaria.")
+    if kickoff <= datetime.now(UTC):
+        raise HTTPException(status_code=400, detail="El análisis H2H experimental solo está disponible antes del inicio.")
+
+    competition_data = _provider_call(get_matches, competition)
+    completed = [
+        item for item in competition_data.get("matches", [])
+        if str(item.get("status", "")).upper() == "FINISHED" and _has_numeric_full_time(item)
+        and (item.get("utcDate") and datetime.fromisoformat(str(item["utcDate"]).replace("Z", "+00:00")) < kickoff)
+    ]
+    base = predict_1x2(home_team.strip(), away_team.strip(), completed)
+    h2h = football_head_to_head(
+        competition=competition,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        match_id=match_id,
+        limit=50,
+    )
+    normalized_meetings = []
+    for meeting in h2h.get("meetings", []):
+        normalized_meetings.append({
+            "id": meeting.get("id"),
+            "status": "FINISHED",
+            "utcDate": meeting.get("date"),
+            "homeTeam": {"name": meeting.get("home_team")},
+            "awayTeam": {"name": meeting.get("away_team")},
+            "score": {"fullTime": {
+                "home": meeting.get("home_score"),
+                "away": meeting.get("away_score"),
+            }},
+        })
+    candidate = evaluate_h2h_candidate(
+        home_team.strip(),
+        away_team.strip(),
+        kickoff_at,
+        base,
+        normalized_meetings,
+    )
+    return {
+        "success": True,
+        "experiment_version": EXPERIMENT_VERSION,
+        "mode": "SHADOW_ONLY",
+        "official_model_version": MODEL_VERSION,
+        "base_prediction": base,
+        "candidate": candidate,
+        "h2h_sample_size": candidate.get("h2h", {}).get("valid_meetings", 0),
+        "note": "La comparación es experimental; no cambia las probabilidades oficiales ni guarda ni sobrescribe snapshots.",
     }
 
 
