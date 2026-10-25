@@ -64,8 +64,28 @@ function gameDate(value?: string | null) {
     .toISOString()
     .slice(0, 10);
 }
-const pct = (value?: number | null) =>
-  typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
+const finiteNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const confidenceValue = (row: PredictionRow): number | null => {
+  const confidence = finiteNumber(row.confidence);
+  if (confidence !== null) return confidence;
+  const home = finiteNumber(row.home_probability);
+  const away = finiteNumber(row.away_probability);
+  if (home !== null && away !== null) return Math.max(home, away);
+  return null;
+};
+
+const pct = (value?: number | string | null) => {
+  const numeric = finiteNumber(value);
+  return numeric !== null ? `${(numeric * 100).toFixed(1)}%` : "—";
+};
 const dateLabel = (value?: string | null) => {
   if (!value) return "Horario no disponible";
   const date = new Date(value);
@@ -390,7 +410,7 @@ export default function NBAApp() {
                       <>
                         <div className="prediction-strip">
                           <div><span>Ganador proyectado</span><b>{stored.features?.predicted_winner || "—"}</b></div>
-                          <div><span>Confianza</span><b>{pct(stored.confidence)}</b></div>
+                          <div><span>Confianza</span><b>{pct(confidenceValue(stored))}</b></div>
                           <div><span>Calidad de datos</span><b>{stored.data_quality != null ? `${stored.data_quality}%` : "—"}</b></div>
                           <div><span>Modelo</span><b>{stored.model_version || "NBA histórico"}</b></div>
                           {settled && <div><span>Marcador final</span><b>{stored.actual_away_score}–{stored.actual_home_score}</b></div>}
@@ -646,7 +666,7 @@ export default function NBAApp() {
                     </div>
                     <div className="prediction-strip">
                       <div><span>Ganador proyectado</span><b>{row.features?.predicted_winner || "—"}</b></div>
-                      <div><span>Confianza</span><b>{pct(row.confidence)}</b></div>
+                      <div><span>Confianza</span><b>{pct(confidenceValue(row))}</b></div>
                       <div><span>Versión</span><b>{row.model_version || "NBA-1.1.0"}</b></div>
                     </div>
                     <div className="card-actions">
