@@ -26,7 +26,7 @@ def test_backtest_endpoint_uses_provider_data_and_returns_read_only_metrics(monk
         "football_api._provider_call",
         lambda function, competition: {"matches": matches},
     )
-    response = football_chronological_backtest("PL")
+    response = football_chronological_backtest("PL", include_external_h2h=False)
 
     assert response["success"] is True
     assert response["competition"] == "PL"
