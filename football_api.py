@@ -19,6 +19,7 @@ from football_data_client import (
 from football_model import MODEL_VERSION, predict_1x2
 from football_history import record_pregame_snapshot, settle_official_result
 from football_h2h_experiment import evaluate_h2h_candidate, EXPERIMENT_VERSION
+from football_backtest import run_chronological_backtest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/football", tags=["Football"])
@@ -469,6 +470,29 @@ def football_experimental_h2h(
         "candidate": candidate,
         "h2h_sample_size": candidate.get("h2h", {}).get("valid_meetings", 0),
         "note": "La comparación es experimental; no cambia las probabilidades oficiales ni guarda ni sobrescribe snapshots.",
+    }
+
+
+@router.get("/backtest")
+def football_chronological_backtest(
+    competition: str = Query(..., description="Código de liga, por ejemplo PL o PD"),
+):
+    """Evaluate official Poisson vs H2H candidate using provider history, read-only."""
+    data = _provider_call(get_matches, competition)
+    matches = data.get("matches", [])
+    result = run_chronological_backtest(matches)
+    return {
+        "success": True,
+        "provider": "football-data.org",
+        "competition": competition.strip().upper(),
+        "generated_at": datetime.now(UTC).isoformat(),
+        "history_scope": (
+            "Solo partidos devueltos por el proveedor para la competición seleccionada "
+            "y la temporada/historial disponible en el plan. El candidato H2H de este "
+            "backtest utiliza enfrentamientos dentro de este mismo conjunto; no incluye "
+            "reuniones históricas externas que no estén presentes en los datos recibidos."
+        ),
+        "backtest": result,
     }
 
 
