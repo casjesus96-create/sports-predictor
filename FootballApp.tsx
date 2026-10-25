@@ -326,7 +326,7 @@ export default function FootballApp() {
         <button type="button" onClick={() => loadData("games")} disabled={loading || loadingCompetitions || !selectedDate} style={buttonStyle}>{loading && view === "games" ? "Cargando…" : `Buscar partidos del ${selectedDate}`}</button>
         <button type="button" onClick={() => loadData("standings")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "standings" ? "Cargando…" : "Ver clasificación"}</button>
         <button type="button" onClick={loadBacktest} disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}><input type="checkbox" checked={includeExternalH2h} onChange={(event) => setIncludeExternalH2h(event.target.checked)} /> Consultar H2H externo (máx. 20 solicitudes)</label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}><input type="checkbox" checked={includeExternalH2h} onChange={(event) => setIncludeExternalH2h(event.target.checked)} /> Consultar H2H externo (máx. 10 solicitudes)</label>
       </div>
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: "#451a1a", color: "#fecaca" }}>{error}</p>}
       {notice && <p role="status" style={{ color: "#cbd5e1" }}>{notice}</p>}
@@ -372,7 +372,7 @@ export default function FootballApp() {
             </table>
           </div>
           <p style={{ color: "#fbbf24", fontSize: 12 }}>{backtest.history_scope}</p>
-          <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 0 }}>Solo lectura: no modifica snapshots ni las probabilidades oficiales. Para Brier Score y Log Loss, un cambio negativo favorece al candidato; para Accuracy, uno positivo. El diagnóstico distingue cuándo el candidato cambia probabilidades y cuándo usa H2H externo. Las consultas externas son opcionales y están limitadas a 20 por ejecución.</p>
+          <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 0 }}>Solo lectura: no modifica snapshots ni las probabilidades oficiales. Para Brier Score y Log Loss, un cambio negativo favorece al candidato; para Accuracy, uno positivo. El diagnóstico distingue cuándo el candidato cambia probabilidades y cuándo usa H2H externo. Las consultas externas son opcionales y están limitadas a 10 por ejecución.</p>
         </section>;
       })()}
 
