@@ -52,12 +52,15 @@ def _download_rows(session, url):
     response.raise_for_status()
     with gzip.GzipFile(fileobj=io.BytesIO(response.content)) as zipped:
         reader = csv.DictReader(io.TextIOWrapper(zipped, encoding="utf-8-sig", errors="replace"))
-        return list(reader)
+        for row in reader:
+            yield row
 
 
 def _source_rows(session, season):
     base = NFLVERSE_RELEASES
-    team = _download_rows(session, f"{base}/stats_team/stats_team_week_{season}.csv.gz")
+    # Team stats are small; play-by-play is streamed to avoid retaining hundreds
+    # of thousands of wide row dictionaries in Render memory.
+    team = list(_download_rows(session, f"{base}/stats_team/stats_team_week_{season}.csv.gz"))
     pbp = _download_rows(session, f"{base}/pbp/play_by_play_{season}.csv.gz")
     return team, pbp
 
@@ -83,7 +86,9 @@ def _metric_map(team_rows, pbp_rows, completed):
             item["turnovers"] = (ints or 0.0) + (fumbles or 0.0)
 
     pbp = {}
+    pbp_rows_count = 0
     for row in pbp_rows:
+        pbp_rows_count += 1
         gid = str(row.get("game_id") or "")
         if gid not in completed:
             continue
@@ -125,7 +130,7 @@ def _metric_map(team_rows, pbp_rows, completed):
             item["success_rate"] = bucket["success_yes"] / bucket["success_n"]
         if bucket.get("third_n"):
             item["third_down_rate"] = bucket["third_yes"] / bucket["third_n"]
-    return metrics
+    return metrics, pbp_rows_count
 
 
 def _team_features(team, cutoff, games, metrics):
@@ -261,9 +266,9 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
         completed = {str(g["game_id"]): g for g in games if g.get("game_id") and g.get("game_type") == "REG" and g.get("home_score") is not None and g.get("away_score") is not None and _time(g.get("kickoff"))}
         try:
             team_rows, pbp_rows = _source_rows(session, season)
-            season_metrics = _metric_map(team_rows, pbp_rows, completed)
+            season_metrics, pbp_rows_count = _metric_map(team_rows, pbp_rows, completed)
             metrics.update(season_metrics)
-            source_status.append({"season": season, "available": True, "team_rows": len(team_rows), "pbp_rows": len(pbp_rows), "error": None})
+            source_status.append({"season": season, "available": True, "team_rows": len(team_rows), "pbp_rows": pbp_rows_count, "error": None})
         except (requests.RequestException, OSError, EOFError, csv.Error, ValueError, zlib.error) as exc:
             source_status.append({"season": season, "available": False, "team_rows": 0, "pbp_rows": 0, "error": type(exc).__name__})
         for game in games:
