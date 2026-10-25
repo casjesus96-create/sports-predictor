@@ -93,7 +93,33 @@ def refresh_nba_analysis(analysis):
         "analysis_refreshed_at": analysis.get("generated_at") or datetime.now(timezone.utc).isoformat(),
         "analysis_data_cutoff": analysis.get("data_cutoff")}
     new_features = _append_impact_history(new_features, analysis)
-    updated = (db.table("prediction_snapshots").update({"features": new_features, "data_cutoff": analysis.get("data_cutoff")})
+    # Complete missing fields on legacy/incomplete snapshots without rewriting
+    # probabilities that were already recorded for the official prediction.
+    update_payload = {
+        "features": new_features,
+        "data_cutoff": analysis.get("data_cutoff"),
+    }
+    prediction = analysis.get("prediction") or {}
+    stored_home = row.get("home_probability")
+    stored_away = row.get("away_probability")
+
+    if stored_home is None and prediction.get("home_probability") is not None:
+        stored_home = prediction.get("home_probability")
+        update_payload["home_probability"] = stored_home
+    if stored_away is None and prediction.get("away_probability") is not None:
+        stored_away = prediction.get("away_probability")
+        update_payload["away_probability"] = stored_away
+
+    if row.get("confidence") is None:
+        if isinstance(stored_home, (int, float)) and isinstance(stored_away, (int, float)):
+            update_payload["confidence"] = max(stored_home, stored_away)
+        elif prediction.get("confidence") is not None:
+            update_payload["confidence"] = prediction.get("confidence")
+
+    if row.get("data_quality") is None and prediction.get("data_quality") is not None:
+        update_payload["data_quality"] = prediction.get("data_quality")
+
+    updated = (db.table("prediction_snapshots").update(update_payload)
         .eq("id", row["id"]).eq("result_status", "PENDING").execute())
     saved = updated.data or []
     if not saved:
