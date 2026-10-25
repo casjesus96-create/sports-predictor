@@ -478,7 +478,7 @@ def football_chronological_backtest(
     competition: str = Query(..., description="Código de liga, por ejemplo PL o PD"),
     include_external_h2h: bool = Query(
         False,
-        description="Consulta H2H externo para una muestra de hasta 20 partidos, con límite de solicitudes.",
+        description="Consulta H2H externo para una muestra de hasta 10 partidos, con límite de solicitudes.",
     ),
 ):
     """Evaluate official Poisson vs H2H candidate chronologically, read-only."""
@@ -502,7 +502,7 @@ def football_chronological_backtest(
             ):
                 eligible_targets.append((kickoff, match))
         eligible_targets.sort(key=lambda row: (row[0], row[1]["id"]))
-        cap = min(20, len(eligible_targets))
+        cap = min(10, len(eligible_targets))
         if cap:
             indices = sorted({round(i * (len(eligible_targets) - 1) / max(1, cap - 1)) for i in range(cap)})
             for index in indices:
@@ -539,11 +539,14 @@ def football_chronological_backtest(
                 except HTTPException as exc:
                     external_h2h_failed += 1
                     logger.warning("External H2H backtest lookup failed for match %s: %s", target.get("id"), exc.detail)
+                    if exc.status_code == 429:
+                        # Stop immediately when the provider signals quota exhaustion.
+                        break
 
     result = run_chronological_backtest(matches, external_h2h_by_match_id)
     result["external_h2h_lookup"] = {
         "requested": include_external_h2h,
-        "request_cap": 20,
+        "request_cap": 10,
         "attempted": external_h2h_attempted,
         "failed": external_h2h_failed,
         "successful": external_h2h_attempted - external_h2h_failed,
@@ -556,7 +559,7 @@ def football_chronological_backtest(
         "generated_at": datetime.now(UTC).isoformat(),
         "history_scope": (
             "Historial de la competición disponible en el plan. Si se activa H2H externo, "
-            "se consultan como máximo 20 partidos distribuidos cronológicamente; solo esos "
+            "se consultan como máximo 10 partidos distribuidos cronológicamente; solo esos "
             "objetivos usan H2H externo. Los demás usan la competición seleccionada. "
             "Todos los enfrentamientos H2H se filtran para excluir fechas iguales o posteriores "
             "al kickoff del partido evaluado; no se escriben snapshots."
