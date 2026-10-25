@@ -146,10 +146,12 @@ def _team_features(team, cutoff, games, metrics):
     history.sort(key=lambda x: x["_kickoff"], reverse=True)
     history = history[:5]
     values = []
+    coverage_counts = []
     for feature in FEATURES:
         present = [x[feature] for x in history if x.get(feature) is not None]
         values.append(sum(present) / len(present) if present else 0.0)
-    return values, len(history)
+        coverage_counts.append(len(present))
+    return values, len(history), coverage_counts
 
 
 def _baseline(game, season_games):
@@ -272,11 +274,14 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
     baseline_probs, candidate_probs, outcomes = [], [], []
     skipped = {"no_result": 0, "insufficient_training": 0, "tie": 0, "unavailable_features": 0}
     evaluated = []
+    coverage_denominator = 0
+    feature_coverage_counts = {feature: 0 for feature in FEATURES}
     for target in all_games:
         cutoff = _time(target["kickoff"])
         home_score, away_score = _num(target.get("home_score")), _num(target.get("away_score"))
-        home_vec, home_n = _team_features(target["home"], cutoff, [g for g in all_games if _time(g["kickoff"]) < cutoff and g.get("season") == target.get("season")], metrics)
-        away_vec, away_n = _team_features(target["away"], cutoff, [g for g in all_games if _time(g["kickoff"]) < cutoff and g.get("season") == target.get("season")], metrics)
+        season_history = [g for g in all_games if _time(g["kickoff"]) < cutoff and g.get("season") == target.get("season")]
+        home_vec, home_n, home_coverage = _team_features(target["home"], cutoff, season_history, metrics)
+        away_vec, away_n, away_coverage = _team_features(target["away"], cutoff, season_history, metrics)
         features = [a - b for a, b in zip(home_vec, away_vec)]
         model = _fit_logistic(training, len(FEATURES)) if len(training) >= min_training_games else None
         if home_score is None or away_score is None:
@@ -288,6 +293,10 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
         if not source_status or not any(s["available"] and s["season"] == int(target.get("season", -1)) for s in source_status):
             skipped["unavailable_features"] += 1
             continue
+        coverage_denominator += 1
+        for index, feature in enumerate(FEATURES):
+            if home_coverage[index] > 0 and away_coverage[index] > 0:
+                feature_coverage_counts[feature] += 1
         if model is None:
             skipped["insufficient_training"] += 1
         else:
@@ -310,6 +319,12 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "method": {"walk_forward": True, "target_cutoff": "strictly before target kickoff", "training_cutoff": "only earlier kickoff games; target is added to training after evaluation", "same_sample_comparison": True, "candidate_features": list(FEATURES), "training": "deterministic logistic regression refit at each target using only earlier labeled games", "limitations": "experimental candidate; source publication timing within a week and feature availability require further verification before any production use"},
         "sources": source_status, "scored_games": len(outcomes), "skipped": skipped,
+        "feature_coverage": [
+            {"feature": feature, "games_with_both_teams": count,
+             "coverage_pct": round(100.0 * count / coverage_denominator, 2) if coverage_denominator else 0.0}
+            for feature, count in feature_coverage_counts.items()
+        ],
+        "feature_coverage_denominator": coverage_denominator,
         "official": base_score, "experimental": candidate_score,
         "comparison": {"brier_improvement": round(base_score["brier_score"] - candidate_score["brier_score"], 6) if outcomes else None, "log_loss_improvement": round(base_score["log_loss"] - candidate_score["log_loss"], 6) if outcomes else None, "accuracy_delta_percentage_points": round(candidate_score["accuracy_pct"] - base_score["accuracy_pct"], 2) if outcomes else None},
         "sample_predictions": evaluated[-20:],
