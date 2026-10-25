@@ -229,6 +229,7 @@ export default function FootballApp() {
   const [backtest, setBacktest] = useState<any>(null);
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [backtestError, setBacktestError] = useState("");
+  const [includeExternalH2h, setIncludeExternalH2h] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -271,7 +272,7 @@ export default function FootballApp() {
   async function loadBacktest() {
     setBacktestLoading(true); setBacktestError(""); setBacktest(null);
     try {
-      const response = await fetch(`${API}/backtest?competition=${encodeURIComponent(competition)}`);
+      const response = await fetch(`${API}/backtest?competition=${encodeURIComponent(competition)}&include_external_h2h=${includeExternalH2h}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo evaluar el histórico.");
       setBacktest(body);
@@ -325,6 +326,7 @@ export default function FootballApp() {
         <button type="button" onClick={() => loadData("games")} disabled={loading || loadingCompetitions || !selectedDate} style={buttonStyle}>{loading && view === "games" ? "Cargando…" : `Buscar partidos del ${selectedDate}`}</button>
         <button type="button" onClick={() => loadData("standings")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "standings" ? "Cargando…" : "Ver clasificación"}</button>
         <button type="button" onClick={loadBacktest} disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}><input type="checkbox" checked={includeExternalH2h} onChange={(event) => setIncludeExternalH2h(event.target.checked)} /> Consultar H2H externo (máx. 20 solicitudes)</label>
       </div>
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: "#451a1a", color: "#fecaca" }}>{error}</p>}
       {notice && <p role="status" style={{ color: "#cbd5e1" }}>{notice}</p>}
@@ -352,6 +354,12 @@ export default function FootballApp() {
               <tbody>{metricRows.map((row) => <tr key={row.label}><td style={cellStyle}>{row.label}</td><td style={cellStyle}>{row.base}</td><td style={cellStyle}><strong>{row.candidate}</strong></td><td style={cellStyle}>{row.delta}</td></tr>)}</tbody>
             </table>
           </div>
+          {result.h2h_diagnostics && <section style={{ marginTop: 14, padding: 12, borderRadius: 8, background: "#0f172a" }}><h3 style={{ marginTop: 0 }}>Diagnóstico del candidato H2H</h3><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(135px, 1fr))", gap: 8 }}>{[
+            { label: "Probabilidades ajustadas", value: result.h2h_diagnostics.matches_with_probability_adjustment },
+            { label: "Sin cambio frente a base", value: result.h2h_diagnostics.matches_unchanged_from_base },
+            { label: "H2H insuficiente", value: result.h2h_diagnostics.matches_with_insufficient_h2h },
+            { label: "H2H externo usado", value: result.h2h_diagnostics.matches_using_external_provider_h2h },
+          ].map((item) => <div key={item.label} style={{ padding: 9, borderRadius: 7, background: "#1e293b" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 20 }}>{item.value ?? 0}</strong></div>)}</div><p style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 0 }}>Solicitudes H2H externas: {result.external_h2h_lookup?.attempted ?? 0} intentadas, {result.external_h2h_lookup?.failed ?? 0} fallidas. Si no se activa la opción, el backtest no realiza consultas adicionales.</p></section>}
           <h3>Calibración por resultado</h3>
           <div style={{ overflowX: "auto" }}>
             <table style={tableStyle}>
@@ -364,7 +372,7 @@ export default function FootballApp() {
             </table>
           </div>
           <p style={{ color: "#fbbf24", fontSize: 12 }}>{backtest.history_scope}</p>
-          <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 0 }}>Solo lectura: no modifica snapshots ni las probabilidades oficiales. Para Brier Score y Log Loss, un cambio negativo favorece al candidato; para Accuracy, uno positivo. La muestra corresponde al historial que el proveedor devuelve en esta competición y no incluye H2H externos que no estén en ese conjunto.</p>
+          <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 0 }}>Solo lectura: no modifica snapshots ni las probabilidades oficiales. Para Brier Score y Log Loss, un cambio negativo favorece al candidato; para Accuracy, uno positivo. El diagnóstico distingue cuándo el candidato cambia probabilidades y cuándo usa H2H externo. Las consultas externas son opcionales y están limitadas a 20 por ejecución.</p>
         </section>;
       })()}
 
@@ -462,7 +470,7 @@ export default function FootballApp() {
       </table></div>}
 
       <footer style={{ marginTop: 24, paddingTop: 12, borderTop: "1px solid #374151", color: "#9ca3af", fontSize: 12 }}>
-        Data provided by football-data.org. Modelo FOOTBALL-POISSON-0.2.0 experimental y no calibrado. Las cuotas justas no son cuotas de mercado ni garantizan valor esperado positivo. Solo se usan marcadores finalizados; no se incorporan alineaciones, lesiones, xG ni cuotas reales. La cobertura depende del plan de API.
+        Data provided by football-data.org. Modelo FOOTBALL-POISSON-0.5.0 experimental y no calibrado. Las cuotas justas no son cuotas de mercado ni garantizan valor esperado positivo. Solo se usan marcadores finalizados; no se incorporan alineaciones, lesiones, xG ni cuotas reales. La cobertura depende del plan de API.
       </footer>
     </main>
   );
