@@ -196,7 +196,24 @@ def run_chronological_backtest(
     candidate_metrics = _metrics(scored_rows, "candidate")
     h2h_adjusted = sum(1 for row in scored_rows if row["h2h_adjusted"])
     h2h_insufficient = sum(1 for row in scored_rows if row["h2h_status"] == "INSUFFICIENT_H2H")
-    external_rows = sum(1 for row in scored_rows if row["h2h_source"] == "provider_external_h2h")
+    external_rows = [row for row in scored_rows if row["h2h_source"] == "provider_external_h2h"]
+    external_eligible_rows = [row for row in external_rows if row["h2h_valid_meetings"] >= 3]
+    external_adjusted_rows = [row for row in external_rows if row["h2h_adjusted"]]
+
+    def comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        base = _metrics(rows, "base")
+        candidate = _metrics(rows, "candidate")
+        n = len(rows)
+        return {
+            "sample_size": n,
+            "base": base,
+            "h2h_candidate": candidate,
+            "delta_candidate_minus_base": {
+                "accuracy": round(candidate["accuracy"] - base["accuracy"], 6) if n else None,
+                "brier_score": round(candidate["brier_score"] - base["brier_score"], 6) if n else None,
+                "log_loss": round(candidate["log_loss"] - base["log_loss"], 6) if n else None,
+            },
+        }
     return {
         "status": "COMPLETED" if scored_rows else "INSUFFICIENT_DATA",
         "evaluation_type": "chronological_walk_forward",
@@ -214,9 +231,18 @@ def run_chronological_backtest(
             "matches_with_probability_adjustment": h2h_adjusted,
             "matches_unchanged_from_base": len(scored_rows) - h2h_adjusted,
             "matches_with_insufficient_h2h": h2h_insufficient,
-            "matches_using_external_provider_h2h": external_rows,
-            "matches_using_competition_history_only": len(scored_rows) - external_rows,
-            "external_h2h_coverage_rate": round(external_rows / len(scored_rows), 6) if scored_rows else None,
+            "matches_using_external_provider_h2h": len(external_rows),
+            "matches_with_usable_external_h2h": len(external_eligible_rows),
+            "matches_with_external_h2h_adjustment": len(external_adjusted_rows),
+            "matches_using_competition_history_only": len(scored_rows) - len(external_rows),
+            "external_h2h_coverage_rate": round(len(external_rows) / len(scored_rows), 6) if scored_rows else None,
+        },
+        "external_h2h_comparison": {
+            "queried_sample_size": len(external_rows),
+            "usable_h2h_sample_size": len(external_eligible_rows),
+            "adjusted_sample_size": len(external_adjusted_rows),
+            "queried_sample": comparison(external_rows),
+            "eligible_sample": comparison(external_eligible_rows),
         },
         "metrics": {
             "base": base_metrics,

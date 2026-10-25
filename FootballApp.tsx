@@ -342,6 +342,16 @@ export default function FootballApp() {
           { label: "Brier Score (más bajo es mejor)", base: typeof base.brier_score === "number" ? base.brier_score.toFixed(4) : "—", candidate: typeof candidate.brier_score === "number" ? candidate.brier_score.toFixed(4) : "—", delta: typeof delta.brier_score === "number" ? `${delta.brier_score > 0 ? "+" : ""}${delta.brier_score.toFixed(4)}` : "—" },
           { label: "Log Loss (más bajo es mejor)", base: typeof base.log_loss === "number" ? base.log_loss.toFixed(4) : "—", candidate: typeof candidate.log_loss === "number" ? candidate.log_loss.toFixed(4) : "—", delta: typeof delta.log_loss === "number" ? `${delta.log_loss > 0 ? "+" : ""}${delta.log_loss.toFixed(4)}` : "—" },
         ];
+        const externalComparison = result.external_h2h_comparison;
+        const externalEligible = externalComparison?.eligible_sample;
+        const externalBase = externalEligible?.base || {};
+        const externalCandidate = externalEligible?.h2h_candidate || {};
+        const externalDelta = externalEligible?.delta_candidate_minus_base || {};
+        const externalMetricRows = [
+          { label: "Accuracy", base: percent(externalBase.accuracy), candidate: percent(externalCandidate.accuracy), delta: typeof externalDelta.accuracy === "number" ? `${externalDelta.accuracy > 0 ? "+" : ""}${(externalDelta.accuracy * 100).toFixed(2)} pp` : "—" },
+          { label: "Brier Score", base: typeof externalBase.brier_score === "number" ? externalBase.brier_score.toFixed(4) : "—", candidate: typeof externalCandidate.brier_score === "number" ? externalCandidate.brier_score.toFixed(4) : "—", delta: typeof externalDelta.brier_score === "number" ? `${externalDelta.brier_score > 0 ? "+" : ""}${externalDelta.brier_score.toFixed(4)}` : "—" },
+          { label: "Log Loss", base: typeof externalBase.log_loss === "number" ? externalBase.log_loss.toFixed(4) : "—", candidate: typeof externalCandidate.log_loss === "number" ? externalCandidate.log_loss.toFixed(4) : "—", delta: typeof externalDelta.log_loss === "number" ? `${externalDelta.log_loss > 0 ? "+" : ""}${externalDelta.log_loss.toFixed(4)}` : "—" },
+        ];
         const outcomes = [
           { key: "home", label: "Local" }, { key: "draw", label: "Empate" }, { key: "away", label: "Visitante" },
         ];
@@ -358,8 +368,21 @@ export default function FootballApp() {
             { label: "Probabilidades ajustadas", value: result.h2h_diagnostics.matches_with_probability_adjustment },
             { label: "Sin cambio frente a base", value: result.h2h_diagnostics.matches_unchanged_from_base },
             { label: "H2H insuficiente", value: result.h2h_diagnostics.matches_with_insufficient_h2h },
-            { label: "H2H externo usado", value: result.h2h_diagnostics.matches_using_external_provider_h2h },
+            { label: "Consultas externas con respuesta", value: result.h2h_diagnostics.matches_using_external_provider_h2h },
+            { label: "Con al menos 3 H2H", value: result.h2h_diagnostics.matches_with_usable_external_h2h },
+            { label: "Con ajuste externo real", value: result.h2h_diagnostics.matches_with_external_h2h_adjustment },
           ].map((item) => <div key={item.label} style={{ padding: 9, borderRadius: 7, background: "#1e293b" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 20 }}>{item.value ?? 0}</strong></div>)}</div><p style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 0 }}>Solicitudes H2H externas: {result.external_h2h_lookup?.attempted ?? 0} intentadas, {result.external_h2h_lookup?.failed ?? 0} fallidas. Si no se activa la opción, el backtest no realiza consultas adicionales.</p></section>}
+          {externalComparison && externalComparison.queried_sample_size > 0 && <section style={{ marginTop: 14, padding: 12, borderRadius: 8, background: "#111827" }}>
+            <h3 style={{ marginTop: 0 }}>Comparación aislada · H2H externo</h3>
+            <p style={{ color: "#cbd5e1", fontSize: 13 }}>Consultados: <strong>{externalComparison.queried_sample_size}</strong> partidos; muestra con al menos 3 enfrentamientos previos válidos: <strong>{externalComparison.usable_h2h_sample_size}</strong>; partidos donde el candidato cambió probabilidades: <strong>{externalComparison.adjusted_sample_size}</strong>.</p>
+            <p style={{ color: "#9ca3af", fontSize: 12 }}>La tabla evalúa Poisson y H2H sobre exactamente la misma submuestra con datos H2H suficientes. Un Brier o Log Loss negativo favorece al candidato; Accuracy positivo lo favorece. La muestra es pequeña y no permite declarar superioridad estadística.</p>
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead><tr><th style={cellStyle}>Métrica · muestra elegible</th><th style={cellStyle}>Poisson oficial</th><th style={cellStyle}>Candidato H2H</th><th style={cellStyle}>Cambio</th></tr></thead>
+                <tbody>{externalMetricRows.map((row) => <tr key={row.label}><td style={cellStyle}>{row.label}</td><td style={cellStyle}>{row.base}</td><td style={cellStyle}><strong>{row.candidate}</strong></td><td style={cellStyle}>{row.delta}</td></tr>)}</tbody>
+              </table>
+            </div>
+          </section>}
           <h3>Calibración por resultado</h3>
           <div style={{ overflowX: "auto" }}>
             <table style={tableStyle}>
