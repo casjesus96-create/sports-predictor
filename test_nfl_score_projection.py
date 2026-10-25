@@ -9,9 +9,9 @@ class NFLScoreProjectionTests(unittest.TestCase):
         self.assertTrue(result["available"])
         self.assertEqual(result["projected_home_points"], 25.1)
         self.assertEqual(result["projected_away_points"], 20.6)
-        self.assertEqual(result["projected_total_points"], 46.2)
+        self.assertEqual(result["projected_total_points"], 45.7)
         self.assertEqual(result["market"]["total_line"], 39.5)
-        self.assertEqual(result["market_comparison"]["total_difference"], 5.7)
+        self.assertEqual(result["market_comparison"]["total_difference"], 6.2)
 
     def test_does_not_invent_projection_without_history(self):
         result = project_score_lines({"games": 0}, {"games": 2}, {"total_line": 42.5})
