@@ -105,10 +105,16 @@ const cardStyle: React.CSSProperties = { padding: 14, border: "1px solid #374151
 
 function HeadToHeadPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
+  const [experiment, setExperiment] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [experimentLoading, setExperimentLoading] = useState(false);
   const [error, setError] = useState("");
+  const [experimentError, setExperimentError] = useState("");
   const homeId = match.homeTeam?.id;
   const awayId = match.awayTeam?.id;
+  const homeName = match.homeTeam?.name || "";
+  const awayName = match.awayTeam?.name || "";
+  const kickoffAt = match.utcDate || "";
 
   async function loadHistory() {
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
@@ -122,6 +128,36 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
       setError(err instanceof Error ? err.message : "Error consultando enfrentamientos históricos.");
     } finally { setLoading(false); }
   }
+
+  async function loadExperiment() {
+    if (!homeId || !awayId || !kickoffAt || !homeName || !awayName) {
+      setExperimentError("Faltan los equipos o la fecha de inicio del encuentro.");
+      return;
+    }
+    setExperimentLoading(true); setExperimentError("");
+    try {
+      const params = new URLSearchParams({
+        competition, match_id: String(match.id), home_team_id: String(homeId),
+        away_team_id: String(awayId), home_team: homeName, away_team: awayName,
+        kickoff_at: kickoffAt,
+      });
+      const response = await fetch(`${API}/experimental-h2h?${params.toString()}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo calcular la variante H2H.");
+      setExperiment(body);
+    } catch (err: unknown) {
+      setExperimentError(err instanceof Error ? err.message : "Error calculando el modelo H2H experimental.");
+    } finally { setExperimentLoading(false); }
+  }
+
+  const candidate = experiment?.candidate;
+  const baseProbabilities = candidate?.base_probabilities;
+  const candidateProbabilities = candidate?.candidate_probabilities;
+  const comparisonRows = baseProbabilities && candidateProbabilities ? [
+    { key: "home", label: `Gana ${homeName}` },
+    { key: "draw", label: "Empate" },
+    { key: "away", label: `Gana ${awayName}` },
+  ] : [];
 
   return <section style={{ marginTop: 12, padding: 12, border: "1px solid #475569", borderRadius: 8, background: "#0b1220" }}>
     <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -151,6 +187,30 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
         </div>
       </> : <p>El proveedor no devolvió enfrentamientos finalizados en la muestra accesible. Esto no significa que los clubes nunca se hayan enfrentado.</p>}
     </>}
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #334155" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div><strong>Modelo H2H experimental</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>Comparación bajo demanda · no modifica el modelo oficial</div></div>
+        <button type="button" onClick={loadExperiment} disabled={experimentLoading || !homeId || !awayId || !kickoffAt || new Date(kickoffAt).getTime() <= Date.now()} style={buttonStyle}>{experimentLoading ? "Calculando…" : experiment ? "Actualizar comparación" : "Calcular variante H2H"}</button>
+      </div>
+      {experimentError && <p role="alert" style={{ color: "#fecaca" }}>{experimentError}</p>}
+      {experiment && <>
+        <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 8 }}>Variante: {experiment.experiment_version} · Estado: {candidate?.status || "no disponible"} · H2H válidos usados: {experiment.h2h_sample_size ?? 0}</p>
+        {comparisonRows.length ? <>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Resultado</th><th style={cellStyle}>Modelo base</th><th style={cellStyle}>Candidato H2H</th><th style={cellStyle}>Cambio</th></tr></thead>
+              <tbody>{comparisonRows.map((row) => {
+                const baseValue = baseProbabilities[row.key];
+                const candidateValue = candidateProbabilities[row.key];
+                const delta = (candidateValue - baseValue) * 100;
+                return <tr key={row.key}><td style={cellStyle}>{row.label}</td><td style={cellStyle}>{percent(baseValue)}</td><td style={cellStyle}><strong>{percent(candidateValue)}</strong></td><td style={{ ...cellStyle, color: Math.abs(delta) < 0.05 ? "#9ca3af" : delta > 0 ? "#86efac" : "#fca5a5" }}>{delta > 0 ? "+" : ""}{delta.toFixed(1)} pp</td></tr>;
+              })}</tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 12, color: "#fbbf24", marginBottom: 0 }}>{candidate?.note || experiment.note} Esta variante es solo experimental: sus probabilidades no están calibradas y no sustituyen a las oficiales.</p>
+        </> : <p style={{ color: "#fbbf24", fontSize: 13 }}>{candidate?.reason || candidate?.note || "No se pudo generar la comparación con los datos disponibles."}</p>}
+      </>}
+    </div>
   </section>;
 }
 
