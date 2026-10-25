@@ -197,6 +197,19 @@ def _baseline(game, season_games):
     return float(p["home"])
 
 
+
+def _candidate_vector(home_values, away_values, home_coverage, away_coverage):
+    """Encode feature differences and per-team availability indicators.
+
+    Missing metrics are still represented as zero in the value component, but
+    explicit availability flags let the experimental model distinguish a true
+    zero from a metric that was not observed in that team's prior games.
+    """
+    differences = [home - away for home, away in zip(home_values, away_values)]
+    home_available = [1.0 if count > 0 else 0.0 for count in home_coverage]
+    away_available = [1.0 if count > 0 else 0.0 for count in away_coverage]
+    return differences + home_available + away_available
+
 def _fit_logistic(rows, dimensions):
     if len(rows) < 2:
         return None
@@ -287,8 +300,8 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
         season_history = [g for g in all_games if _time(g["kickoff"]) < cutoff and g.get("season") == target.get("season")]
         home_vec, home_n, home_coverage = _team_features(target["home"], cutoff, season_history, metrics)
         away_vec, away_n, away_coverage = _team_features(target["away"], cutoff, season_history, metrics)
-        features = [a - b for a, b in zip(home_vec, away_vec)]
-        model = _fit_logistic(training, len(FEATURES)) if len(training) >= min_training_games else None
+        features = _candidate_vector(home_vec, away_vec, home_coverage, away_coverage)
+        model = _fit_logistic(training, len(features)) if len(training) >= min_training_games else None
         if home_score is None or away_score is None:
             skipped["no_result"] += 1
             continue
@@ -322,7 +335,7 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
         "model_version": MODEL_VERSION, "candidate_version": "NFL-ADVANCED-WF-EXPERIMENTAL-1",
         "read_only": True, "model_impact": "none", "predictions_persisted": False,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "method": {"walk_forward": True, "target_cutoff": "strictly before target kickoff", "training_cutoff": "only earlier kickoff games; target is added to training after evaluation", "same_sample_comparison": True, "candidate_features": list(FEATURES), "training": "deterministic logistic regression refit at each target using only earlier labeled games", "limitations": "experimental candidate; source publication timing within a week and feature availability require further verification before any production use"},
+        "method": {"walk_forward": True, "target_cutoff": "strictly before target kickoff", "training_cutoff": "only earlier kickoff games; target is added to training after evaluation", "same_sample_comparison": True, "candidate_features": ([f"home_minus_away:{feature}" for feature in FEATURES] + [f"home_has_history:{feature}" for feature in FEATURES] + [f"away_has_history:{feature}" for feature in FEATURES]), "missing_value_strategy": "zero-filled metric values are paired with separate home/away availability indicators; missing is not assumed to mean a true zero", "training": "deterministic logistic regression refit at each target using only earlier labeled games", "limitations": "experimental candidate; source publication timing within a week and feature availability require further verification before any production use"},
         "sources": source_status, "scored_games": len(outcomes), "skipped": skipped,
         "feature_coverage": [
             {"feature": feature, "games_with_both_teams": count,
