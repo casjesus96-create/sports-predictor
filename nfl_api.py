@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from nfl_client import get_game, get_upcoming_games
 from nfl_analyzer import analyze_nfl_game
+from nfl_data_coverage import audit_nfl_data_coverage
 from nfl_repository import (
     save_nfl_analysis,
     settle_nfl_prediction,
@@ -496,6 +497,33 @@ def nfl_calibration(minimum_sample: int = 30):
             detail={
                 "error": "NFL_CALIBRATION_ERROR",
                 "message": "No fue posible calcular la calibración NFL.",
+                "details": str(exc),
+            },
+        ) from exc
+
+
+
+@router.get("/data-coverage")
+def nfl_data_coverage(season: int = 2026, probe_sources: bool = True):
+    """Auditoría de cobertura de datos; no modifica las predicciones."""
+    if season < 1999 or season > 2100:
+        raise HTTPException(
+            status_code=400,
+            detail="season debe estar entre 1999 y 2100.",
+        )
+
+    try:
+        return audit_nfl_data_coverage(
+            season=season,
+            include_source_probes=probe_sources,
+        )
+    except Exception as exc:
+        logger.exception("Error auditando cobertura de datos NFL season=%s", season)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "NFL_DATA_COVERAGE_ERROR",
+                "message": "No fue posible auditar la cobertura de datos NFL.",
                 "details": str(exc),
             },
         ) from exc
