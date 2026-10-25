@@ -413,7 +413,10 @@ def football_experimental_h2h(
     if home_team_id == away_team_id or home_team.strip().casefold() == away_team.strip().casefold():
         raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
 
-    kickoff = datetime.fromisoformat(kickoff_at.strip().replace("Z", "+00:00"))
+    try:
+        kickoff = datetime.fromisoformat(kickoff_at.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="kickoff_at no es una fecha ISO 8601 válida.") from exc
     if kickoff.tzinfo is None:
         raise HTTPException(status_code=400, detail="kickoff_at debe incluir zona horaria.")
     if kickoff <= datetime.now(UTC):
@@ -435,12 +438,16 @@ def football_experimental_h2h(
     )
     normalized_meetings = []
     for meeting in h2h.get("meetings", []):
+        # Normalize historical aliases to the exact target fixture names using
+        # provider team IDs, while preserving each historical home/away order.
+        historical_home_name = home_team.strip() if meeting.get("home_team_id") == home_team_id else away_team.strip()
+        historical_away_name = away_team.strip() if meeting.get("away_team_id") == away_team_id else home_team.strip()
         normalized_meetings.append({
             "id": meeting.get("id"),
             "status": "FINISHED",
             "utcDate": meeting.get("date"),
-            "homeTeam": {"name": meeting.get("home_team")},
-            "awayTeam": {"name": meeting.get("away_team")},
+            "homeTeam": {"name": historical_home_name},
+            "awayTeam": {"name": historical_away_name},
             "score": {"fullTime": {
                 "home": meeting.get("home_score"),
                 "away": meeting.get("away_score"),
