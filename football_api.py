@@ -476,24 +476,105 @@ def football_experimental_h2h(
 @router.get("/backtest")
 def football_chronological_backtest(
     competition: str = Query(..., description="Código de liga, por ejemplo PL o PD"),
+    include_external_h2h: bool = Query(
+        False,
+        description="Consulta H2H externo para una muestra de hasta 20 partidos, con límite de solicitudes.",
+    ),
 ):
-    """Evaluate official Poisson vs H2H candidate using provider history, read-only."""
+    """Evaluate official Poisson vs H2H candidate chronologically, read-only."""
     data = _provider_call(get_matches, competition)
     matches = data.get("matches", [])
-    result = run_chronological_backtest(matches)
+    external_h2h_by_match_id: dict[int, list[dict]] = {}
+    external_h2h_attempted = 0
+    external_h2h_failed = 0
+
+    if include_external_h2h:
+        eligible_targets = []
+        for match in matches:
+            kickoff = _parse_football_datetime(match.get("utcDate") or match.get("date"))
+            if (
+                kickoff is not None
+                and str(match.get("status", "")).upper() == "FINISHED"
+                and _has_numeric_full_time(match)
+                and isinstance(match.get("id"), int)
+                and (match.get("homeTeam") or {}).get("id")
+                and (match.get("awayTeam") or {}).get("id")
+            ):
+                eligible_targets.append((kickoff, match))
+        eligible_targets.sort(key=lambda row: (row[0], row[1]["id"]))
+        cap = min(20, len(eligible_targets))
+        if cap:
+            indices = sorted({round(i * (len(eligible_targets) - 1) / max(1, cap - 1)) for i in range(cap)})
+            for index in indices:
+                target = eligible_targets[index][1]
+                external_h2h_attempted += 1
+                try:
+                    payload = _provider_call(get_match_head_to_head, int(target["id"]), 50)
+                    normalized_meetings = []
+                    target_home = target["homeTeam"]
+                    target_away = target["awayTeam"]
+                    home_id, away_id = target_home["id"], target_away["id"]
+                    for meeting in payload.get("matches", []):
+                        historical_home = meeting.get("homeTeam") or {}
+                        historical_away = meeting.get("awayTeam") or {}
+                        if {historical_home.get("id"), historical_away.get("id")} != {home_id, away_id}:
+                            continue
+                        score = (meeting.get("score") or {}).get("fullTime") or {}
+                        hs, aws = score.get("home"), score.get("away")
+                        if (
+                            str(meeting.get("status", "")).upper() != "FINISHED"
+                            or not isinstance(hs, int) or isinstance(hs, bool) or hs < 0
+                            or not isinstance(aws, int) or isinstance(aws, bool) or aws < 0
+                        ):
+                            continue
+                        normalized_meetings.append({
+                            "id": meeting.get("id"),
+                            "status": "FINISHED",
+                            "utcDate": meeting.get("utcDate"),
+                            "homeTeam": {"name": target_home["name"] if historical_home.get("id") == home_id else target_away["name"]},
+                            "awayTeam": {"name": target_away["name"] if historical_away.get("id") == away_id else target_home["name"]},
+                            "score": {"fullTime": {"home": hs, "away": aws}},
+                        })
+                    external_h2h_by_match_id[int(target["id"])] = normalized_meetings
+                except HTTPException as exc:
+                    external_h2h_failed += 1
+                    logger.warning("External H2H backtest lookup failed for match %s: %s", target.get("id"), exc.detail)
+
+    result = run_chronological_backtest(matches, external_h2h_by_match_id)
+    result["external_h2h_lookup"] = {
+        "requested": include_external_h2h,
+        "request_cap": 20,
+        "attempted": external_h2h_attempted,
+        "failed": external_h2h_failed,
+        "successful": external_h2h_attempted - external_h2h_failed,
+        "fixtures_with_external_h2h_payload": len(external_h2h_by_match_id),
+    }
     return {
         "success": True,
         "provider": "football-data.org",
         "competition": competition.strip().upper(),
         "generated_at": datetime.now(UTC).isoformat(),
         "history_scope": (
-            "Solo partidos devueltos por el proveedor para la competición seleccionada "
-            "y la temporada/historial disponible en el plan. El candidato H2H de este "
-            "backtest utiliza enfrentamientos dentro de este mismo conjunto; no incluye "
-            "reuniones históricas externas que no estén presentes en los datos recibidos."
+            "Historial de la competición disponible en el plan. Si se activa H2H externo, "
+            "se consultan como máximo 20 partidos distribuidos cronológicamente; solo esos "
+            "objetivos usan H2H externo. Los demás usan la competición seleccionada. "
+            "Todos los enfrentamientos H2H se filtran para excluir fechas iguales o posteriores "
+            "al kickoff del partido evaluado; no se escriben snapshots."
         ),
         "backtest": result,
     }
+
+
+def _parse_football_datetime(value):
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return None
+        return parsed
+    except (TypeError, ValueError):
+        return None
 
 
 @router.get("/standings")
