@@ -10,6 +10,7 @@ from nfl_analyzer import analyze_nfl_game
 from nfl_data_coverage import audit_nfl_data_coverage
 from nfl_advanced_data import inspect_nfl_advanced_sources
 from nfl_pregame_feature_audit import audit_nfl_pregame_feature_coverage
+from nfl_walk_forward_backtest import run_nfl_walk_forward_backtest
 from nfl_repository import (
     save_nfl_analysis,
     settle_nfl_prediction,
@@ -590,3 +591,49 @@ def nfl_status():
         "calibration": "active",
         "generated_at": datetime.now(UTC).isoformat(),
     }
+
+
+@router.get("/walk-forward-backtest")
+def nfl_walk_forward_backtest(
+    start_season: int = 2023,
+    end_season: int = 2026,
+    min_training_games: int = 100,
+):
+    """Compara NFL-1.0.0 con un candidato experimental, sin guardar predicciones."""
+    if start_season < 1999 or end_season > 2100 or start_season > end_season:
+        raise HTTPException(
+            status_code=400,
+            detail="El rango de temporadas no es válido.",
+        )
+    if end_season - start_season > 5:
+        raise HTTPException(
+            status_code=400,
+            detail="El backtest permite como máximo seis temporadas por consulta.",
+        )
+    if min_training_games < 30 or min_training_games > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="min_training_games debe estar entre 30 y 1000.",
+        )
+    try:
+        return run_nfl_walk_forward_backtest(
+            start_season=start_season,
+            end_season=end_season,
+            min_training_games=min_training_games,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception(
+            "Error ejecutando backtest walk-forward NFL %s-%s",
+            start_season,
+            end_season,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "NFL_WALK_FORWARD_BACKTEST_ERROR",
+                "message": "No fue posible ejecutar el backtest NFL.",
+                "details": str(exc),
+            },
+        ) from exc
