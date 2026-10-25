@@ -59,7 +59,12 @@ def test_backtest_external_h2h_is_opt_in_and_bounded(monkeypatch):
     response = football_chronological_backtest("PL", include_external_h2h=True)
     lookup = response["backtest"]["external_h2h_lookup"]
     assert lookup["requested"] is True
-    assert lookup["attempted"] <= 20
+    assert lookup["attempted"] <= 10
     assert lookup["attempted"] == len(calls)
     assert response["backtest"]["h2h_diagnostics"]["matches_using_external_provider_h2h"] > 0
+    comparison = response["backtest"]["external_h2h_comparison"]
+    assert comparison["queried_sample_size"] == response["backtest"]["h2h_diagnostics"]["matches_using_external_provider_h2h"]
+    assert comparison["usable_h2h_sample_size"] <= comparison["queried_sample_size"]
+    assert comparison["eligible_sample"]["sample_size"] == comparison["usable_h2h_sample_size"]
+    assert comparison["eligible_sample"]["base"]["sample_size"] == comparison["eligible_sample"]["h2h_candidate"]["sample_size"]
     assert all(row["h2h_source"] in {"provider_external_h2h", "competition_history"} for row in response["backtest"]["per_match"])
