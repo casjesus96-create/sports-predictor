@@ -37,23 +37,28 @@ export default function BestPlays() {
         fetch(`${API}/history?date=${encodeURIComponent(day)}`),
         fetch(`${API}/status`),
       ]);
-      const [candidateData, historyData, statusData] = await Promise.all([
-        candidateResponse.json(), historyResponse.json(), statusResponse.json(),
-      ]);
+      // Candidate loading must not depend on the recommendation-history table.
+      // If the migration is missing, users should still be able to select a
+      // previously analyzed official game and see a separate history warning.
+      const candidateData = await candidateResponse.json();
+      const historyData = await historyResponse.json().catch(() => ({}));
+      const statusData = await statusResponse.json().catch(() => ({}));
       if (!candidateResponse.ok) throw new Error(candidateData?.detail || "No se pudieron cargar los partidos analizados.");
-      if (!historyResponse.ok) throw new Error(historyData?.detail || "No se pudo cargar el historial.");
       const nextCandidates: Candidate[] = candidateData.candidates || [];
       setCandidates(nextCandidates);
-      setRecommendations(historyData.recommendations || []);
+      setRecommendations(historyResponse.ok ? (historyData.recommendations || []) : []);
       setAutomaticConfigured(Boolean(statusData.automatic_odds_configured));
       setSelectedId((current) => nextCandidates.some((candidate) => candidate.prediction_snapshot_id === current)
         ? current
         : nextCandidates[0]?.prediction_snapshot_id || "");
-      if (!nextCandidates.length && candidateData.diagnostics) {
-        setMessage(`No hay partidos elegibles para ${day}. Snapshots del día: ${candidateData.diagnostics.snapshots_on_date}; no pendientes: ${candidateData.diagnostics.not_pending}; modelo/deporte no compatible: ${candidateData.diagnostics.unsupported_model_or_sport}; probabilidades inválidas: ${candidateData.diagnostics.invalid_probabilities}; nombres faltantes: ${candidateData.diagnostics.missing_team_names}.`);
-      } else {
-        setMessage("");
-      }
+      const diagnosticsMessage = !nextCandidates.length && candidateData.diagnostics
+        ? `No hay partidos elegibles para ${day}. Snapshots del día: ${candidateData.diagnostics.snapshots_on_date}; no pendientes: ${candidateData.diagnostics.not_pending}; modelo/deporte no compatible: ${candidateData.diagnostics.unsupported_model_or_sport}; probabilidades inválidas: ${candidateData.diagnostics.invalid_probabilities}; nombres faltantes: ${candidateData.diagnostics.missing_team_names}.`
+        : "";
+      const historyMessage = !historyResponse.ok
+        ? "No se pudo consultar el historial de recomendaciones. Puedes seleccionar partidos igualmente; verifica que la migración SQL del Centro de Mejores Jugadas esté aplicada en Supabase."
+        : "";
+      setMessage([diagnosticsMessage, historyMessage].filter(Boolean).join(" "));
+      if (!statusResponse.ok) setMessage((current) => [current, "No se pudo consultar la configuración de cuotas automáticas."].filter(Boolean).join(" "));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error cargando el Centro de Mejores Jugadas.");
     } finally { setLoading(false); }
