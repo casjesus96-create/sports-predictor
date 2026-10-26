@@ -11,6 +11,7 @@ from nfl_data_coverage import audit_nfl_data_coverage
 from nfl_advanced_data import inspect_nfl_advanced_sources
 from nfl_pregame_feature_audit import audit_nfl_pregame_feature_coverage
 from nfl_walk_forward_backtest import run_nfl_walk_forward_backtest
+from nfl_score_evaluation import run_nfl_score_walk_forward
 from nfl_repository import (
     save_nfl_analysis,
     settle_nfl_prediction,
@@ -18,6 +19,7 @@ from nfl_repository import (
     get_nfl_predictions,
     get_nfl_performance,
     get_nfl_calibration,
+    refresh_nfl_score_projection,
 )
 
 logger = logging.getLogger(__name__)
@@ -197,6 +199,64 @@ def predict_nfl(game_id: str):
             },
         ) from exc
 
+
+
+
+@router.post("/reproject/{game_id}")
+def reproject_nfl_score_lines(game_id: str, prediction_id: str = None):
+    """Recompute and save only the score-line projection of an existing pending snapshot."""
+    try:
+        analysis = analyze_nfl_game(game_id=game_id)
+        if not analysis.get("success"):
+            return analysis
+        projection = (analysis.get("factors") or {}).get("score_projection")
+        if not projection:
+            raise HTTPException(status_code=422, detail="El análisis no produjo una proyección de puntos.")
+        result = refresh_nfl_score_projection(
+            event_id=game_id,
+            score_projection=projection,
+            prediction_id=prediction_id,
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=409, detail=result.get("message", "No se pudo actualizar la proyección."))
+        return {
+            "success": True,
+            "sport": "NFL",
+            "game_id": str(game_id),
+            "model_version": MODEL_VERSION,
+            "projection_model": "NFL-SCORE-RECENCY-EXPERIMENTAL-1",
+            "updated": True,
+            "official_prediction_changed": False,
+            "result": result,
+            "score_projection": projection,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error actualizando proyección de puntos NFL game_id=%s", game_id)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "NFL_REPROJECT_ERROR", "message": "No fue posible actualizar la proyección de puntos NFL.", "details": str(exc)},
+        ) from exc
+
+
+@router.get("/score-walk-forward")
+def nfl_score_walk_forward(start_season: int = 2023, end_season: int = 2026):
+    """Evalúa margen, total y dirección frente al total de mercado cronológicamente; no persiste predicciones."""
+    if start_season < 1999 or end_season > 2100 or start_season > end_season:
+        raise HTTPException(status_code=400, detail="El rango de temporadas no es válido.")
+    if end_season - start_season > 5:
+        raise HTTPException(status_code=400, detail="La evaluación permite como máximo seis temporadas.")
+    try:
+        return run_nfl_score_walk_forward(start_season=start_season, end_season=end_season)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Error ejecutando evaluación cronológica de líneas NFL")
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "NFL_SCORE_WALK_FORWARD_ERROR", "message": "No fue posible evaluar las líneas NFL.", "details": str(exc)},
+        ) from exc
 
 @router.get("/predictions")
 def nfl_predictions(status: str = None, limit: int = 100):

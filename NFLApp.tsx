@@ -150,6 +150,7 @@ export default function NFLApp() {
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [evaluation, setEvaluation] = useState<AnyRecord | null>(null);
 
   async function request(path: string, options?: RequestInit) {
     const response = await fetch(`${API}${path}`, options);
@@ -369,6 +370,76 @@ export default function NFLApp() {
     }
   }
 
+
+  async function refreshScoreProjection(gameId: string) {
+    const stored = predictionByGame.get(gameId);
+    if (!stored) {
+      setError("Guarda primero la predicción oficial antes de actualizar la proyección de puntos.");
+      return;
+    }
+    if (stored?.result_status === "SETTLED") {
+      setError("El partido ya está liquidado. Su snapshot histórico no se puede modificar.");
+      return;
+    }
+    setActionLoading(`reproject:${gameId}`);
+    setError("");
+    setNotice("");
+    try {
+      const predictionId = stored?.id
+        ? `?prediction_id=${encodeURIComponent(String(stored.id))}`
+        : "";
+      const result = await request(
+        `/nfl/reproject/${encodeURIComponent(gameId)}${predictionId}`,
+        { method: "POST" }
+      );
+      if (!result?.success || !result?.score_projection) {
+        throw new Error(result?.message || "No se pudo actualizar la proyección de puntos.");
+      }
+      const currentFactors = detail?.factors || getPredictionFactors(stored);
+      setDetail((previous: AnyRecord | null) => ({
+        ...(previous || {}),
+        success: true,
+        model_version: stored?.model_version || MODEL_VERSION,
+        game: getPredictionGame(stored),
+        prediction: {
+          winner: getPredictedWinner(stored),
+          home_probability: getProbability(stored, "home"),
+          away_probability: getProbability(stored, "away"),
+          confidence: stored?.confidence,
+          data_quality: stored?.data_quality,
+        },
+        factors: {
+          ...(previous?.factors || currentFactors),
+          score_projection: result.score_projection,
+        },
+        storedPrediction: stored,
+      }));
+      setNotice("Proyección de puntos actualizada. Las probabilidades y el ganador originales no se modificaron.");
+      await loadAll(false);
+    } catch (e: any) {
+      setError(e?.message || "No fue posible actualizar la proyección de puntos.");
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function runWalkForwardEvaluation() {
+    setActionLoading("evaluation");
+    setError("");
+    setNotice("");
+    setEvaluation(null);
+    try {
+      const winner = await request("/nfl/walk-forward-backtest?start_season=2023&end_season=2026&min_training_games=100");
+      const score = await request("/nfl/score-walk-forward?start_season=2023&end_season=2026");
+      setEvaluation({ winner, score });
+      setNotice("Evaluación experimental terminada. No se guardaron predicciones ni se cambió el modelo oficial.");
+    } catch (e: any) {
+      setError(e?.message || "No fue posible completar la evaluación walk-forward.");
+    } finally {
+      setActionLoading("");
+    }
+  }
+
   function openStoredPrediction(game: AnyRecord) {
     const id = String(game?.game_id || "");
     setSelectedGameId(id);
@@ -582,6 +653,110 @@ export default function NFLApp() {
         </div>
       </section>
 
+      {evaluation && (
+        <section className="panel detail-panel">
+          <div className="section-kicker">VALIDACIÓN HISTÓRICA · SOLO EXPERIMENTAL</div>
+          <h2>Walk-forward cronológico NFL</h2>
+          <p className="model-note">
+            Las probabilidades del ganador se comparan en la misma muestra fuera de muestra. Las líneas de puntos se evalúan con margen MAE y total MAE. Este experimento no activa ni reemplaza NFL-1.0.0.
+          </p>
+          <div className="factor-grid">
+            <TeamFactor label="Partidos evaluados · ganador" value={evaluation?.winner?.scored_games ?? "—"} />
+            <TeamFactor label="Brier oficial" value={number(evaluation?.winner?.official?.brier_score, 4)} />
+            <TeamFactor label="Brier experimental" value={number(evaluation?.winner?.experimental?.brier_score, 4)} />
+            <TeamFactor label="Log loss oficial" value={number(evaluation?.winner?.official?.log_loss, 4)} />
+            <TeamFactor label="Log loss experimental" value={number(evaluation?.winner?.experimental?.log_loss, 4)} />
+            <TeamFactor label="Precisión oficial" value={evaluation?.winner?.official?.accuracy_pct == null ? "—" : `${evaluation.winner.official.accuracy_pct}%`} />
+            <TeamFactor label="Precisión experimental" value={evaluation?.winner?.experimental?.accuracy_pct == null ? "—" : `${evaluation.winner.experimental.accuracy_pct}%`} />
+            <TeamFactor label="Partidos evaluados · puntos" value={evaluation?.score?.scored_games ?? "—"} />
+            <TeamFactor label="MAE margen · base" value={number(evaluation?.score?.baseline?.margin_mae, 2)} />
+            <TeamFactor label="MAE margen · enriquecido" value={number(evaluation?.score?.enriched?.margin_mae, 2)} />
+            <TeamFactor label="MAE total · base" value={number(evaluation?.score?.baseline?.total_mae, 2)} />
+            <TeamFactor label="MAE total · enriquecido" value={number(evaluation?.score?.enriched?.total_mae, 2)} />
+            <TeamFactor label="Mejora MAE margen" value={number(evaluation?.score?.comparison?.margin_mae_improvement, 2)} />
+            <TeamFactor label="Mejora MAE total" value={number(evaluation?.score?.comparison?.total_mae_improvement, 2)} />
+            <TeamFactor label="Dirección total vs línea" value={evaluation?.score?.market_total?.market_total_direction_accuracy_pct == null ? "—" : `${evaluation.score.market_total.market_total_direction_accuracy_pct}%`} />
+            <TeamFactor label="Muestra con total de mercado" value={evaluation?.score?.market_total?.sample_size ?? "—"} />
+          </div>
+          <h3 className="detail-heading">Calibración del ganador · muestra fuera de muestra</h3>
+          {((evaluation?.winner?.official?.calibration || []) as AnyRecord[]).map((bin: AnyRecord) => {
+            const candidateBin = ((evaluation?.winner?.experimental?.calibration || []) as AnyRecord[])
+              .find((item: AnyRecord) => item?.confidence_bin === bin?.confidence_bin);
+            return (
+              <div className="factor-grid" key={bin?.confidence_bin}>
+                <TeamFactor label={`Rango ${bin?.confidence_bin} · n=${bin?.count}`} value={`Conf. ${pct(bin?.mean_confidence)} · acierto ${pct(bin?.observed_accuracy)}`} />
+                <TeamFactor label={`Experimental ${bin?.confidence_bin}`} value={candidateBin ? `Conf. ${pct(candidateBin?.mean_confidence)} · acierto ${pct(candidateBin?.observed_accuracy)} · n=${candidateBin?.count}` : "Sin muestra"} />
+              </div>
+            );
+          })}
+          <h3 className="detail-heading">Ganador · métricas por temporada</h3>
+          {Object.entries(evaluation?.winner?.by_season || {}).map(([season, result]: [string, any]) => (
+            <div className="panel" key={season}>
+              <b>Temporada {season} · n={result?.sample_size ?? 0}</b>
+              <div className="factor-grid">
+                <TeamFactor label="Brier oficial" value={number(result?.official?.brier_score, 4)} />
+                <TeamFactor label="Brier experimental" value={number(result?.experimental?.brier_score, 4)} />
+                <TeamFactor label="Log loss oficial" value={number(result?.official?.log_loss, 4)} />
+                <TeamFactor label="Log loss experimental" value={number(result?.experimental?.log_loss, 4)} />
+              </div>
+            </div>
+          ))}
+          <h3 className="detail-heading">Ganador · niveles de confianza</h3>
+          {Object.entries(evaluation?.winner?.by_confidence || {}).map(([bucket, result]: [string, any]) => (
+            <div className="panel" key={bucket}>
+              <b>{bucket} · n={result?.sample_size ?? 0}</b>
+              <div className="factor-grid">
+                <TeamFactor label="Brier oficial" value={number(result?.official?.brier_score, 4)} />
+                <TeamFactor label="Brier experimental" value={number(result?.experimental?.brier_score, 4)} />
+                <TeamFactor label="Log loss oficial" value={number(result?.official?.log_loss, 4)} />
+                <TeamFactor label="Log loss experimental" value={number(result?.experimental?.log_loss, 4)} />
+              </div>
+            </div>
+          ))}
+          <h3 className="detail-heading">Margen y total · resultados por temporada</h3>
+          {Object.entries(evaluation?.score?.by_season || {}).map(([season, result]: [string, any]) => (
+            <div className="panel" key={season}>
+              <b>Temporada {season} · n={result?.enriched?.sample_size ?? 0}</b>
+              <div className="factor-grid">
+                <TeamFactor label="MAE margen · base" value={number(result?.baseline?.margin_mae, 2)} />
+                <TeamFactor label="MAE margen · enriquecido" value={number(result?.enriched?.margin_mae, 2)} />
+                <TeamFactor label="MAE total · base" value={number(result?.baseline?.total_mae, 2)} />
+                <TeamFactor label="MAE total · enriquecido" value={number(result?.enriched?.total_mae, 2)} />
+              </div>
+            </div>
+          ))}
+          <h3 className="detail-heading">Margen y total · niveles de confianza</h3>
+          {Object.entries(evaluation?.score?.by_confidence || {}).map(([bucket, result]: [string, any]) => (
+            <div className="panel" key={bucket}>
+              <b>{bucket} · n={result?.enriched?.sample_size ?? 0}</b>
+              <div className="factor-grid">
+                <TeamFactor label="MAE margen · base" value={number(result?.baseline?.margin_mae, 2)} />
+                <TeamFactor label="MAE margen · enriquecido" value={number(result?.enriched?.margin_mae, 2)} />
+                <TeamFactor label="MAE total · base" value={number(result?.baseline?.total_mae, 2)} />
+                <TeamFactor label="MAE total · enriquecido" value={number(result?.enriched?.total_mae, 2)} />
+              </div>
+            </div>
+          ))}
+          <h3 className="detail-heading">Total del mercado · por temporada</h3>
+          {Object.entries(evaluation?.score?.market_total?.by_season || {}).map(([season, result]: [string, any]) => (
+            <div className="factor-grid" key={season}>
+              <TeamFactor label={`Temporada ${season} · muestra`} value={result?.sample_size ?? 0} />
+              <TeamFactor label="Acierto over/under del candidato" value={result?.projection_direction_accuracy_pct == null ? "—" : `${result.projection_direction_accuracy_pct}%`} />
+            </div>
+          ))}
+          <h3 className="detail-heading">Total del mercado · por confianza</h3>
+          {Object.entries(evaluation?.score?.market_total?.by_confidence || {}).map(([bucket, result]: [string, any]) => (
+            <div className="factor-grid" key={bucket}>
+              <TeamFactor label={`Confianza oficial ${bucket} · muestra`} value={result?.sample_size ?? 0} />
+              <TeamFactor label="Acierto over/under del candidato" value={result?.projection_direction_accuracy_pct == null ? "—" : `${result.projection_direction_accuracy_pct}%`} />
+            </div>
+          ))}
+          <p className="model-note">
+            Positivo en “Mejora MAE” significa menor error del candidato. La precisión de dirección over/under no es ROI. Los grupos pequeños son descriptivos, no evidencia suficiente para activar el candidato. El modelo oficial no se modifica automáticamente.
+          </p>
+        </section>
+      )}
+
       <section className="toolbar panel">
         <div className="toolbar-title">
           <b>Calendario NFL</b>
@@ -611,6 +786,15 @@ export default function NFLApp() {
             {allUpcoming
               ? "Filtrar por fecha"
               : "Todos los partidos guardados"}
+          </button>
+
+          <button
+            className="secondary"
+            type="button"
+            onClick={runWalkForwardEvaluation}
+            disabled={actionLoading !== ""}
+          >
+            {actionLoading === "evaluation" ? "Evaluando históricamente…" : "Evaluación walk-forward"}
           </button>
 
           <button
@@ -801,6 +985,17 @@ export default function NFLApp() {
                           {actionLoading === id
                             ? "Analizando…"
                             : "Analizar partido"}
+                        </button>
+                      )}
+
+                      {isPending && (
+                        <button
+                          className="secondary"
+                          type="button"
+                          disabled={actionLoading === `reproject:${id}` || actionLoading !== ""}
+                          onClick={() => refreshScoreProjection(id)}
+                        >
+                          {actionLoading === `reproject:${id}` ? "Actualizando puntos…" : "Actualizar proyección de puntos"}
                         </button>
                       )}
 

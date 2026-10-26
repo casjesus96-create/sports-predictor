@@ -330,6 +330,54 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
             training.append((features, 1 if home_score > away_score else 0))
     base_score = _score(baseline_probs, outcomes)
     candidate_score = _score(candidate_probs, outcomes)
+
+    # Stratified reporting uses the exact same chronological out-of-sample
+    # predictions already scored above; no refitting or leakage is introduced.
+    by_season_rows = {}
+    by_confidence_rows = {}
+    for row in evaluated:
+        season_key = str(row["season"])
+        confidence = max(
+            row["home_probability_official"],
+            1.0 - row["home_probability_official"],
+        )
+        confidence_bin = (
+            "50-60%" if confidence < 0.60 else
+            "60-70%" if confidence < 0.70 else
+            "70-80%" if confidence < 0.80 else
+            "80-90%" if confidence < 0.90 else "90-100%"
+        )
+        for groups, key in (
+            (by_season_rows, season_key),
+            (by_confidence_rows, confidence_bin),
+        ):
+            bucket = groups.setdefault(key, {"official": [], "experimental": [], "outcomes": []})
+            bucket["official"].append(row["home_probability_official"])
+            bucket["experimental"].append(row["home_probability_experimental"])
+            bucket["outcomes"].append(1 if row["actual_home_win"] else 0)
+
+    def summarize_groups(groups):
+        return {
+            key: {
+                "sample_size": len(value["outcomes"]),
+                "official": _score(value["official"], value["outcomes"]),
+                "experimental": _score(value["experimental"], value["outcomes"]),
+                "comparison": {
+                    "brier_improvement": round(
+                        _score(value["official"], value["outcomes"])["brier_score"]
+                        - _score(value["experimental"], value["outcomes"])["brier_score"], 6
+                    ),
+                    "log_loss_improvement": round(
+                        _score(value["official"], value["outcomes"])["log_loss"]
+                        - _score(value["experimental"], value["outcomes"])["log_loss"], 6
+                    ),
+                },
+            }
+            for key, value in sorted(groups.items())
+        }
+
+    stratified_by_season = summarize_groups(by_season_rows)
+    stratified_by_confidence = summarize_groups(by_confidence_rows)
     return {
         "success": True, "sport": "NFL", "season_range": {"start": start_season, "end": end_season},
         "model_version": MODEL_VERSION, "candidate_version": "NFL-ADVANCED-WF-EXPERIMENTAL-1",
@@ -344,6 +392,8 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
         ],
         "feature_coverage_denominator": coverage_denominator,
         "official": base_score, "experimental": candidate_score,
+        "by_season": stratified_by_season,
+        "by_confidence": stratified_by_confidence,
         "comparison": {"brier_improvement": round(base_score["brier_score"] - candidate_score["brier_score"], 6) if outcomes else None, "log_loss_improvement": round(base_score["log_loss"] - candidate_score["log_loss"], 6) if outcomes else None, "accuracy_delta_percentage_points": round(candidate_score["accuracy_pct"] - base_score["accuracy_pct"], 2) if outcomes else None},
         "sample_predictions": evaluated[-20:],
         "activation": "not_eligible_automatically",

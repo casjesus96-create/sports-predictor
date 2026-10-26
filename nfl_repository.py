@@ -127,6 +127,51 @@ def save_nfl_analysis(analysis):
     }
 
 
+
+def refresh_nfl_score_projection(event_id, score_projection, prediction_id=None):
+    """Refresh only the experimental score projection on an unsettled official snapshot."""
+    supabase = get_supabase_client()
+    query = (
+        supabase.table("prediction_snapshots")
+        .select("*")
+        .eq("event_id", str(event_id))
+        .eq("sport", SPORT)
+        .eq("league", LEAGUE)
+        .eq("model_version", MODEL_VERSION)
+    )
+    if prediction_id:
+        query = query.eq("id", prediction_id)
+    response = query.order("created_at", desc=False).limit(10).execute()
+    rows = response.data or []
+    if not rows:
+        return {"success": False, "updated": False, "message": "No se encontró la predicción oficial guardada."}
+
+    pending = next((row for row in rows if row.get("result_status") == "PENDING"), None)
+    if pending is None:
+        return {"success": False, "updated": False, "settled": True, "message": "La predicción ya está liquidada; no se modifica su snapshot histórico."}
+
+    features = dict(pending.get("features") or {})
+    factors = dict(features.get("factors") or {})
+    factors["score_projection"] = score_projection
+    features["factors"] = factors
+    update = (
+        supabase.table("prediction_snapshots")
+        .update({"features": features})
+        .eq("id", pending["id"])
+        .eq("result_status", "PENDING")
+        .execute()
+    )
+    updated_rows = update.data or []
+    if not updated_rows:
+        return {"success": False, "updated": False, "message": "La predicción cambió durante la actualización. Recarga e inténtalo de nuevo."}
+    return {
+        "success": True,
+        "updated": True,
+        "prediction_id": pending.get("id"),
+        "message": "Se actualizó únicamente la proyección experimental de puntos; ganador y probabilidades originales permanecen intactos.",
+        "data": updated_rows[0],
+    }
+
 def get_nfl_predictions(result_status=None, limit=100):
     """Lista exclusivamente las proyecciones del modelo oficial NFL."""
     supabase = get_supabase_client()
