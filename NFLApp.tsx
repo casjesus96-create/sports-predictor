@@ -151,6 +151,7 @@ export default function NFLApp() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [evaluation, setEvaluation] = useState<AnyRecord | null>(null);
+  const [evaluationStatus, setEvaluationStatus] = useState("");
 
   async function request(path: string, options?: RequestInit) {
     const response = await fetch(`${API}${path}`, options);
@@ -424,18 +425,43 @@ export default function NFLApp() {
   }
 
   async function runWalkForwardEvaluation() {
+    if (actionLoading !== "") return;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 180000);
     setActionLoading("evaluation");
     setError("");
     setNotice("");
     setEvaluation(null);
+    setEvaluationStatus("Iniciando las dos evaluaciones históricas…");
     try {
-      const winner = await request("/nfl/walk-forward-backtest?start_season=2023&end_season=2026&min_training_games=100");
-      const score = await request("/nfl/score-walk-forward?start_season=2023&end_season=2026");
+      setEvaluationStatus("Calculando ganador: descargando estadísticas avanzadas y ejecutando validación cronológica…");
+      const winnerPromise = request(
+        "/nfl/walk-forward-backtest?start_season=2023&end_season=2026&min_training_games=100",
+        { signal: controller.signal }
+      ).then((result) => {
+        setEvaluationStatus("Evaluación del ganador lista. Terminando la evaluación de margen y total de puntos…");
+        return result;
+      });
+      const scorePromise = request(
+        "/nfl/score-walk-forward?start_season=2023&end_season=2026",
+        { signal: controller.signal }
+      );
+      const [winner, score] = await Promise.all([winnerPromise, scorePromise]);
+      if (winner?.success === false || score?.success === false) {
+        throw new Error("La API terminó la evaluación sin devolver un resultado válido.");
+      }
       setEvaluation({ winner, score });
+      setEvaluationStatus("");
       setNotice("Evaluación experimental terminada. No se guardaron predicciones ni se cambió el modelo oficial.");
     } catch (e: any) {
-      setError(e?.message || "No fue posible completar la evaluación walk-forward.");
+      setEvaluationStatus("");
+      if (e?.name === "AbortError") {
+        setError("La evaluación superó el límite de 3 minutos y se canceló en el navegador. El servidor puede seguir procesándola; revisaremos la causa para evitar que vuelva a ocurrir.");
+      } else {
+        setError(e?.message || "No fue posible completar la evaluación walk-forward.");
+      }
     } finally {
+      window.clearTimeout(timeoutId);
       setActionLoading("");
     }
   }
@@ -796,6 +822,13 @@ export default function NFLApp() {
           >
             {actionLoading === "evaluation" ? "Evaluando históricamente…" : "Evaluación walk-forward"}
           </button>
+
+          {actionLoading === "evaluation" && (
+            <div className="message notice" role="status" aria-live="polite">
+              <span>{evaluationStatus || "Ejecutando evaluación histórica…"}</span>
+              <p>Puede tardar porque consulta varias temporadas. Si la API devuelve un error, se mostrará aquí.</p>
+            </div>
+          )}
 
           <button
             className="secondary"
