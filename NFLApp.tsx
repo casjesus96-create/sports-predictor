@@ -737,6 +737,20 @@ export default function NFLApp() {
               </div>
             </div>
           ))}
+          <h3 className="detail-heading">Total del mercado · por temporada</h3>
+          {Object.entries(evaluation?.score?.market_total?.by_season || {}).map(([season, result]: [string, any]) => (
+            <div className="factor-grid" key={season}>
+              <TeamFactor label={`Temporada ${season} · muestra`} value={result?.sample_size ?? 0} />
+              <TeamFactor label="Acierto over/under del candidato" value={result?.projection_direction_accuracy_pct == null ? "—" : `${result.projection_direction_accuracy_pct}%`} />
+            </div>
+          ))}
+          <h3 className="detail-heading">Total del mercado · por confianza</h3>
+          {Object.entries(evaluation?.score?.market_total?.by_confidence || {}).map(([bucket, result]: [string, any]) => (
+            <div className="factor-grid" key={bucket}>
+              <TeamFactor label={`Confianza oficial ${bucket} · muestra`} value={result?.sample_size ?? 0} />
+              <TeamFactor label="Acierto over/under del candidato" value={result?.projection_direction_accuracy_pct == null ? "—" : `${result.projection_direction_accuracy_pct}%`} />
+            </div>
+          ))}
           <p className="model-note">
             Positivo en “Mejora MAE” significa menor error del candidato. La precisión de dirección over/under no es ROI. Los grupos pequeños son descriptivos, no evidencia suficiente para activar el candidato. El modelo oficial no se modifica automáticamente.
           </p>
