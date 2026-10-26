@@ -94,3 +94,105 @@ def get_market_projection(snapshot_id: str):
         except Exception:
             continue
     raise HTTPException(status_code=404, detail="No se encontró el snapshot guardado.")
+
+
+@router.get("/mlb/live-batters/{game_id}")
+def get_live_mlb_batter_report(game_id: str):
+    """Read-only live MLB boxscore for Market Lab; never runs or saves the official pregame model."""
+    import requests
+    from datetime import datetime, timezone
+
+    if not game_id.isdigit():
+        raise HTTPException(status_code=400, detail="El ID del partido MLB debe ser numérico.")
+
+    url = f"https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live"
+    try:
+        response = requests.get(
+            url,
+            timeout=15,
+            headers={"User-Agent": "Sports-Predictor/1.0", "Accept": "application/json"},
+        )
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="MLB no encontró el partido indicado.")
+        response.raise_for_status()
+        feed = response.json()
+    except HTTPException:
+        raise
+    except requests.RequestException as exc:
+        logger.warning("Live MLB boxscore request failed for game_id=%s: %s", game_id, type(exc).__name__)
+        raise HTTPException(status_code=502, detail="No se pudo consultar el marcador en vivo de MLB.") from exc
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=502, detail="MLB devolvió una respuesta que no se pudo interpretar.") from exc
+
+    game_data = feed.get("gameData") or {}
+    live_data = feed.get("liveData") or {}
+    status_data = game_data.get("status") or {}
+    boxscore = live_data.get("boxscore") or {}
+    teams_data = boxscore.get("teams") or {}
+    linescore = live_data.get("linescore") or {}
+    game_teams = game_data.get("teams") or {}
+    result_teams = []
+
+    for side in ("away", "home"):
+        team_box = teams_data.get(side) or {}
+        players = team_box.get("players") or {}
+        batting_order = team_box.get("battingOrder") or []
+        hitters = []
+        for order, raw_player_id in enumerate(batting_order, start=1):
+            try:
+                player_id = int(raw_player_id)
+            except (TypeError, ValueError):
+                continue
+            player = players.get(f"ID{player_id}") or players.get(str(player_id)) or {}
+            person = player.get("person") or {}
+            stats = ((player.get("stats") or {}).get("batting") or {})
+            name = person.get("fullName") or person.get("name")
+            if not name:
+                continue
+            hits = stats.get("hits")
+            at_bats = stats.get("atBats")
+            try:
+                hits = int(hits) if hits is not None else None
+            except (TypeError, ValueError):
+                hits = None
+            try:
+                at_bats = int(at_bats) if at_bats is not None else None
+            except (TypeError, ValueError):
+                at_bats = None
+            hitters.append({
+                "player_id": player_id,
+                "player_name": name,
+                "batting_order": order,
+                "position": (player.get("position") or {}).get("abbreviation"),
+                "hits_in_game": hits,
+                "at_bats_in_game": at_bats,
+                "game_avg": round(hits / at_bats, 3) if hits is not None and at_bats else None,
+            })
+        team_info = game_teams.get(side) or {}
+        result_teams.append({
+            "side": side,
+            "team_id": team_info.get("id"),
+            "team_name": team_info.get("name") or team_box.get("team", {}).get("name") or side,
+            "lineup_available": bool(batting_order),
+            "hitters": hitters,
+        })
+
+    return {
+        "success": True,
+        "report_type": "live_boxscore_context",
+        "event_id": str(game_id),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "game_status": status_data.get("abstractGameState"),
+        "detailed_status": status_data.get("detailedState"),
+        "home_score": (linescore.get("teams") or {}).get("home", {}).get("runs"),
+        "away_score": (linescore.get("teams") or {}).get("away", {}).get("runs"),
+        "current_inning": linescore.get("currentInning"),
+        "inning_state": linescore.get("inningState"),
+        "outs": linescore.get("outs"),
+        "teams": result_teams,
+        "probabilities_available": False,
+        "notice": (
+            "Contexto en vivo de MLB; muestra únicamente alineación y estadísticas observadas. "
+            "No genera probabilidades condicionales de hits ni modifica el análisis oficial o el historial."
+        ),
+    }
