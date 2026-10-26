@@ -48,6 +48,9 @@ def _build_team_history(games):
 
 
 def _stats_before(team, cutoff, team_history):
+    # Keep the helper backward-compatible for unit tests and callers passing raw schedules.
+    if isinstance(team_history, list):
+        team_history = _build_team_history(team_history)
     history = team_history.get(team)
     if not history:
         return None
@@ -67,6 +70,8 @@ def _stats_before(team, cutoff, team_history):
     }
 
 def _projections(game, team_history):
+    if isinstance(team_history, list):
+        team_history = _build_team_history(team_history)
     kickoff = _time(game.get("kickoff"))
     home = _stats_before(game["home"], kickoff, team_history)
     away = _stats_before(game["away"], kickoff, team_history)
