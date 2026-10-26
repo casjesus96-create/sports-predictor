@@ -721,7 +721,7 @@ def nfl_status():
 @router.post("/walk-forward-evaluation")
 def start_nfl_walk_forward_evaluation(
     start_season: int = 2023,
-    end_season: int = 2026,
+    end_season: int = 2025,
     min_training_games: int = 100,
 ):
     """Inicia la evaluación combinada en segundo plano y devuelve un identificador de trabajo."""
@@ -785,7 +785,7 @@ def get_nfl_walk_forward_evaluation(job_id: str):
 @router.get("/walk-forward-backtest")
 def nfl_walk_forward_backtest(
     start_season: int = 2023,
-    end_season: int = 2026,
+    end_season: int = 2025,
     min_training_games: int = 100,
 ):
     """Compara NFL-1.0.0 con un candidato experimental, sin guardar predicciones."""
