@@ -26,3 +26,20 @@ def test_missing_projection_is_not_fabricated():
     markets = project_snapshot(row)["markets"]
     points = next(m for m in markets if m["market_id"] == "projected_points")
     assert points["status"] == "unavailable" and points["value"] is None
+
+def test_confirmed_batter_hit_projection_is_displayed_in_market_lab():
+    row = {
+        "id": "snap-hit", "sport": "MLB", "league": "MLB",
+        "home_probability": 0.55, "away_probability": 0.45,
+        "features": {"game": {"home": "Milwaukee", "away": "Miami"},
+            "factors": {"batter_hit_projections": {"available": True, "status": "experimental",
+                "note": "Estimación experimental.", "teams": [{"side": "home", "team_name": "Milwaukee",
+                    "lineup_confirmed": True, "hitters": [{"player_id": 123, "player_name": "Christian Example",
+                        "lineup_confirmed": True, "batting_order": 2, "season_avg": 0.28,
+                        "season_at_bats": 300, "expected_at_bats": 4.25,
+                        "probability_1plus_hit": 0.72}]}]}}}
+    }
+    markets = project_snapshot(row)["markets"]
+    hit = next(m for m in markets if m["market_id"] == "batter_hit_123")
+    assert hit["probability_percent"] == 72.0
+    assert hit["status"] == "experimental"

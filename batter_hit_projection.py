@@ -1,0 +1,194 @@
+"""Experimental pregame 1+ hit projections for confirmed MLB batting orders.
+
+Probabilities are intentionally separate from the official MLB winner model.
+They use the batter's current-season AVG and a transparent batting-order estimate
+of at-bats; they are not calibrated betting probabilities.
+"""
+from __future__ import annotations
+
+import math
+from datetime import datetime, timezone
+
+import requests
+
+MLB_API = "https://statsapi.mlb.com/api/v1"
+TIMEOUT_SECONDS = 15
+HEADERS = {"User-Agent": "Sports-Predictor/1.0", "Accept": "application/json"}
+
+# Approximate expected at-bats by batting-order slot, not a guaranteed outcome.
+EXPECTED_AT_BATS_BY_SLOT = {
+    1: 4.35, 2: 4.25, 3: 4.15, 4: 4.05, 5: 3.95,
+    6: 3.85, 7: 3.75, 8: 3.65, 9: 3.55,
+}
+
+
+def calculate_one_plus_hit_probability(batting_average, expected_at_bats):
+    """Approximate P(1+ hit) as 1 - (1 - AVG) ** expected at-bats."""
+    try:
+        average = float(batting_average)
+        opportunities = float(expected_at_bats)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(average) or not math.isfinite(opportunities):
+        return None
+    if not 0 <= average <= 1 or opportunities <= 0:
+        return None
+    return min(1.0, max(0.0, 1.0 - (1.0 - average) ** opportunities))
+
+
+def _int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _float(value):
+    try:
+        result = float(value)
+        return result if math.isfinite(result) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _fetch_season_hitting_stats(player_ids, season):
+    ids = sorted({int(value) for value in player_ids if _int(value)})
+    if not ids:
+        return {}
+    response = requests.get(
+        f"{MLB_API}/people",
+        params={
+            "personIds": ",".join(map(str, ids)),
+            "hydrate": f"stats(group=[hitting],type=[season],season={int(season)})",
+        },
+        timeout=TIMEOUT_SECONDS,
+        headers=HEADERS,
+    )
+    response.raise_for_status()
+    result = {}
+    for person in response.json().get("people") or []:
+        player_id = _int(person.get("id"))
+        if not player_id:
+            continue
+        for group in person.get("stats") or []:
+            for split in group.get("splits") or []:
+                stat = split.get("stat") or {}
+                at_bats = _int(stat.get("atBats"))
+                hits = _int(stat.get("hits"))
+                average = _float(stat.get("avg"))
+                if average is None and at_bats and hits is not None:
+                    average = hits / at_bats
+                if average is not None and at_bats is not None and at_bats > 0:
+                    result[player_id] = {
+                        "season": int(season),
+                        "avg": average,
+                        "at_bats": at_bats,
+                        "hits": hits,
+                    }
+                    break
+            if player_id in result:
+                break
+    return result
+
+
+def build_batter_hit_projections(batter_pitcher_matchups, season=2026):
+    """Project 1+ hit only for MLB-published confirmed lineups."""
+    result = {
+        "available": False,
+        "status": "unavailable",
+        "season": int(season),
+        "method": "season_avg_times_expected_at_bats_v1",
+        "lineup_requirement": "confirmed",
+        "teams": [],
+        "note": "Se requieren alineaciones confirmadas y estadísticas de bateo de la temporada.",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if not isinstance(batter_pitcher_matchups, dict):
+        return result
+
+    confirmed_teams = []
+    player_ids = []
+    for side, team_key in (("home", "home_team"), ("away", "away_team")):
+        team = batter_pitcher_matchups.get(team_key) or {}
+        if not team.get("lineup_confirmed") or not isinstance(team.get("hitters"), list):
+            continue
+        lineup = []
+        for hitter in team["hitters"]:
+            if not isinstance(hitter, dict):
+                continue
+            player_id = _int(hitter.get("player_id"))
+            name = str(hitter.get("player_name") or "").strip()
+            if not player_id or not name:
+                continue
+            slot = _int(hitter.get("batting_order"))
+            if not slot or slot not in EXPECTED_AT_BATS_BY_SLOT:
+                continue
+            normalized = {
+                "player_id": player_id,
+                "player_name": name,
+                "batting_order": slot,
+                "position": hitter.get("position"),
+            }
+            lineup.append(normalized)
+            player_ids.append(player_id)
+        if lineup:
+            confirmed_teams.append({
+                "side": side,
+                "team_name": team.get("team_name") or batter_pitcher_matchups.get(side + "_team_name") or side,
+                "lineup_source": team.get("lineup_source") or "MLB Stats API",
+                "hitters": lineup,
+            })
+
+    if not confirmed_teams:
+        result["note"] = "No hay alineación confirmada guardada. Vuelve a analizar cuando MLB publique el orden al bate."
+        return result
+
+    try:
+        stats_by_player = _fetch_season_hitting_stats(player_ids, season)
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        result["note"] = "No se pudieron recuperar estadísticas de temporada para los bateadores confirmados."
+        result["error_type"] = type(exc).__name__
+        return result
+
+    projected_teams = []
+    for team in confirmed_teams:
+        hitters = []
+        for hitter in team["hitters"]:
+            stats = stats_by_player.get(hitter["player_id"])
+            if not stats:
+                continue
+            expected_ab = EXPECTED_AT_BATS_BY_SLOT[hitter["batting_order"]]
+            probability = calculate_one_plus_hit_probability(stats["avg"], expected_ab)
+            if probability is None:
+                continue
+            hitters.append({
+                **hitter,
+                "season_avg": round(stats["avg"], 3),
+                "season_hits": stats["hits"],
+                "season_at_bats": stats["at_bats"],
+                "expected_at_bats": expected_ab,
+                "probability_1plus_hit": round(probability, 6),
+                "probability_percent": round(probability * 100, 2),
+                "status": "experimental",
+            })
+        projected_teams.append({
+            "side": team["side"],
+            "team_name": team["team_name"],
+            "lineup_source": team["lineup_source"],
+            "lineup_confirmed": True,
+            "hitters": hitters,
+        })
+
+    count = sum(len(team["hitters"]) for team in projected_teams)
+    result.update({
+        "available": count > 0,
+        "status": "experimental" if count else "unavailable",
+        "teams": projected_teams,
+        "note": (
+            "Probabilidad experimental de 1+ hit: AVG de temporada y oportunidades estimadas según el turno al bate. "
+            "No está calibrada históricamente y no sustituye al modelo oficial."
+            if count else
+            "La alineación está confirmada, pero no hay estadísticas de temporada utilizables para sus bateadores."
+        ),
+    })
+    return result

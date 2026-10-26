@@ -546,6 +546,8 @@ def get_batter_pitcher_matchups(
         "source": "MLB Stats API",
         "scope": "career_vs_pitcher",
         "description": "Historial directo del bateador frente al abridor rival; no equivale al split por mano.",
+        "home_team_name": home_team_name,
+        "away_team_name": away_team_name,
         "home_team": {},
         "away_team": {},
         "team_rosters": {"home": {}, "away": {}},
