@@ -4,10 +4,11 @@ import NFLApp from "./NFLApp";
 import NBAApp from "./NBAApp";
 import TennisApp from "./TennisApp";
 import DecisionCenter from "./DecisionCenter";
+import BestPlays from "./BestPlays";
 import ProbabilityDraws from "./ProbabilityDraws";
 import FootballApp from "./FootballApp";
 
-type Sport = "MLB" | "NFL" | "NBA" | "TENNIS" | "DECISION" | "DRAWS" | "FOOTBALL";
+type Sport = "MLB" | "NFL" | "NBA" | "TENNIS" | "DECISION" | "DRAWS" | "FOOTBALL" | "BEST_PLAYS";
 
 export default function App() {
   const [sport, setSport] = useState<Sport>("NBA");
@@ -91,6 +92,14 @@ export default function App() {
         </button>
         <button
           type="button"
+          aria-pressed={sport === "BEST_PLAYS"}
+          onClick={() => setSport("BEST_PLAYS")}
+          style={buttonStyle(sport === "BEST_PLAYS")}
+        >
+          ⭐ Mejores Jugadas
+        </button>
+        <button
+          type="button"
           aria-pressed={sport === "DRAWS"}
           onClick={() => setSport("DRAWS")}
           style={buttonStyle(sport === "DRAWS")}
@@ -99,7 +108,7 @@ export default function App() {
         </button>
       </nav>
 
-      {sport === "DRAWS" ? <ProbabilityDraws /> : sport === "DECISION" ? <DecisionCenter /> : sport === "FOOTBALL" ? <FootballApp /> : sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
+      {sport === "BEST_PLAYS" ? <BestPlays /> : sport === "DRAWS" ? <ProbabilityDraws /> : sport === "DECISION" ? <DecisionCenter /> : sport === "FOOTBALL" ? <FootballApp /> : sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
     </>
   );
 }

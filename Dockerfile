@@ -15,6 +15,7 @@ COPY NBAApp.tsx ./
 COPY TennisApp.tsx ./
 COPY FootballApp.tsx ./
 COPY DecisionCenter.tsx ./
+COPY BestPlays.tsx ./
 COPY ProbabilityDraws.tsx ./
 COPY main.tsx ./
 COPY index.html ./
