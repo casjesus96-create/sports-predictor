@@ -18,7 +18,7 @@ type Recommendation = {
       market_comparison_probability?: number | null;
       calculated_no_vig_market_probability?: number | null;
       model_market_gap_percentage_points?: number | null;
-      market_overround_percentage?: number | null;
+      market_overround_percentage?: number | null; opponent_decimal_odds?: number | null;
       warnings?: string[]; risk_signals?: string[];
     };
     ranking_method?: string;
@@ -35,6 +35,7 @@ export default function BestPlays() {
   const [selectedId, setSelectedId] = useState("");
   const [side, setSide] = useState<"home" | "away">("home");
   const [odds, setOdds] = useState("");
+  const [opponentOdds, setOpponentOdds] = useState("");
   const [bookmaker, setBookmaker] = useState("");
   const [automaticConfigured, setAutomaticConfigured] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -96,14 +97,17 @@ export default function BestPlays() {
       const decimal = Number(odds);
       if (!selectedId) throw new Error("No hay un partido analizado elegible para seleccionar.");
       if (!Number.isFinite(decimal) || decimal <= 1 || decimal > 1000) throw new Error("Introduce una cuota decimal válida mayor que 1.");
+      const opponentDecimal = opponentOdds.trim() ? Number(opponentOdds) : null;
+      if (opponentDecimal !== null && (!Number.isFinite(opponentDecimal) || opponentDecimal <= 1 || opponentDecimal > 1000)) throw new Error("La cuota del rival debe ser mayor que 1 y como máximo 1000.");
       const response = await fetch(`${API}/manual`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prediction_snapshot_id: selectedId, analysis_date: day, selected_side: side, decimal_odds: decimal, bookmaker: bookmaker.trim() || "Entrada manual" }),
+        body: JSON.stringify({ prediction_snapshot_id: selectedId, analysis_date: day, selected_side: side, decimal_odds: decimal, opponent_decimal_odds: opponentDecimal, bookmaker: bookmaker.trim() || "Entrada manual" }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || "No se pudo guardar la recomendación.");
       setMessage(data.message || "Solicitud procesada.");
       setOdds("");
+      setOpponentOdds("");
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : "Error guardando la cuota manual."); }
     finally { setLoading(false); }
@@ -129,11 +133,12 @@ export default function BestPlays() {
     {message && <div role="status" style={{ ...cardStyle, marginBottom: 12 }}>{message}</div>}
     <section style={{ ...cardStyle, marginBottom: 14 }}>
       <h2 style={{ marginTop: 0, fontSize: 19 }}>Añadir cuota manual</h2>
-      <p style={{ color: "#64748b", lineHeight: 1.5 }}>Cada registro es una nueva recomendación inmutable. No altera el pronóstico original. Solo se aceptan partidos analizados hoy, modelos oficiales y valor esperado positivo.</p>
+      <p style={{ color: "#64748b", lineHeight: 1.5 }}>Cada registro es una nueva recomendación inmutable. No altera el pronóstico original. Solo se aceptan partidos analizados hoy, modelos oficiales y valor esperado positivo. Si introduces también la cuota del rival de la misma casa y mercado, calcularemos probabilidad sin margen y overround; ese dato es opcional.</p>
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
         <div><label htmlFor="candidate" style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Partido analizado</label><select id="candidate" value={selectedId} onChange={(e) => setSelectedId(e.target.value)} style={inputStyle}><option value="">Seleccionar partido…</option>{candidates.map((c) => <option key={c.prediction_snapshot_id} value={c.prediction_snapshot_id}>{c.sport} · {c.away} vs {c.home} · {c.model_version}</option>)}</select></div>
         <div><label htmlFor="side" style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Selección</label><select id="side" value={side} onChange={(e) => setSide(e.target.value as "home" | "away")} style={inputStyle}><option value="home">{selected?.home || "Local"} ({selected ? (selected.home_probability * 100).toFixed(1) + "%" : "—"})</option><option value="away">{selected?.away || "Visitante"} ({selected ? (selected.away_probability * 100).toFixed(1) + "%" : "—"})</option></select></div>
-        <div><label htmlFor="odds" style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Cuota decimal real</label><input id="odds" type="number" min="1.01" max="1000" step="0.01" value={odds} onChange={(e) => setOdds(e.target.value)} placeholder="Ej. 1.85" style={inputStyle} /></div>
+        <div><label htmlFor="odds" style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Cuota decimal real de tu selección</label><input id="odds" type="number" min="1.01" max="1000" step="0.01" value={odds} onChange={(e) => setOdds(e.target.value)} placeholder="Ej. 1.85" style={inputStyle} /></div>
+        <div><label htmlFor="opponent-odds" style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Cuota del rival (misma casa, opcional)</label><input id="opponent-odds" type="number" min="1.01" max="1000" step="0.01" value={opponentOdds} onChange={(e) => setOpponentOdds(e.target.value)} placeholder="Ej. 2.10" style={inputStyle} /></div>
         <div><label htmlFor="bookmaker" style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Casa / fuente (opcional)</label><input id="bookmaker" value={bookmaker} onChange={(e) => setBookmaker(e.target.value)} placeholder="Nombre de la fuente" style={inputStyle} /></div>
       </div>
       <button type="button" onClick={() => void saveManual()} disabled={loading || !selectedId || !odds || !isToday} style={{ marginTop: 12, minHeight: 44, padding: "10px 16px", border: 0, borderRadius: 8, background: "#0f766e", color: "#fff", fontWeight: 700 }}>Evaluar y guardar snapshot</button>
@@ -173,6 +178,7 @@ export default function BestPlays() {
               </div>
               <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", fontSize: 13 }}>
                 <div><span style={{ color: "#64748b" }}>Prob. implícita de cuota</span><br/><strong>{(r.implied_probability * 100).toFixed(2)}%</strong></div>
+                <div><span style={{ color: "#64748b" }}>Cuota del rival usada</span><br/><strong>{evaluation?.opponent_decimal_odds != null ? evaluation.opponent_decimal_odds.toFixed(2) : "No disponible"}</strong></div>
                 <div><span style={{ color: "#64748b" }}>Prob. mercado sin margen</span><br/><strong>{evaluation?.calculated_no_vig_market_probability != null ? (evaluation.calculated_no_vig_market_probability * 100).toFixed(2) + "%" : "No disponible"}</strong></div>
                 <div><span style={{ color: "#64748b" }}>Diferencia modelo/mercado</span><br/><strong>{evaluation?.model_market_gap_percentage_points != null ? (evaluation.model_market_gap_percentage_points > 0 ? "+" : "") + evaluation.model_market_gap_percentage_points.toFixed(2) + " pp" : "No disponible"}</strong></div>
                 <div><span style={{ color: "#64748b" }}>Margen de mercado</span><br/><strong>{evaluation?.market_overround_percentage != null ? evaluation.market_overround_percentage.toFixed(2) + "%" : "No disponible"}</strong></div>
