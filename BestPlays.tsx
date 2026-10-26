@@ -42,10 +42,18 @@ export default function BestPlays() {
       ]);
       if (!candidateResponse.ok) throw new Error(candidateData?.detail || "No se pudieron cargar los partidos analizados.");
       if (!historyResponse.ok) throw new Error(historyData?.detail || "No se pudo cargar el historial.");
-      setCandidates(candidateData.candidates || []);
+      const nextCandidates: Candidate[] = candidateData.candidates || [];
+      setCandidates(nextCandidates);
       setRecommendations(historyData.recommendations || []);
       setAutomaticConfigured(Boolean(statusData.automatic_odds_configured));
-      setSelectedId((current) => current || candidateData.candidates?.[0]?.prediction_snapshot_id || "");
+      setSelectedId((current) => nextCandidates.some((candidate) => candidate.prediction_snapshot_id === current)
+        ? current
+        : nextCandidates[0]?.prediction_snapshot_id || "");
+      if (!nextCandidates.length && candidateData.diagnostics) {
+        setMessage(`No hay partidos elegibles para ${day}. Snapshots del día: ${candidateData.diagnostics.snapshots_on_date}; no pendientes: ${candidateData.diagnostics.not_pending}; modelo/deporte no compatible: ${candidateData.diagnostics.unsupported_model_or_sport}; probabilidades inválidas: ${candidateData.diagnostics.invalid_probabilities}; nombres faltantes: ${candidateData.diagnostics.missing_team_names}.`);
+      } else {
+        setMessage("");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error cargando el Centro de Mejores Jugadas.");
     } finally { setLoading(false); }
@@ -115,6 +123,7 @@ export default function BestPlays() {
     </section>
     <section style={{ ...cardStyle }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}><h2 style={{ marginTop: 0, fontSize: 19 }}>Mejores jugadas registradas</h2><span style={{ color: "#64748b", fontSize: 13 }}>{recommendations.length} snapshots</span></div>
+      {!candidates.length && <p style={{ color: "#64748b" }}>No hay partidos analizados elegibles para esta fecha. Revisa el diagnóstico mostrado arriba; solo se admiten snapshots pendientes de modelos oficiales con probabilidades y nombres válidos.</p>}
       {!recommendations.length && <p style={{ color: "#64748b" }}>Todavía no hay recomendaciones guardadas para esta fecha. Se mostrarán solo selecciones con datos suficientes y valor esperado positivo.</p>}
       <div style={{ display: "grid", gap: 10 }}>
         {recommendations.map((r, index) => <article key={r.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 }}>
