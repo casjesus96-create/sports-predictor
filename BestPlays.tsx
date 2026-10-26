@@ -85,6 +85,7 @@ export default function BestPlays() {
   }
 
   const selected = candidates.find((c) => c.prediction_snapshot_id === selectedId);
+  const isToday = day === new Date().toISOString().slice(0, 10);
   return <main style={{ maxWidth: 980, margin: "0 auto", padding: 16, color: "inherit" }}>
     <header style={{ marginBottom: 18 }}>
       <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 800, letterSpacing: 1.4, color: "#64748b" }}>SPORTS PREDICTOR · RANKING TRANSVERSAL</p>
@@ -95,9 +96,9 @@ export default function BestPlays() {
       <div><label htmlFor="best-day" style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Fecha UTC de análisis</label><input id="best-day" type="date" value={day} onChange={(e) => setDay(e.target.value)} style={inputStyle} /></div>
       <div style={{ alignSelf: "end", display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" onClick={() => void load()} disabled={loading} style={{ minHeight: 44, padding: "9px 13px", border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff", color: "#0f172a", fontWeight: 700 }}>Actualizar</button>
-        <button type="button" onClick={() => void generateAutomatic()} disabled={loading || !automaticConfigured} style={{ minHeight: 44, padding: "9px 13px", border: 0, borderRadius: 8, background: automaticConfigured ? "#2563eb" : "#94a3b8", color: "#fff", fontWeight: 700 }}>{loading ? "Procesando…" : "Buscar cuotas automáticas"}</button>
+        <button type="button" onClick={() => void generateAutomatic()} disabled={loading || !automaticConfigured || !isToday} style={{ minHeight: 44, padding: "9px 13px", border: 0, borderRadius: 8, background: automaticConfigured ? "#2563eb" : "#94a3b8", color: "#fff", fontWeight: 700 }}>{loading ? "Procesando…" : "Buscar cuotas automáticas"}</button>
       </div>
-      <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "#64748b" }}>{automaticConfigured ? "Proveedor automático configurado. Las cuotas se consultan en tiempo real y se guardan con su fuente." : "Cuotas automáticas no configuradas: falta ODDS_API_KEY en el servidor. Puedes introducir cuotas manuales; no se simulará una fuente automática."}</div>
+      <div style={{ gridColumn: "1 / -1", fontSize: 13, color: "#64748b" }}>{!isToday ? "Fecha histórica: solo consulta. Para evitar sesgo retrospectivo, no se crean nuevas recomendaciones sobre partidos analizados en fechas anteriores." : automaticConfigured ? "Proveedor automático configurado. Las cuotas se consultan en tiempo real y se guardan con su fuente." : "Cuotas automáticas no configuradas: falta ODDS_API_KEY en el servidor. Puedes introducir cuotas manuales; no se simulará una fuente automática."}</div>
     </section>
     {error && <div role="alert" style={{ ...cardStyle, borderColor: "#dc2626", color: "#991b1b", marginBottom: 12 }}>{error}</div>}
     {message && <div role="status" style={{ ...cardStyle, marginBottom: 12 }}>{message}</div>}
@@ -110,7 +111,7 @@ export default function BestPlays() {
         <div><label htmlFor="odds" style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Cuota decimal real</label><input id="odds" type="number" min="1.01" max="1000" step="0.01" value={odds} onChange={(e) => setOdds(e.target.value)} placeholder="Ej. 1.85" style={inputStyle} /></div>
         <div><label htmlFor="bookmaker" style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Casa / fuente (opcional)</label><input id="bookmaker" value={bookmaker} onChange={(e) => setBookmaker(e.target.value)} placeholder="Nombre de la fuente" style={inputStyle} /></div>
       </div>
-      <button type="button" onClick={() => void saveManual()} disabled={loading || !selectedId || !odds} style={{ marginTop: 12, minHeight: 44, padding: "10px 16px", border: 0, borderRadius: 8, background: "#0f766e", color: "#fff", fontWeight: 700 }}>Evaluar y guardar snapshot</button>
+      <button type="button" onClick={() => void saveManual()} disabled={loading || !selectedId || !odds || !isToday} style={{ marginTop: 12, minHeight: 44, padding: "10px 16px", border: 0, borderRadius: 8, background: "#0f766e", color: "#fff", fontWeight: 700 }}>Evaluar y guardar snapshot</button>
     </section>
     <section style={{ ...cardStyle }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}><h2 style={{ marginTop: 0, fontSize: 19 }}>Mejores jugadas registradas</h2><span style={{ color: "#64748b", fontSize: 13 }}>{recommendations.length} snapshots</span></div>
