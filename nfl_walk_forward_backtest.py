@@ -4,6 +4,7 @@ import gzip
 import io
 import math
 import zlib
+import threading
 from datetime import datetime, timezone
 
 import requests
@@ -13,6 +14,10 @@ from nfl_data_coverage import NFLVERSE_RELEASES
 from nfl_prediction import MODEL_VERSION, calculate_probability
 
 TIMEOUT_SECONDS = 25
+# Cache completed season feature maps for this process so repeat evaluations do not
+# redownload and reparse large NFLverse play-by-play archives.
+_SEASON_METRICS_CACHE = {}
+_SEASON_METRICS_CACHE_LOCK = threading.Lock()
 FEATURES = (
     "passing_epa",
     "rushing_epa",
@@ -265,7 +270,7 @@ def _score(probabilities, outcomes):
     return {"sample_size": len(outcomes), "accuracy_pct": round(100 * correct / len(outcomes), 2), "brier_score": round(sum(brier)/len(brier), 6), "log_loss": round(sum(logloss)/len(logloss), 6), "calibration": calibration}
 
 
-def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_training_games=100, session=requests):
+def run_nfl_walk_forward_backtest(start_season=2023, end_season=2025, min_training_games=100, session=requests, progress_callback=None):
     """Compare the frozen official model with a fitted experimental model without persistence."""
     if start_season < 1999 or end_season > 2100 or start_season > end_season:
         raise ValueError("Rango de temporadas no válido.")
@@ -277,13 +282,30 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2026, min_traini
         games = load_schedule(season=season)
         schedules[season] = games
         completed = {str(g["game_id"]): g for g in games if g.get("game_id") and g.get("game_type") == "REG" and g.get("home_score") is not None and g.get("away_score") is not None and _time(g.get("kickoff"))}
-        try:
-            team_rows, pbp_rows = _source_rows(session, season)
-            season_metrics, pbp_rows_count = _metric_map(team_rows, pbp_rows, completed)
-            metrics.update(season_metrics)
-            source_status.append({"season": season, "available": True, "team_rows": len(team_rows), "pbp_rows": pbp_rows_count, "error": None})
-        except (requests.RequestException, OSError, EOFError, csv.Error, ValueError, zlib.error) as exc:
-            source_status.append({"season": season, "available": False, "team_rows": 0, "pbp_rows": 0, "error": type(exc).__name__})
+        with _SEASON_METRICS_CACHE_LOCK:
+            cached = _SEASON_METRICS_CACHE.get(season)
+        if cached is not None:
+            metrics.update(cached["metrics"])
+            source_status.append({**cached["status"], "cached": True})
+            if progress_callback:
+                progress_callback(f"Ganador: temporada {season} reutilizada desde caché ({len(cached['metrics'])} combinaciones equipo-partido).")
+        else:
+            if progress_callback:
+                progress_callback(f"Ganador: descargando y procesando estadísticas de la temporada {season} (incluye jugada por jugada).")
+            try:
+                team_rows, pbp_rows = _source_rows(session, season)
+                season_metrics, pbp_rows_count = _metric_map(team_rows, pbp_rows, completed)
+                metrics.update(season_metrics)
+                status = {"season": season, "available": True, "team_rows": len(team_rows), "pbp_rows": pbp_rows_count, "error": None, "cached": False}
+                source_status.append(status)
+                with _SEASON_METRICS_CACHE_LOCK:
+                    _SEASON_METRICS_CACHE[season] = {"metrics": season_metrics, "status": status}
+                if progress_callback:
+                    progress_callback(f"Ganador: temporada {season} lista; {len(season_metrics)} combinaciones equipo-partido procesadas.")
+            except (requests.RequestException, OSError, EOFError, csv.Error, ValueError, zlib.error) as exc:
+                source_status.append({"season": season, "available": False, "team_rows": 0, "pbp_rows": 0, "error": type(exc).__name__, "cached": False})
+                if progress_callback:
+                    progress_callback(f"Ganador: error al descargar/procesar temporada {season} ({type(exc).__name__}).")
         for game in games:
             if game.get("game_type") == "REG" and game.get("home") and game.get("away") and _time(game.get("kickoff")):
                 all_games.append(game)
