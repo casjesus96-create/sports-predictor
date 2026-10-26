@@ -35,6 +35,8 @@ class ManualRecommendationRequest(BaseModel):
     analysis_date: str | None = None
     selected_side: Literal["home", "away"]
     decimal_odds: float = Field(gt=1, le=1000)
+    # Optional rival quote from the same bookmaker/market enables no-vig comparison.
+    opponent_decimal_odds: float | None = Field(default=None, gt=1, le=1000)
     bookmaker: str = Field(default="Entrada manual", min_length=1, max_length=120)
 
 
@@ -441,7 +443,7 @@ def create_manual_best_play(request: ManualRecommendationRequest):
         side = request.selected_side
         selected_team = snapshot["home"] if side == "home" else snapshot["away"]
         payload = _create_recommendation(snapshot, side, request.decimal_odds, "manual",
-            request.bookmaker.strip(), datetime.now(UTC).isoformat())
+            request.bookmaker.strip(), datetime.now(UTC).isoformat(), request.opponent_decimal_odds)
         if not payload:
             return {"success": True, "saved": False, "recommendation": None,
                 "message": "No se guardó: el valor esperado no es positivo o la calidad de datos es inferior a 50/100."}

@@ -1,4 +1,4 @@
-from best_plays_api import _eligible_snapshot, _market_quote, _normalize, _ranking_score
+from best_plays_api import _create_recommendation, _eligible_snapshot, _market_quote, _normalize, _ranking_score
 
 
 def _snapshot(model="NBA-1.1.0", sport="NBA", quality=85):
@@ -54,3 +54,30 @@ def test_team_extraction_supports_legacy_team_name_fields():
         "away": {"display_name": "Miami Heat"},
     }}}
     assert _teams(row) == ("Boston Celtics", "Miami Heat")
+
+
+def test_manual_rival_odds_enable_no_vig_market_comparison():
+    snapshot = _eligible_snapshot(_snapshot())
+    recommendation = _create_recommendation(
+        snapshot, "home", 1.8, "manual", "Book A",
+        "2026-10-26T12:00:00+00:00", opponent_odds=2.1,
+    )
+    assert recommendation is not None
+    evaluation = recommendation["recommendation_payload"]["evaluation"]
+    assert evaluation["opponent_decimal_odds"] == 2.1
+    assert evaluation["calculated_no_vig_market_probability"] == 0.538462
+    assert evaluation["market_overround_percentage"] == 3.175
+    assert evaluation["model_market_gap_percentage_points"] is not None
+
+
+def test_manual_recommendation_without_rival_odds_does_not_invent_market_values():
+    snapshot = _eligible_snapshot(_snapshot())
+    recommendation = _create_recommendation(
+        snapshot, "home", 1.8, "manual", "Book A",
+        "2026-10-26T12:00:00+00:00",
+    )
+    assert recommendation is not None
+    evaluation = recommendation["recommendation_payload"]["evaluation"]
+    assert evaluation["opponent_decimal_odds"] is None
+    assert evaluation["calculated_no_vig_market_probability"] is None
+    assert evaluation["market_overround_percentage"] is None
