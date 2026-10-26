@@ -38,6 +38,11 @@ _ACTIVE_EVALUATION_ID = None
 
 
 def _run_walk_forward_evaluation_job(job_id, start_season, end_season, min_training_games):
+    def report(message):
+        with _EVALUATION_LOCK:
+            job = _EVALUATION_JOBS.get(job_id)
+            if job and job.get("status") == "running":
+                job["message"] = message
     global _ACTIVE_EVALUATION_ID
     try:
         with _EVALUATION_LOCK:
@@ -49,6 +54,7 @@ def _run_walk_forward_evaluation_job(job_id, start_season, end_season, min_train
             start_season=start_season,
             end_season=end_season,
             min_training_games=min_training_games,
+            progress_callback=report,
         )
         with _EVALUATION_LOCK:
             _EVALUATION_JOBS[job_id]["stage"] = "score_lines"
@@ -58,6 +64,7 @@ def _run_walk_forward_evaluation_job(job_id, start_season, end_season, min_train
         score = run_nfl_score_walk_forward(
             start_season=start_season,
             end_season=end_season,
+            progress_callback=report,
         )
         with _EVALUATION_LOCK:
             _EVALUATION_JOBS[job_id].update({
@@ -298,7 +305,7 @@ def reproject_nfl_score_lines(game_id: str, prediction_id: str = None):
 
 
 @router.get("/score-walk-forward")
-def nfl_score_walk_forward(start_season: int = 2023, end_season: int = 2026):
+def nfl_score_walk_forward(start_season: int = 2023, end_season: int = 2025):
     """Evalúa margen, total y dirección frente al total de mercado cronológicamente; no persiste predicciones."""
     if start_season < 1999 or end_season > 2100 or start_season > end_season:
         raise HTTPException(status_code=400, detail="El rango de temporadas no es válido.")
