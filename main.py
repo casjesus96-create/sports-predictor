@@ -10,6 +10,7 @@ from mlb_backtest_api import router as mlb_backtest_router
 from tennis_api import router as tennis_router
 from tennis_history_api import router as tennis_history_router
 from decision_api import router as decision_router
+from best_plays_api import router as best_plays_router
 from prediction_audit_api import router as prediction_audit_router
 from football_api import router as football_router
 from football_evaluation_api import router as football_evaluation_router
@@ -45,6 +46,7 @@ app.include_router(mlb_backtest_router)
 app.include_router(tennis_router)
 app.include_router(tennis_history_router)
 app.include_router(decision_router)
+app.include_router(best_plays_router)
 app.include_router(prediction_audit_router)
 app.include_router(football_router)
 app.include_router(football_evaluation_router)
