@@ -720,7 +720,7 @@ def nfl_status():
 
 @router.post("/walk-forward-evaluation")
 def start_nfl_walk_forward_evaluation(
-    start_season: int = 2023,
+    start_season: int = 2025,
     end_season: int = 2025,
     min_training_games: int = 100,
 ):
@@ -784,7 +784,7 @@ def get_nfl_walk_forward_evaluation(job_id: str):
 
 @router.get("/walk-forward-backtest")
 def nfl_walk_forward_backtest(
-    start_season: int = 2023,
+    start_season: int = 2025,
     end_season: int = 2025,
     min_training_games: int = 100,
 ):
