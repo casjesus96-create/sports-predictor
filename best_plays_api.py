@@ -267,6 +267,44 @@ def _save_immutable(payload: dict) -> dict:
     return rows[0]
 
 
+@router.get("/storage-check")
+def best_plays_storage_check():
+    """Diagnose Supabase connectivity without exposing credentials or row data."""
+    result = {
+        "success": True,
+        "supabase_env_configured": bool(os.getenv("SUPABASE_URL", "").strip()
+            and os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()),
+        "prediction_snapshots": "not_checked",
+        "best_play_recommendations": "not_checked",
+        "recommendation_table_hint": None,
+    }
+    try:
+        client = get_supabase_client()
+        client.table("prediction_snapshots").select("id").limit(1).execute()
+        result["prediction_snapshots"] = "ok"
+    except Exception as exc:
+        logger.exception("Best Plays storage check failed for prediction_snapshots")
+        result["success"] = False
+        result["prediction_snapshots"] = "error"
+        result["recommendation_table_hint"] = f"{type(exc).__name__}: {str(exc)[:240]}"
+        return result
+    try:
+        client.table("best_play_recommendations").select("id").limit(1).execute()
+        result["best_play_recommendations"] = "ok"
+    except Exception as exc:
+        logger.exception("Best Plays storage check failed for best_play_recommendations")
+        result["success"] = False
+        result["best_play_recommendations"] = "error"
+        raw = str(exc)
+        if any(token in raw.casefold() for token in ("does not exist", "could not find the table", "schema cache", "42p01", "pgrst205")):
+            result["recommendation_table_hint"] = "No se encuentra best_play_recommendations en el esquema público. Aplica la migración SQL del Centro de Mejores Jugadas en el proyecto Supabase conectado a Render."
+        elif any(token in raw.casefold() for token in ("permission denied", "row-level security", "42501")):
+            result["recommendation_table_hint"] = "Supabase rechazó el acceso a best_play_recommendations. Verifica la variable de servicio en Render y los permisos service_role de la migración."
+        else:
+            result["recommendation_table_hint"] = f"{type(exc).__name__}: {raw[:240]}"
+    return result
+
+
 @router.get("/status")
 def best_plays_status():
     return {
@@ -414,7 +452,14 @@ def create_manual_best_play(request: ManualRecommendationRequest):
         raise
     except Exception as exc:
         logger.exception("Could not save manual Best Play")
-        raise HTTPException(status_code=503, detail="No se pudo guardar la recomendación manual. Comprueba la migración SQL y Supabase.") from exc
+        raw_error = str(exc)
+        if any(token in raw_error.casefold() for token in ("does not exist", "could not find the table", "schema cache", "42p01", "pgrst205")):
+            detail = "La tabla best_play_recommendations no existe en el esquema conectado. Aplica la migración SQL en el proyecto Supabase que usa Render."
+        elif any(token in raw_error.casefold() for token in ("permission denied", "row-level security", "42501")):
+            detail = "Supabase rechazó el INSERT. Verifica la variable de servicio en Render y los permisos service_role de la migración."
+        else:
+            detail = f"No se pudo guardar la recomendación manual ({type(exc).__name__}). Revisa GET /api/v1/best-plays/storage-check y los logs del backend."
+        raise HTTPException(status_code=503, detail=detail) from exc
 
 
 @router.get("/history")
