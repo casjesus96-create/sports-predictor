@@ -32,6 +32,7 @@ OFFICIAL_MODELS = {"MLB": "2.0.0-matchup", "NBA": "NBA-1.1.0", "NFL": "NFL-1.0.0
 
 class ManualRecommendationRequest(BaseModel):
     prediction_snapshot_id: str = Field(min_length=1, max_length=100)
+    analysis_date: str | None = None
     selected_side: Literal["home", "away"]
     decimal_odds: float = Field(gt=1, le=1000)
     bookmaker: str = Field(default="Entrada manual", min_length=1, max_length=120)
@@ -212,7 +213,21 @@ def _create_recommendation(snapshot: dict, side: str, odds: float, odds_source: 
 
 
 def _save_immutable(payload: dict) -> dict:
-    response = get_supabase_client().table("best_play_recommendations").insert(payload).execute()
+    client = get_supabase_client()
+    # Repeated polling of the same quote is idempotent. Changed quotes and
+    # new manual observations create new append-only rows.
+    if payload.get("odds_observed_at"):
+        existing = (client.table("best_play_recommendations").select("*")
+            .eq("prediction_snapshot_id", payload["prediction_snapshot_id"])
+            .eq("selected_side", payload["selected_side"])
+            .eq("odds_source", payload["odds_source"])
+            .eq("bookmaker", payload["bookmaker"])
+            .eq("decimal_odds", payload["decimal_odds"])
+            .eq("odds_observed_at", payload["odds_observed_at"])
+            .limit(1).execute())
+        if existing.data:
+            return existing.data[0]
+    response = client.table("best_play_recommendations").insert(payload).execute()
     rows = response.data or []
     if not rows:
         raise RuntimeError("Supabase no devolvió la recomendación guardada.")
@@ -307,8 +322,13 @@ def create_manual_best_play(request: ManualRecommendationRequest):
         snapshot = _eligible_snapshot(rows[0])
         if not snapshot:
             raise HTTPException(status_code=409, detail="Solo se aceptan snapshots pendientes de un modelo oficial activo con probabilidades válidas.")
-        if _snapshot_date(rows[0]) != datetime.now(UTC).date().isoformat():
-            raise HTTPException(status_code=409, detail="Solo puedes recomendar partidos analizados hoy (UTC).")
+        analysis_day = request.analysis_date or datetime.now(UTC).date().isoformat()
+        try:
+            date.fromisoformat(analysis_day)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="analysis_date debe tener formato YYYY-MM-DD.") from exc
+        if _snapshot_date(rows[0]) != analysis_day:
+            raise HTTPException(status_code=409, detail="El snapshot no fue analizado en la fecha seleccionada (UTC).")
         side = request.selected_side
         selected_team = snapshot["home"] if side == "home" else snapshot["away"]
         payload = _create_recommendation(snapshot, side, request.decimal_odds, "manual",
@@ -334,9 +354,10 @@ def best_plays_history(day: str = Query(default=None, alias="date"), limit: int 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="date debe tener formato YYYY-MM-DD.") from exc
     try:
+        next_day = date.fromordinal(date.fromisoformat(selected_day).toordinal() + 1).isoformat()
         response = (get_supabase_client().table("best_play_recommendations").select("*")
             .gte("created_at", f"{selected_day}T00:00:00+00:00")
-            .lt("created_at", f"{selected_day}T00:00:00+00:00")
+            .lt("created_at", f"{next_day}T00:00:00+00:00")
             .order("ranking_score", desc=True).limit(limit).execute())
         return {"success": True, "date": selected_day, "total": len(response.data or []),
             "recommendations": response.data or []}
