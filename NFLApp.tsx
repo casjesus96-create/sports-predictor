@@ -678,8 +678,56 @@ export default function NFLApp() {
             <TeamFactor label="Dirección total vs línea" value={evaluation?.score?.market_total?.market_total_direction_accuracy_pct == null ? "—" : `${evaluation.score.market_total.market_total_direction_accuracy_pct}%`} />
             <TeamFactor label="Muestra con total de mercado" value={evaluation?.score?.market_total?.sample_size ?? "—"} />
           </div>
+          <h3 className="detail-heading">Ganador · métricas por temporada</h3>
+          {Object.entries(evaluation?.winner?.by_season || {}).map(([season, result]: [string, any]) => (
+            <div className="panel" key={season}>
+              <b>Temporada {season} · n={result?.sample_size ?? 0}</b>
+              <div className="factor-grid">
+                <TeamFactor label="Brier oficial" value={number(result?.official?.brier_score, 4)} />
+                <TeamFactor label="Brier experimental" value={number(result?.experimental?.brier_score, 4)} />
+                <TeamFactor label="Log loss oficial" value={number(result?.official?.log_loss, 4)} />
+                <TeamFactor label="Log loss experimental" value={number(result?.experimental?.log_loss, 4)} />
+              </div>
+            </div>
+          ))}
+          <h3 className="detail-heading">Ganador · niveles de confianza</h3>
+          {Object.entries(evaluation?.winner?.by_confidence || {}).map(([bucket, result]: [string, any]) => (
+            <div className="panel" key={bucket}>
+              <b>{bucket} · n={result?.sample_size ?? 0}</b>
+              <div className="factor-grid">
+                <TeamFactor label="Brier oficial" value={number(result?.official?.brier_score, 4)} />
+                <TeamFactor label="Brier experimental" value={number(result?.experimental?.brier_score, 4)} />
+                <TeamFactor label="Log loss oficial" value={number(result?.official?.log_loss, 4)} />
+                <TeamFactor label="Log loss experimental" value={number(result?.experimental?.log_loss, 4)} />
+              </div>
+            </div>
+          ))}
+          <h3 className="detail-heading">Margen y total · resultados por temporada</h3>
+          {Object.entries(evaluation?.score?.by_season || {}).map(([season, result]: [string, any]) => (
+            <div className="panel" key={season}>
+              <b>Temporada {season} · n={result?.enriched?.sample_size ?? 0}</b>
+              <div className="factor-grid">
+                <TeamFactor label="MAE margen · base" value={number(result?.baseline?.margin_mae, 2)} />
+                <TeamFactor label="MAE margen · enriquecido" value={number(result?.enriched?.margin_mae, 2)} />
+                <TeamFactor label="MAE total · base" value={number(result?.baseline?.total_mae, 2)} />
+                <TeamFactor label="MAE total · enriquecido" value={number(result?.enriched?.total_mae, 2)} />
+              </div>
+            </div>
+          ))}
+          <h3 className="detail-heading">Margen y total · niveles de confianza</h3>
+          {Object.entries(evaluation?.score?.by_confidence || {}).map(([bucket, result]: [string, any]) => (
+            <div className="panel" key={bucket}>
+              <b>{bucket} · n={result?.enriched?.sample_size ?? 0}</b>
+              <div className="factor-grid">
+                <TeamFactor label="MAE margen · base" value={number(result?.baseline?.margin_mae, 2)} />
+                <TeamFactor label="MAE margen · enriquecido" value={number(result?.enriched?.margin_mae, 2)} />
+                <TeamFactor label="MAE total · base" value={number(result?.baseline?.total_mae, 2)} />
+                <TeamFactor label="MAE total · enriquecido" value={number(result?.enriched?.total_mae, 2)} />
+              </div>
+            </div>
+          ))}
           <p className="model-note">
-            Positivo en “Mejora MAE” significa menor error del candidato. La precisión de dirección over/under no es ROI. Revisa las métricas por temporada y confianza en la respuesta del endpoint antes de sacar conclusiones; no se activa el candidato automáticamente.
+            Positivo en “Mejora MAE” significa menor error del candidato. La precisión de dirección over/under no es ROI. Los grupos pequeños son descriptivos, no evidencia suficiente para activar el candidato. El modelo oficial no se modifica automáticamente.
           </p>
         </section>
       )}
