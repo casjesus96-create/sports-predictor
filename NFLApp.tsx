@@ -433,7 +433,7 @@ export default function NFLApp() {
     setEvaluationStatus("Solicitando que el servidor inicie la evaluación histórica…");
     try {
       const started = await request(
-        "/nfl/walk-forward-evaluation?start_season=2025&end_season=2025&min_training_games=100",
+        "/nfl/walk-forward-evaluation?start_season=2023&end_season=2025&min_training_games=100",
         { method: "POST" }
       );
       if (!started?.success || !started?.job_id) {
@@ -708,7 +708,11 @@ export default function NFLApp() {
             <TeamFactor label="MAE total · base" value={number(evaluation?.score?.baseline?.total_mae, 2)} />
             <TeamFactor label="MAE total · enriquecido" value={number(evaluation?.score?.enriched?.total_mae, 2)} />
             <TeamFactor label="Mejora MAE margen" value={number(evaluation?.score?.comparison?.margin_mae_improvement, 2)} />
+            <TeamFactor label="Mejora margen (%)" value={evaluation?.score?.comparison?.margin_mae_improvement_pct == null ? "—" : `${number(evaluation.score.comparison.margin_mae_improvement_pct, 2)}%`} />
+            <TeamFactor label="IC95% mejora margen" value={evaluation?.score?.comparison?.margin_mae_improvement_ci95 ? `${number(evaluation.score.comparison.margin_mae_improvement_ci95.lower, 2)} a ${number(evaluation.score.comparison.margin_mae_improvement_ci95.upper, 2)}` : "—"} />
             <TeamFactor label="Mejora MAE total" value={number(evaluation?.score?.comparison?.total_mae_improvement, 2)} />
+            <TeamFactor label="Mejora total (%)" value={evaluation?.score?.comparison?.total_mae_improvement_pct == null ? "—" : `${number(evaluation.score.comparison.total_mae_improvement_pct, 2)}%`} />
+            <TeamFactor label="IC95% mejora total" value={evaluation?.score?.comparison?.total_mae_improvement_ci95 ? `${number(evaluation.score.comparison.total_mae_improvement_ci95.lower, 2)} a ${number(evaluation.score.comparison.total_mae_improvement_ci95.upper, 2)}` : "—"} />
             <TeamFactor label="Dirección total vs línea" value={evaluation?.score?.market_total?.market_total_direction_accuracy_pct == null ? "—" : `${evaluation.score.market_total.market_total_direction_accuracy_pct}%`} />
             <TeamFactor label="Muestra con total de mercado" value={evaluation?.score?.market_total?.sample_size ?? "—"} />
           </div>
