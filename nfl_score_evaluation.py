@@ -2,46 +2,74 @@
 from __future__ import annotations
 
 import math
+from bisect import bisect_left
 from collections import defaultdict
 
 from nfl_client import load_schedule
 from nfl_walk_forward_backtest import _baseline, _time
 
 
-def _stats_before(team, cutoff, games):
-    prior = []
+def _build_team_history(games):
+    """Build chronological team score histories and prefix sums once (O(n log n))."""
+    raw = defaultdict(list)
     for game in games:
-        kickoff = _time(game.get("kickoff"))
         if (
-            kickoff is None or kickoff >= cutoff
-            or game.get("game_type") != "REG"
+            game.get("game_type") != "REG"
             or game.get("home_score") is None
             or game.get("away_score") is None
-            or team not in (game.get("home"), game.get("away"))
         ):
             continue
-        is_home = game.get("home") == team
-        scored = float(game["home_score"] if is_home else game["away_score"])
-        allowed = float(game["away_score"] if is_home else game["home_score"])
-        prior.append((kickoff, scored, allowed))
-    prior.sort(key=lambda item: item[0])
-    if not prior:
+        kickoff = _time(game.get("kickoff"))
+        if kickoff is None:
+            continue
+        home, away = game.get("home"), game.get("away")
+        if not home or not away:
+            continue
+        hs, aws = float(game["home_score"]), float(game["away_score"])
+        raw[home].append((kickoff, hs, aws))
+        raw[away].append((kickoff, aws, hs))
+
+    indexed = {}
+    for team, rows in raw.items():
+        rows.sort(key=lambda row: row[0])
+        times = [row[0] for row in rows]
+        scored_prefix = [0.0]
+        allowed_prefix = [0.0]
+        for _, scored, allowed in rows:
+            scored_prefix.append(scored_prefix[-1] + scored)
+            allowed_prefix.append(allowed_prefix[-1] + allowed)
+        indexed[team] = {
+            "rows": rows,
+            "times": times,
+            "scored_prefix": scored_prefix,
+            "allowed_prefix": allowed_prefix,
+        }
+    return indexed
+
+
+def _stats_before(team, cutoff, team_history):
+    history = team_history.get(team)
+    if not history:
         return None
-    recent = prior[-5:]
-    avg = lambda values: sum(values) / len(values)
+    n = bisect_left(history["times"], cutoff)
+    if n == 0:
+        return None
+    recent_start = max(0, n - 5)
+    scored = history["scored_prefix"]
+    allowed = history["allowed_prefix"]
+    recent_n = n - recent_start
     return {
-        "games": len(prior),
-        "points_for": avg([x[1] for x in prior]),
-        "points_against": avg([x[2] for x in prior]),
-        "recent_points_for": avg([x[1] for x in recent]),
-        "recent_points_against": avg([x[2] for x in recent]),
+        "games": n,
+        "points_for": scored[n] / n,
+        "points_against": allowed[n] / n,
+        "recent_points_for": (scored[n] - scored[recent_start]) / recent_n,
+        "recent_points_against": (allowed[n] - allowed[recent_start]) / recent_n,
     }
 
-
-def _projections(game, history):
+def _projections(game, team_history):
     kickoff = _time(game.get("kickoff"))
-    home = _stats_before(game["home"], kickoff, history)
-    away = _stats_before(game["away"], kickoff, history)
+    home = _stats_before(game["home"], kickoff, team_history)
+    away = _stats_before(game["away"], kickoff, team_history)
     if not home or not away:
         return None
     base_home = 0.55 * home["points_for"] + 0.45 * away["points_against"] + 1.5
@@ -72,7 +100,7 @@ def _summary(rows):
     }
 
 
-def run_nfl_score_walk_forward(start_season=2023, end_season=2026):
+def run_nfl_score_walk_forward(start_season=2023, end_season=2025, progress_callback=None):
     """Score every final game in chronological order using only earlier scores."""
     if start_season < 1999 or end_season > 2100 or start_season > end_season:
         raise ValueError("Rango de temporadas no válido.")
@@ -80,6 +108,8 @@ def run_nfl_score_walk_forward(start_season=2023, end_season=2026):
     for season in range(start_season, end_season + 1):
         all_games.extend(load_schedule(season=season))
     all_games.sort(key=lambda g: _time(g.get("kickoff")) or _time("1970-01-01T00:00:00Z"))
+    team_history = _build_team_history(all_games)
+    all_times = [_time(g.get("kickoff")) or _time("1970-01-01T00:00:00Z") for g in all_games]
 
     baseline_rows, enriched_rows = [], []
     by_season = defaultdict(lambda: {"baseline": [], "enriched": []})
@@ -88,7 +118,10 @@ def run_nfl_score_walk_forward(start_season=2023, end_season=2026):
     skipped = {"no_final_score": 0, "no_prior_history": 0, "no_market_total": 0}
     evaluated = []
 
-    for target in all_games:
+    total_targets = len(all_games)
+    for target_index, target in enumerate(all_games, start=1):
+        if progress_callback and (target_index == 1 or target_index % 100 == 0 or target_index == total_targets):
+            progress_callback(f"Margen/total: evaluando partido {target_index} de {total_targets}.")
         if target.get("game_type") != "REG" or not target.get("home") or not target.get("away"):
             continue
         hs, aws = target.get("home_score"), target.get("away_score")
@@ -99,8 +132,9 @@ def run_nfl_score_walk_forward(start_season=2023, end_season=2026):
         if cutoff is None:
             continue
         # Strict chronological cutoff. All records at/after kickoff are excluded.
-        prior = [g for g in all_games if _time(g.get("kickoff")) and _time(g["kickoff"]) < cutoff]
-        projections = _projections(target, prior)
+        cutoff_index = bisect_left(all_times, cutoff)
+        prior = all_games[:cutoff_index]
+        projections = _projections(target, team_history)
         if not projections:
             skipped["no_prior_history"] += 1
             continue
