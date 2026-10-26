@@ -127,17 +127,6 @@ def _paired_bootstrap_ci(differences, iterations=2000, seed=20261026):
     return {"lower": round(lower, 4), "upper": round(upper, 4), "iterations": iterations}
 
 
-def _paired_error_differences(baseline_rows, enriched_rows, field):
-    """Return baseline absolute error minus candidate absolute error per same game."""
-    if len(baseline_rows) != len(enriched_rows):
-        raise ValueError("La comparación debe usar exactamente la misma muestra de partidos.")
-    return [
-        abs(float(base[field.replace("pred_", "pred_")]) - float(base[field.replace("pred_", "actual_")]))
-        - abs(float(candidate[field.replace("pred_", "pred_")]) - float(candidate[field.replace("pred_", "actual_")]))
-        for base, candidate in zip(baseline_rows, enriched_rows)
-    ]
-
-
 def run_nfl_score_walk_forward(start_season=2023, end_season=2025, progress_callback=None):
     """Score every final game in chronological order using only earlier scores."""
     if start_season < 1999 or end_season > 2100 or start_season > end_season:
