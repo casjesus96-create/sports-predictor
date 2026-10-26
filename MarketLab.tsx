@@ -53,7 +53,7 @@ export default function MarketLab() {
    <h3 style={{margin:0}}>Consulta MLB en vivo</h3>
    <p style={{margin:0,color:"#475569",fontSize:13}}>Permite consultar el boxscore aunque el análisis pregame esté bloqueado por el inicio del partido. No vuelve a ejecutar el modelo oficial ni altera el historial.</p>
    <label style={{display:"grid",gap:6}}>ID del partido MLB<input inputMode="numeric" value={liveGameId} onChange={e=>setLiveGameId(e.target.value)} placeholder="Ej. 849816" style={{minHeight:44,padding:8,border:"1px solid #cbd5e1",borderRadius:8}}/></label>
-   <button type="button" onClick={loadLiveReport} disabled={liveLoading} style={{minHeight:44,border:0,borderRadius:8,padding:10,background:"#1d4ed8",color:"#fff",fontWeight:700,opacity:liveLoading?.65:1}}>{liveLoading?"Consultando MLB…":"Consultar bateadores en vivo"}</button>
+   <button type="button" onClick={loadLiveReport} disabled={liveLoading} style={{minHeight:44,border:0,borderRadius:8,padding:10,background:"#1d4ed8",color:"#fff",fontWeight:700,opacity:liveLoading ? 0.65 : 1}}>{liveLoading?"Consultando MLB…":"Consultar bateadores en vivo"}</button>
    {liveError&&<p role="alert" style={{margin:0,color:"#b91c1c"}}>{liveError}</p>}
    {liveReport&&<div style={{display:"grid",gap:10}}>
     <article style={panel}><strong>{liveReport.teams.find(t=>t.side==="away")?.team_name||"Visitante"} {liveReport.away_score??"—"} — {liveReport.home_score??"—"} {liveReport.teams.find(t=>t.side==="home")?.team_name||"Local"}</strong>
