@@ -58,9 +58,9 @@ def _teams(row: dict) -> tuple[str, str]:
     home = game.get("home") or game.get("home_team") or game.get("homeTeam") or {}
     away = game.get("away") or game.get("away_team") or game.get("awayTeam") or {}
     if isinstance(home, dict):
-        home = home.get("name") or home.get("full_name") or home.get("displayName") or home.get("abbreviation")
+        home = home.get("name") or home.get("full_name") or home.get("displayName") or home.get("display_name") or home.get("team_name") or home.get("short_name") or home.get("abbreviation") or home.get("team")
     if isinstance(away, dict):
-        away = away.get("name") or away.get("full_name") or away.get("displayName") or away.get("abbreviation")
+        away = away.get("name") or away.get("full_name") or away.get("displayName") or away.get("display_name") or away.get("team_name") or away.get("short_name") or away.get("abbreviation") or away.get("team")
     return str(home or "").strip(), str(away or "").strip()
 
 
@@ -133,13 +133,25 @@ def _eligible_snapshot(row: dict) -> dict | None:
     }
 
 
-def _load_snapshots(day: str) -> list[dict]:
+def _load_snapshot_rows(day: str) -> list[dict]:
+    """Load only snapshots created on the selected UTC day; normalize status in Python.
+
+    Do not filter result_status in PostgREST: legacy rows can contain different
+    casing, and that would silently make an otherwise valid analyzed game vanish.
+    """
+    next_day = date.fromordinal(date.fromisoformat(day).toordinal() + 1).isoformat()
     response = (get_supabase_client().table("prediction_snapshots")
-        .select("id,event_id,sport,league,model_version,created_at,result_status,home_probability,away_probability,data_quality,features")
-        .eq("result_status", "PENDING").order("created_at", desc=True).limit(1000).execute())
+        .select("id,event_id,sport,league,model_version,created_at,data_cutoff,result_status,home_probability,away_probability,data_quality,features")
+        .gte("created_at", f"{day}T00:00:00+00:00")
+        .lt("created_at", f"{next_day}T00:00:00+00:00")
+        .order("created_at", desc=True).limit(2000).execute())
+    return response.data or []
+
+
+def _load_snapshots(day: str) -> list[dict]:
     eligible = []
-    for row in response.data or []:
-        if _snapshot_date(row) != day:
+    for row in _load_snapshot_rows(day):
+        if str(row.get("result_status") or "").strip().upper() != "PENDING":
             continue
         item = _eligible_snapshot(row)
         if item:
@@ -275,10 +287,40 @@ def best_play_candidates(day: str = Query(default=None, alias="date")):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="date debe tener formato YYYY-MM-DD.") from exc
     try:
-        rows = _load_snapshots(selected_day)
-        return {"success": True, "date": selected_day, "total": len(rows),
+        rows = _load_snapshot_rows(selected_day)
+        candidates = []
+        diagnostics = {"snapshots_on_date": len(rows), "not_pending": 0,
+            "unsupported_model_or_sport": 0, "invalid_probabilities": 0,
+            "missing_team_names": 0, "eligible": 0}
+        for row in rows:
+            if str(row.get("result_status") or "").strip().upper() != "PENDING":
+                diagnostics["not_pending"] += 1
+                continue
+            sport = _sport(row)
+            if sport not in OFFICIAL_MODELS or row.get("model_version") != OFFICIAL_MODELS.get(sport):
+                diagnostics["unsupported_model_or_sport"] += 1
+                continue
+            try:
+                hp, ap = float(row.get("home_probability")), float(row.get("away_probability"))
+                valid_probabilities = (math.isfinite(hp) and math.isfinite(ap)
+                    and 0 < hp < 1 and 0 < ap < 1 and abs(hp + ap - 1) <= 0.03)
+            except (TypeError, ValueError):
+                valid_probabilities = False
+            if not valid_probabilities:
+                diagnostics["invalid_probabilities"] += 1
+                continue
+            home, away = _teams(row)
+            if not home or not away:
+                diagnostics["missing_team_names"] += 1
+                continue
+            item = _eligible_snapshot(row)
+            if item:
+                candidates.append(item)
+        diagnostics["eligible"] = len(candidates)
+        return {"success": True, "date": selected_day, "total": len(candidates),
             "automatic_odds_configured": bool(os.getenv("ODDS_API_KEY", "").strip()),
-            "candidates": rows}
+            "diagnostics": diagnostics, "candidates": candidates,
+            "message": None if candidates else "No hay snapshots pendientes elegibles para esta fecha. Consulta diagnostics para saber qué filtro los excluyó."}
     except Exception as exc:
         logger.exception("Could not load official snapshots for Best Plays")
         raise HTTPException(status_code=503, detail="No fue posible consultar snapshots oficiales. Verifica Supabase.") from exc
