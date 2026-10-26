@@ -43,3 +43,14 @@ def test_odds_match_requires_exact_normalized_team_name():
 def test_odds_missing_does_not_create_quote():
     event = {"home_team": "Boston Celtics", "away_team": "Miami Heat", "bookmakers": []}
     assert _market_quote(event, "Boston Celtics") is None
+
+
+
+def test_team_extraction_supports_legacy_team_name_fields():
+    from best_plays_api import _teams
+
+    row = {"features": {"game": {
+        "home": {"team_name": "Boston Celtics"},
+        "away": {"display_name": "Miami Heat"},
+    }}}
+    assert _teams(row) == ("Boston Celtics", "Miami Heat")
