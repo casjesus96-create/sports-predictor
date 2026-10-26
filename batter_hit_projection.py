@@ -134,7 +134,7 @@ def build_batter_hit_projections(batter_pitcher_matchups, season=2026):
         if lineup:
             confirmed_teams.append({
                 "side": side,
-                "team_name": team.get("team_name") or team.get("name") or side,
+                "team_name": team.get("team_name") or batter_pitcher_matchups.get(side + "_team_name") or side,
                 "lineup_source": team.get("lineup_source") or "MLB Stats API",
                 "hitters": lineup,
             })
