@@ -12,7 +12,6 @@ from nfl_advanced_data import inspect_nfl_advanced_sources
 from nfl_pregame_feature_audit import audit_nfl_pregame_feature_coverage
 from nfl_walk_forward_backtest import run_nfl_walk_forward_backtest
 from nfl_score_evaluation import run_nfl_score_walk_forward
-from nfl_score_projection import project_score_lines
 from nfl_repository import (
     save_nfl_analysis,
     settle_nfl_prediction,
