@@ -73,7 +73,7 @@ export default function BestPlays() {
       if (!Number.isFinite(decimal) || decimal <= 1 || decimal > 1000) throw new Error("Introduce una cuota decimal válida mayor que 1.");
       const response = await fetch(`${API}/manual`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prediction_snapshot_id: selectedId, selected_side: side, decimal_odds: decimal, bookmaker: bookmaker.trim() || "Entrada manual" }),
+        body: JSON.stringify({ prediction_snapshot_id: selectedId, analysis_date: day, selected_side: side, decimal_odds: decimal, bookmaker: bookmaker.trim() || "Entrada manual" }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || "No se pudo guardar la recomendación.");
