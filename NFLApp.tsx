@@ -151,6 +151,7 @@ export default function NFLApp() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [evaluation, setEvaluation] = useState<AnyRecord | null>(null);
+  const [evaluationStatus, setEvaluationStatus] = useState("");
 
   async function request(path: string, options?: RequestInit) {
     const response = await fetch(`${API}${path}`, options);
@@ -424,16 +425,49 @@ export default function NFLApp() {
   }
 
   async function runWalkForwardEvaluation() {
+    if (actionLoading !== "") return;
     setActionLoading("evaluation");
     setError("");
     setNotice("");
     setEvaluation(null);
+    setEvaluationStatus("Solicitando que el servidor inicie la evaluación histórica…");
     try {
-      const winner = await request("/nfl/walk-forward-backtest?start_season=2023&end_season=2026&min_training_games=100");
-      const score = await request("/nfl/score-walk-forward?start_season=2023&end_season=2026");
-      setEvaluation({ winner, score });
+      const started = await request(
+        "/nfl/walk-forward-evaluation?start_season=2023&end_season=2026&min_training_games=100",
+        { method: "POST" }
+      );
+      if (!started?.success || !started?.job_id) {
+        throw new Error(started?.message || "El servidor no pudo iniciar la evaluación.");
+      }
+
+      const jobId = String(started.job_id);
+      const deadline = Date.now() + 15 * 60 * 1000;
+      let result: AnyRecord | null = null;
+      while (Date.now() < deadline) {
+        const status = await request(
+          `/nfl/walk-forward-evaluation/${encodeURIComponent(jobId)}`
+        );
+        setEvaluationStatus(status?.message || "El servidor sigue calculando la evaluación…");
+        if (status?.status === "completed") {
+          result = status.result || null;
+          break;
+        }
+        if (status?.status === "failed") {
+          throw new Error(status?.error || status?.message || "La evaluación histórica falló en el servidor.");
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
+      if (!result) {
+        throw new Error("La evaluación sigue en proceso en el servidor después de 15 minutos. Puedes volver a consultar; no se ha modificado el modelo oficial.");
+      }
+      if (!result.winner || !result.score) {
+        throw new Error("La evaluación terminó, pero la API no devolvió ambos conjuntos de métricas.");
+      }
+      setEvaluation(result);
+      setEvaluationStatus("");
       setNotice("Evaluación experimental terminada. No se guardaron predicciones ni se cambió el modelo oficial.");
     } catch (e: any) {
+      setEvaluationStatus("");
       setError(e?.message || "No fue posible completar la evaluación walk-forward.");
     } finally {
       setActionLoading("");
@@ -796,6 +830,13 @@ export default function NFLApp() {
           >
             {actionLoading === "evaluation" ? "Evaluando históricamente…" : "Evaluación walk-forward"}
           </button>
+
+          {actionLoading === "evaluation" && (
+            <div className="message notice" role="status" aria-live="polite">
+              <span>{evaluationStatus || "Ejecutando evaluación histórica…"}</span>
+              <p>Puede tardar porque consulta varias temporadas. Si la API devuelve un error, se mostrará aquí.</p>
+            </div>
+          )}
 
           <button
             className="secondary"

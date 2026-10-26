@@ -1,6 +1,9 @@
 
 import logging
 import math
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
@@ -25,6 +28,60 @@ from nfl_repository import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/nfl", tags=["NFL"])
+
+# Long-running experimental evaluations run outside the request/response cycle.
+# Jobs are read-only and held in memory for this single application process.
+_EVALUATION_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nfl-walk-forward")
+_EVALUATION_JOBS = {}
+_EVALUATION_LOCK = threading.Lock()
+_ACTIVE_EVALUATION_ID = None
+
+
+def _run_walk_forward_evaluation_job(job_id, start_season, end_season, min_training_games):
+    global _ACTIVE_EVALUATION_ID
+    try:
+        with _EVALUATION_LOCK:
+            _EVALUATION_JOBS[job_id]["stage"] = "winner"
+            _EVALUATION_JOBS[job_id]["message"] = (
+                "Calculando ganador: descargando estadísticas avanzadas y evaluando partidos cronológicamente."
+            )
+        winner = run_nfl_walk_forward_backtest(
+            start_season=start_season,
+            end_season=end_season,
+            min_training_games=min_training_games,
+        )
+        with _EVALUATION_LOCK:
+            _EVALUATION_JOBS[job_id]["stage"] = "score_lines"
+            _EVALUATION_JOBS[job_id]["message"] = (
+                "Ganador evaluado. Calculando errores del margen, total de puntos y comparación con mercado."
+            )
+        score = run_nfl_score_walk_forward(
+            start_season=start_season,
+            end_season=end_season,
+        )
+        with _EVALUATION_LOCK:
+            _EVALUATION_JOBS[job_id].update({
+                "status": "completed",
+                "stage": "completed",
+                "message": "Evaluación histórica terminada.",
+                "result": {"winner": winner, "score": score},
+                "completed_at": datetime.now(UTC).isoformat(),
+            })
+    except Exception as exc:
+        logger.exception("Falló evaluación walk-forward NFL job_id=%s", job_id)
+        with _EVALUATION_LOCK:
+            _EVALUATION_JOBS[job_id].update({
+                "status": "failed",
+                "stage": "failed",
+                "message": "No se pudo completar la evaluación histórica NFL.",
+                "error": str(exc),
+                "completed_at": datetime.now(UTC).isoformat(),
+            })
+    finally:
+        with _EVALUATION_LOCK:
+            if _ACTIVE_EVALUATION_ID == job_id:
+                _ACTIVE_EVALUATION_ID = None
+
 
 MODEL_VERSION = "NFL-1.0.0"
 UTC = timezone.utc
@@ -651,6 +708,71 @@ def nfl_status():
         "calibration": "active",
         "generated_at": datetime.now(UTC).isoformat(),
     }
+
+
+
+@router.post("/walk-forward-evaluation")
+def start_nfl_walk_forward_evaluation(
+    start_season: int = 2023,
+    end_season: int = 2026,
+    min_training_games: int = 100,
+):
+    """Inicia la evaluación combinada en segundo plano y devuelve un identificador de trabajo."""
+    global _ACTIVE_EVALUATION_ID
+    if start_season < 1999 or end_season > 2100 or start_season > end_season:
+        raise HTTPException(status_code=400, detail="El rango de temporadas no es válido.")
+    if end_season - start_season > 5:
+        raise HTTPException(status_code=400, detail="La evaluación permite como máximo seis temporadas.")
+    if min_training_games < 30 or min_training_games > 1000:
+        raise HTTPException(status_code=400, detail="min_training_games debe estar entre 30 y 1000.")
+    with _EVALUATION_LOCK:
+        if _ACTIVE_EVALUATION_ID and _ACTIVE_EVALUATION_ID in _EVALUATION_JOBS:
+            active = _EVALUATION_JOBS[_ACTIVE_EVALUATION_ID]
+            if active.get("status") == "running":
+                return {
+                    "success": True,
+                    "job_id": _ACTIVE_EVALUATION_ID,
+                    "status": "running",
+                    "message": active.get("message", "Ya hay una evaluación en curso."),
+                    "reused_existing_job": True,
+                }
+        job_id = uuid.uuid4().hex
+        _EVALUATION_JOBS[job_id] = {
+            "job_id": job_id,
+            "status": "running",
+            "stage": "queued",
+            "message": "Evaluación en cola; se iniciará en breve.",
+            "created_at": datetime.now(UTC).isoformat(),
+            "result": None,
+        }
+        _ACTIVE_EVALUATION_ID = job_id
+    _EVALUATION_EXECUTOR.submit(
+        _run_walk_forward_evaluation_job,
+        job_id,
+        start_season,
+        end_season,
+        min_training_games,
+    )
+    return {
+        "success": True,
+        "job_id": job_id,
+        "status": "running",
+        "message": "La evaluación se está ejecutando en segundo plano.",
+        "reused_existing_job": False,
+    }
+
+
+@router.get("/walk-forward-evaluation/{job_id}")
+def get_nfl_walk_forward_evaluation(job_id: str):
+    """Consulta estado y resultados de un trabajo de evaluación NFL."""
+    with _EVALUATION_LOCK:
+        job = _EVALUATION_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=404,
+                detail="No se encontró el trabajo de evaluación. Puede haberse reiniciado el servicio; vuelve a iniciarlo.",
+            )
+        return {"success": True, **job}
 
 
 @router.get("/walk-forward-backtest")
