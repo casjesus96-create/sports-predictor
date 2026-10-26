@@ -8,9 +8,21 @@ type Candidate = {
 type Recommendation = {
   id: string; sport: string; selected_team: string; opponent_team: string;
   market_label: string; model_probability: number; decimal_odds: number;
-  fair_odds: number; edge_percentage_points: number; expected_value_percent: number;
-  data_quality: number; ranking_score: number | null; odds_source: string;
-  bookmaker: string; created_at: string; model_version: string;
+  fair_odds: number; implied_probability: number; edge_percentage_points: number;
+  expected_value_percent: number; data_quality: number; ranking_score: number | null;
+  odds_source: string; bookmaker: string; created_at: string; model_version: string;
+  classification?: string; model_snapshot_created_at?: string; odds_observed_at?: string | null;
+  recommendation_payload?: {
+    evaluation?: {
+      label?: string; decision_reason?: string; decision_action?: string;
+      market_comparison_probability?: number | null;
+      calculated_no_vig_market_probability?: number | null;
+      model_market_gap_percentage_points?: number | null;
+      market_overround_percentage?: number | null;
+      warnings?: string[]; risk_signals?: string[];
+    };
+    ranking_method?: string;
+  };
 };
 const API = "/api/v1/best-plays";
 const inputStyle: React.CSSProperties = { width: "100%", minHeight: 44, boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 8, padding: "9px 11px", background: "#fff", color: "#0f172a", fontSize: 16 };
@@ -141,7 +153,41 @@ export default function BestPlays() {
             <div><span style={{ color: "#64748b" }}>Calidad datos</span><br/><strong>{r.data_quality}/100</strong></div>
             <div><span style={{ color: "#64748b" }}>Fuente cuota</span><br/><strong>{r.odds_source === "automatic" ? "Automática" : "Manual"} · {r.bookmaker}</strong></div>
           </div>
-          <p style={{ marginBottom: 0, color: "#64748b", fontSize: 12 }}>Modelo {r.model_version} · recomendación registrada {new Date(r.created_at).toLocaleString()}</p>
+          {(() => {
+            const evaluation = r.recommendation_payload?.evaluation;
+            const classificationLabels: Record<string, string> = {
+              VALUE_CANDIDATE: "Candidata con valor teórico",
+              UPSET_CANDIDATE: "Posible sorpresa · validar",
+              MARGINAL: "Ventaja marginal",
+              HIGH_RISK: "Advertencia de riesgo",
+              DATA_INSUFFICIENT: "Datos insuficientes",
+              NO_PLAY: "Sin valor a esta cuota",
+              BLOCKED_INCONSISTENT: "Bloqueada · datos incoherentes",
+            };
+            const classification = r.classification || "NO_CLASSIFICATION";
+            return <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+              <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 10 }}>
+                <div style={{ fontWeight: 800, marginBottom: 5 }}>{evaluation?.label || classificationLabels[classification] || "Clasificación no disponible"}</div>
+                <div style={{ color: "#475569", fontSize: 13, lineHeight: 1.5 }}>{evaluation?.decision_reason || "No se guardó una explicación de decisión en esta recomendación histórica."}</div>
+                {evaluation?.decision_action && <div style={{ marginTop: 6, fontSize: 13 }}><strong>Siguiente paso:</strong> {evaluation.decision_action}</div>}
+              </div>
+              <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", fontSize: 13 }}>
+                <div><span style={{ color: "#64748b" }}>Prob. implícita de cuota</span><br/><strong>{(r.implied_probability * 100).toFixed(2)}%</strong></div>
+                <div><span style={{ color: "#64748b" }}>Prob. mercado sin margen</span><br/><strong>{evaluation?.calculated_no_vig_market_probability != null ? (evaluation.calculated_no_vig_market_probability * 100).toFixed(2) + "%" : "No disponible"}</strong></div>
+                <div><span style={{ color: "#64748b" }}>Diferencia modelo/mercado</span><br/><strong>{evaluation?.model_market_gap_percentage_points != null ? (evaluation.model_market_gap_percentage_points > 0 ? "+" : "") + evaluation.model_market_gap_percentage_points.toFixed(2) + " pp" : "No disponible"}</strong></div>
+                <div><span style={{ color: "#64748b" }}>Margen de mercado</span><br/><strong>{evaluation?.market_overround_percentage != null ? evaluation.market_overround_percentage.toFixed(2) + "%" : "No disponible"}</strong></div>
+                <div><span style={{ color: "#64748b" }}>Puntuación del ranking</span><br/><strong>{r.ranking_score != null ? r.ranking_score.toFixed(1) + "/100" : "No disponible"}</strong></div>
+                <div><span style={{ color: "#64748b" }}>Observación de cuota</span><br/><strong>{r.odds_observed_at ? new Date(r.odds_observed_at).toLocaleString() : "Hora no disponible"}</strong></div>
+              </div>
+              {((evaluation?.warnings?.length || 0) > 0 || (evaluation?.risk_signals?.length || 0) > 0) && <div style={{ borderLeft: "3px solid #d97706", padding: "7px 10px", background: "#fffbeb", color: "#92400e", borderRadius: 4, fontSize: 13 }}>
+                <strong>Advertencias</strong>
+                <ul style={{ margin: "5px 0 0", paddingLeft: 18 }}>
+                  {[...(evaluation?.warnings || []), ...(evaluation?.risk_signals || [])].filter((warning, i, all) => all.indexOf(warning) === i).map((warning, i) => <li key={i}>{warning}</li>)}
+                </ul>
+              </div>}
+            </div>;
+          })()}
+          <p style={{ marginBottom: 0, color: "#64748b", fontSize: 12 }}>Modelo {r.model_version} · snapshot analizado {r.model_snapshot_created_at ? new Date(r.model_snapshot_created_at).toLocaleString() : "fecha no disponible"} · recomendación registrada {new Date(r.created_at).toLocaleString()}</p>
         </article>)}
       </div>
     </section>
