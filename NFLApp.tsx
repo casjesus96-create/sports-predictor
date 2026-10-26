@@ -433,7 +433,7 @@ export default function NFLApp() {
     setEvaluationStatus("Solicitando que el servidor inicie la evaluación histórica…");
     try {
       const started = await request(
-        "/nfl/walk-forward-evaluation?start_season=2023&end_season=2026&min_training_games=100",
+        "/nfl/walk-forward-evaluation?start_season=2023&end_season=2025&min_training_games=100",
         { method: "POST" }
       );
       if (!started?.success || !started?.job_id) {
@@ -441,7 +441,7 @@ export default function NFLApp() {
       }
 
       const jobId = String(started.job_id);
-      const deadline = Date.now() + 15 * 60 * 1000;
+      const deadline = Date.now() + 20 * 60 * 1000;
       let result: AnyRecord | null = null;
       while (Date.now() < deadline) {
         const status = await request(
@@ -458,7 +458,7 @@ export default function NFLApp() {
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
       }
       if (!result) {
-        throw new Error("La evaluación sigue en proceso en el servidor después de 15 minutos. Puedes volver a consultar; no se ha modificado el modelo oficial.");
+        throw new Error("La evaluación sigue en proceso en el servidor después de 20 minutos. Puedes volver a consultar; no se ha modificado el modelo oficial.");
       }
       if (!result.winner || !result.score) {
         throw new Error("La evaluación terminó, pero la API no devolvió ambos conjuntos de métricas.");
