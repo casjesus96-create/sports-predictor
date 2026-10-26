@@ -110,10 +110,11 @@ def project_snapshot(row: dict) -> dict:
     markets = []
 
     if home_p is not None and away_p is not None and abs(home_p + away_p - 1) <= 0.03:
+        winner_status = "experimental" if sport in {"FOOTBALL", "TENNIS"} else "available"
         markets.extend([
-            _market("home_win", f"Gana {home}", probability=home_p, status="available",
+            _market("home_win", f"Gana {home}", probability=home_p, status=winner_status,
                     note="Probabilidad del snapshot pregame guardado; no modificada por este módulo."),
-            _market("away_win", f"Gana {away}", probability=away_p, status="available",
+            _market("away_win", f"Gana {away}", probability=away_p, status=winner_status,
                     note="Probabilidad del snapshot pregame guardado; no modificada por este módulo."),
         ])
     else:
@@ -164,24 +165,37 @@ def project_snapshot(row: dict) -> dict:
             home_points = _finite(projections.get("home_points"))
         if away_points is None:
             away_points = _finite(projections.get("away_points"))
+        if away_points is None:
+            away_points = _finite(projections.get("away_points"))
+
         if home_points is not None and away_points is not None:
             markets.append(_market("projected_points", "Puntos esperados (local - visitante)",
                                    value={"home": home_points, "away": away_points, "total": round(home_points + away_points, 2),
                                           "margin_home": round(home_points - away_points, 2)},
                                    status="experimental", note="Estimación de marcador guardada; no es una probabilidad de línea."))
-        player_rows = projections.get("player_projections")
-        if isinstance(player_rows, list) and player_rows:
-            for player in player_rows[:40]:
+        player_data = projections.get("player_projections") or {}
+        player_rows = []
+        for team in player_data.get("teams", []) if isinstance(player_data, dict) else []:
+            for player in team.get("players", []) or []:
+                player_rows.append(player)
+        if isinstance(player_data, list):
+            player_rows.extend(player_data)
+        if player_rows:
+            for player in player_rows[:60]:
                 if not isinstance(player, dict):
                     continue
                 name = player.get("player_name") or player.get("name")
-                stats = player.get("projected_stats") or player.get("stats") or player
-                if name:
-                    available_stats = {key: _finite(stats.get(key)) for key in ("points", "rebounds", "assists", "steals", "blocks")}
-                    available_stats = {key: val for key, val in available_stats.items() if val is not None}
-                    if available_stats:
-                        markets.append(_market("player_stats", f"{name}: proyección individual", value=available_stats,
-                                               status="experimental", note="Estimación individual existente; probabilidades por umbral no disponibles."))
+                available_stats = {
+                    "points": _finite(player.get("projected_points", player.get("points"))),
+                    "rebounds": _finite(player.get("projected_rebounds", player.get("rebounds"))),
+                    "assists": _finite(player.get("projected_assists", player.get("assists"))),
+                    "steals": _finite(player.get("projected_steals", player.get("steals"))),
+                    "blocks": _finite(player.get("projected_blocks", player.get("blocks"))),
+                }
+                available_stats = {key: val for key, val in available_stats.items() if val is not None}
+                if name and available_stats:
+                    markets.append(_market("player_stats", f"{name}: proyección individual", value=available_stats,
+                                           status="experimental", note="Promedio de partidos anteriores; no ajusta aún por minutos/lesiones y no equivale a probabilidad de superar una línea."))
         if not any(m["market_id"] == "player_stats" for m in markets):
             markets.append(_market("player_stats", "Puntos, rebotes y asistencias por jugador",
                                    status="unavailable", note="No hay proyecciones individuales utilizables en este snapshot."))
