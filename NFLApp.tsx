@@ -678,6 +678,17 @@ export default function NFLApp() {
             <TeamFactor label="Dirección total vs línea" value={evaluation?.score?.market_total?.market_total_direction_accuracy_pct == null ? "—" : `${evaluation.score.market_total.market_total_direction_accuracy_pct}%`} />
             <TeamFactor label="Muestra con total de mercado" value={evaluation?.score?.market_total?.sample_size ?? "—"} />
           </div>
+          <h3 className="detail-heading">Calibración del ganador · muestra fuera de muestra</h3>
+          {((evaluation?.winner?.official?.calibration || []) as AnyRecord[]).map((bin: AnyRecord) => {
+            const candidateBin = ((evaluation?.winner?.experimental?.calibration || []) as AnyRecord[])
+              .find((item: AnyRecord) => item?.confidence_bin === bin?.confidence_bin);
+            return (
+              <div className="factor-grid" key={bin?.confidence_bin}>
+                <TeamFactor label={`Rango ${bin?.confidence_bin} · n=${bin?.count}`} value={`Conf. ${pct(bin?.mean_confidence)} · acierto ${pct(bin?.observed_accuracy)}`} />
+                <TeamFactor label={`Experimental ${bin?.confidence_bin}`} value={candidateBin ? `Conf. ${pct(candidateBin?.mean_confidence)} · acierto ${pct(candidateBin?.observed_accuracy)} · n=${candidateBin?.count}` : "Sin muestra"} />
+              </div>
+            );
+          })}
           <h3 className="detail-heading">Ganador · métricas por temporada</h3>
           {Object.entries(evaluation?.winner?.by_season || {}).map(([season, result]: [string, any]) => (
             <div className="panel" key={season}>
