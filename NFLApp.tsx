@@ -433,7 +433,7 @@ export default function NFLApp() {
     setEvaluationStatus("Solicitando que el servidor inicie la evaluación histórica…");
     try {
       const started = await request(
-        "/nfl/walk-forward-evaluation?start_season=2023&end_season=2025&min_training_games=100",
+        "/nfl/walk-forward-evaluation?start_season=2025&end_season=2025&min_training_games=100",
         { method: "POST" }
       );
       if (!started?.success || !started?.job_id) {
