@@ -154,8 +154,39 @@ def project_snapshot(row: dict) -> dict:
                     markets.append(_market(f"{side}_ks_{threshold}", f"{name}: {threshold}+ ponches",
                                            probability=probability, status="experimental",
                                            note=pitcher.get("method") or "Estimación no validada."))
-        markets.append(_market("batter_hit", "Bateador consigue 1+ hit", status="unavailable",
-                               note="Falta una probabilidad individual pregame validada; no se infiere solo por estar en el lineup."))
+        hit_projection = factors.get("batter_hit_projections") or {}
+        hit_market_count = 0
+        for team in hit_projection.get("teams") or []:
+            for hitter in team.get("hitters") or []:
+                if not isinstance(hitter, dict):
+                    continue
+                name = str(hitter.get("player_name") or "").strip()
+                probability = _finite(hitter.get("probability_1plus_hit"))
+                if not name or probability is None or not hitter.get("lineup_confirmed"):
+                    continue
+                player_id = hitter.get("player_id") or name
+                markets.append(_market(
+                    f"batter_hit_{player_id}",
+                    f"{name}: consigue 1+ hit",
+                    value={
+                        "equipo": team.get("team_name") or team.get("side"),
+                        "turno_al_bate": hitter.get("batting_order"),
+                        "AVG_temporada": hitter.get("season_avg"),
+                        "AB_temporada": hitter.get("season_at_bats"),
+                        "turnos_estimados": hitter.get("expected_at_bats"),
+                    },
+                    probability=probability,
+                    status="experimental",
+                    note=hit_projection.get("note") or "Estimación experimental basada en AVG y oportunidades al bate."
+                ))
+                hit_market_count += 1
+        if not hit_market_count:
+            markets.append(_market(
+                "batter_hit",
+                "Hits probables por bateador",
+                status="unavailable",
+                note=hit_projection.get("note") or "Este snapshot no contiene proyecciones de hits guardadas. Reanaliza el encuentro después de confirmar la alineación."
+            ))
     elif sport == "NBA":
         home_history = factors.get("home_history") or {}
         away_history = factors.get("away_history") or {}
