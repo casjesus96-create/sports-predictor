@@ -426,42 +426,50 @@ export default function NFLApp() {
 
   async function runWalkForwardEvaluation() {
     if (actionLoading !== "") return;
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 180000);
     setActionLoading("evaluation");
     setError("");
     setNotice("");
     setEvaluation(null);
-    setEvaluationStatus("Iniciando las dos evaluaciones históricas…");
+    setEvaluationStatus("Solicitando que el servidor inicie la evaluación histórica…");
     try {
-      setEvaluationStatus("Calculando ganador: descargando estadísticas avanzadas y ejecutando validación cronológica…");
-      const winnerPromise = request(
-        "/nfl/walk-forward-backtest?start_season=2023&end_season=2026&min_training_games=100",
-        { signal: controller.signal }
-      ).then((result) => {
-        setEvaluationStatus("Evaluación del ganador lista. Terminando la evaluación de margen y total de puntos…");
-        return result;
-      });
-      const scorePromise = request(
-        "/nfl/score-walk-forward?start_season=2023&end_season=2026",
-        { signal: controller.signal }
+      const started = await request(
+        "/nfl/walk-forward-evaluation?start_season=2023&end_season=2026&min_training_games=100",
+        { method: "POST" }
       );
-      const [winner, score] = await Promise.all([winnerPromise, scorePromise]);
-      if (winner?.success === false || score?.success === false) {
-        throw new Error("La API terminó la evaluación sin devolver un resultado válido.");
+      if (!started?.success || !started?.job_id) {
+        throw new Error(started?.message || "El servidor no pudo iniciar la evaluación.");
       }
-      setEvaluation({ winner, score });
+
+      const jobId = String(started.job_id);
+      const deadline = Date.now() + 15 * 60 * 1000;
+      let result: AnyRecord | null = null;
+      while (Date.now() < deadline) {
+        const status = await request(
+          `/nfl/walk-forward-evaluation/${encodeURIComponent(jobId)}`
+        );
+        setEvaluationStatus(status?.message || "El servidor sigue calculando la evaluación…");
+        if (status?.status === "completed") {
+          result = status.result || null;
+          break;
+        }
+        if (status?.status === "failed") {
+          throw new Error(status?.error || status?.message || "La evaluación histórica falló en el servidor.");
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
+      if (!result) {
+        throw new Error("La evaluación sigue en proceso en el servidor después de 15 minutos. Puedes volver a consultar; no se ha modificado el modelo oficial.");
+      }
+      if (!result.winner || !result.score) {
+        throw new Error("La evaluación terminó, pero la API no devolvió ambos conjuntos de métricas.");
+      }
+      setEvaluation(result);
       setEvaluationStatus("");
       setNotice("Evaluación experimental terminada. No se guardaron predicciones ni se cambió el modelo oficial.");
     } catch (e: any) {
       setEvaluationStatus("");
-      if (e?.name === "AbortError") {
-        setError("La evaluación superó el límite de 3 minutos y se canceló en el navegador. El servidor puede seguir procesándola; revisaremos la causa para evitar que vuelva a ocurrir.");
-      } else {
-        setError(e?.message || "No fue posible completar la evaluación walk-forward.");
-      }
+      setError(e?.message || "No fue posible completar la evaluación walk-forward.");
     } finally {
-      window.clearTimeout(timeoutId);
       setActionLoading("");
     }
   }
