@@ -105,6 +105,39 @@ def _summary(rows):
     }
 
 
+def _paired_bootstrap_ci(differences, iterations=2000, seed=20261026):
+    """Deterministic paired bootstrap CI for mean absolute-error improvement.
+
+    Positive differences mean the enriched candidate has lower absolute error.
+    Resampling is paired by game so both versions are compared on identical cases.
+    """
+    values = [float(value) for value in differences if math.isfinite(float(value))]
+    if not values:
+        return {"lower": None, "upper": None, "iterations": 0}
+    import random
+
+    rng = random.Random(seed)
+    n = len(values)
+    means = []
+    for _ in range(iterations):
+        means.append(sum(values[rng.randrange(n)] for _ in range(n)) / n)
+    means.sort()
+    lower = means[max(0, int(0.025 * iterations))]
+    upper = means[min(iterations - 1, int(0.975 * iterations))]
+    return {"lower": round(lower, 4), "upper": round(upper, 4), "iterations": iterations}
+
+
+def _paired_error_differences(baseline_rows, enriched_rows, field):
+    """Return baseline absolute error minus candidate absolute error per same game."""
+    if len(baseline_rows) != len(enriched_rows):
+        raise ValueError("La comparación debe usar exactamente la misma muestra de partidos.")
+    return [
+        abs(float(base[field.replace("pred_", "pred_")]) - float(base[field.replace("pred_", "actual_")]))
+        - abs(float(candidate[field.replace("pred_", "pred_")]) - float(candidate[field.replace("pred_", "actual_")]))
+        for base, candidate in zip(baseline_rows, enriched_rows)
+    ]
+
+
 def run_nfl_score_walk_forward(start_season=2023, end_season=2025, progress_callback=None):
     """Score every final game in chronological order using only earlier scores."""
     if start_season < 1999 or end_season > 2100 or start_season > end_season:
@@ -224,8 +257,21 @@ def run_nfl_score_walk_forward(start_season=2023, end_season=2025, progress_call
         "scored_games": len(enriched_rows), "skipped": skipped,
         "baseline": _summary(baseline_rows), "enriched": _summary(enriched_rows),
         "comparison": {
+            "same_sample": len(baseline_rows) == len(enriched_rows),
+            "sample_size": len(baseline_rows),
             "margin_mae_improvement": round(_summary(baseline_rows)["margin_mae"] - _summary(enriched_rows)["margin_mae"], 4) if enriched_rows else None,
             "total_mae_improvement": round(_summary(baseline_rows)["total_mae"] - _summary(enriched_rows)["total_mae"], 4) if enriched_rows else None,
+            "margin_mae_improvement_pct": round(100 * (_summary(baseline_rows)["margin_mae"] - _summary(enriched_rows)["margin_mae"]) / _summary(baseline_rows)["margin_mae"], 3) if enriched_rows and _summary(baseline_rows)["margin_mae"] else None,
+            "total_mae_improvement_pct": round(100 * (_summary(baseline_rows)["total_mae"] - _summary(enriched_rows)["total_mae"]) / _summary(baseline_rows)["total_mae"], 3) if enriched_rows and _summary(baseline_rows)["total_mae"] else None,
+            "margin_mae_improvement_ci95": _paired_bootstrap_ci([
+                abs(float(base["pred_margin"]) - float(base["actual_margin"])) - abs(float(candidate["pred_margin"]) - float(candidate["actual_margin"]))
+                for base, candidate in zip(baseline_rows, enriched_rows)
+            ]),
+            "total_mae_improvement_ci95": _paired_bootstrap_ci([
+                abs(float(base["pred_total"]) - float(base["actual_total"])) - abs(float(candidate["pred_total"]) - float(candidate["actual_total"]))
+                for base, candidate in zip(baseline_rows, enriched_rows)
+            ], seed=20261027),
+            "ci_interpretation": "Mejora positiva favorece al candidato; si el IC95% incluye 0, la diferencia no queda claramente separada de cero en esta muestra.",
         },
         "by_season": {
             season: {"baseline": _summary(values["baseline"]), "enriched": _summary(values["enriched"])}
