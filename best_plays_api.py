@@ -291,6 +291,8 @@ def generate_best_plays(day: str = Query(default=None, alias="date")):
         date.fromisoformat(selected_day)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="date debe tener formato YYYY-MM-DD.") from exc
+    if selected_day != datetime.now(UTC).date().isoformat():
+        raise HTTPException(status_code=409, detail="Solo se generan recomendaciones nuevas para el día UTC actual; las fechas anteriores son de consulta histórica.")
     try:
         snapshots = _load_snapshots(selected_day)
         by_sport: dict[str, list[dict]] = {}
@@ -352,6 +354,8 @@ def create_manual_best_play(request: ManualRecommendationRequest):
             date.fromisoformat(analysis_day)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="analysis_date debe tener formato YYYY-MM-DD.") from exc
+        if analysis_day != datetime.now(UTC).date().isoformat():
+            raise HTTPException(status_code=409, detail="Por integridad temporal, solo se guardan recomendaciones el mismo día UTC; no se permiten picks retroactivos.")
         if _snapshot_date(rows[0]) != analysis_day:
             raise HTTPException(status_code=409, detail="El snapshot no fue analizado en la fecha seleccionada (UTC).")
         side = request.selected_side
