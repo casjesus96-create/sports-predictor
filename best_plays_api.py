@@ -64,6 +64,26 @@ def _teams(row: dict) -> tuple[str, str]:
     return str(home or "").strip(), str(away or "").strip()
 
 
+def _event_date(row: dict) -> str | None:
+    """Extract the scheduled event date from stored game data; never infer it."""
+    game = ((row.get("features") or {}).get("game") or {})
+    for key in ("commence_time", "utcDate", "kickoff", "game_date", "gameDate", "date", "start_time"):
+        value = game.get(key)
+        if not value:
+            continue
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC).date().isoformat()
+        except (TypeError, ValueError):
+            try:
+                return date.fromisoformat(str(value)[:10]).isoformat()
+            except ValueError:
+                continue
+    return None
+
+
 def _snapshot_date(row: dict) -> str | None:
     # "Analyzed that day" is based on the immutable snapshot's created_at.
     created = row.get("created_at")
@@ -106,6 +126,7 @@ def _eligible_snapshot(row: dict) -> dict | None:
         "sport": sport,
         "model_version": row.get("model_version"),
         "created_at": row.get("created_at"),
+        "event_date": _event_date(row),
         "home": home, "away": away,
         "home_probability": home_p, "away_probability": away_p,
         "data_quality": quality,
@@ -283,8 +304,12 @@ def generate_best_plays(day: str = Query(default=None, alias="date")):
         for sport, games in by_sport.items():
             events = _get_odds(sport)
             for snapshot in games:
+                # Team names alone are insufficient: series/doubleheaders can repeat.
+                # Require a stored scheduled date and an exact provider date match.
                 matched = next((e for e in events
-                    if _normalize(e.get("home_team")) == _normalize(snapshot["home"])
+                    if snapshot.get("event_date")
+                    and str(e.get("commence_time") or "")[:10] == snapshot["event_date"]
+                    and _normalize(e.get("home_team")) == _normalize(snapshot["home"])
                     and _normalize(e.get("away_team")) == _normalize(snapshot["away"])), None)
                 if not matched:
                     skipped.append({"event_id": snapshot["event_id"], "sport": sport,
