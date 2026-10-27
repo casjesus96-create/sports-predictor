@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from market_lab_engine import catalog_for, normalize_sport, project_snapshot
 from repository import get_supabase_client
 from batter_hit_projection import build_live_batter_hit_projections
+from mlb_live_matchup import build_live_pitcher_matchup_stats
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/market-lab", tags=["Laboratorio de Mercados"])
@@ -139,6 +140,7 @@ def get_live_mlb_batter_report(game_id: str):
     active_pitcher_name = active_pitcher.get("fullName") or active_pitcher.get("name")
     inning_half = str(linescore.get("inningState") or "").lower()
     active_batting_side = "away" if inning_half == "top" else ("home" if inning_half == "bottom" else None)
+    live_matchups_by_batter = build_live_pitcher_matchup_stats((live_data.get("plays") or {}).get("allPlays") or [])
     result_teams = []
 
     for side in ("away", "home"):
@@ -175,6 +177,7 @@ def get_live_mlb_batter_report(game_id: str):
                 "hits_in_game": hits,
                 "at_bats_in_game": at_bats,
                 "game_avg": round(hits / at_bats, 3) if hits is not None and at_bats else None,
+                "live_matchups": live_matchups_by_batter.get(player_id, []),
             })
         team_info = game_teams.get(side) or {}
         opposing_side = "home" if side == "away" else "away"
