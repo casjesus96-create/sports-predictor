@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from market_lab_engine import catalog_for, normalize_sport, project_snapshot
 from repository import get_supabase_client
 from batter_hit_projection import build_live_batter_hit_projections
-from mlb_live_matchup import build_live_pitcher_matchup_stats
+from mlb_live_matchup import build_live_pitcher_matchup_stats, resolve_active_batting_side
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/market-lab", tags=["Laboratorio de Mercados"])
@@ -138,8 +138,8 @@ def get_live_mlb_batter_report(game_id: str):
     active_pitcher = defense.get("pitcher") or {}
     active_pitcher_id = active_pitcher.get("id")
     active_pitcher_name = active_pitcher.get("fullName") or active_pitcher.get("name")
-    inning_half = str(linescore.get("inningState") or "").lower()
-    active_batting_side = "away" if inning_half == "top" else ("home" if inning_half == "bottom" else None)
+    active_batting_side = resolve_active_batting_side(linescore, game_teams)
+    is_live_game = str(status_data.get("abstractGameState") or "").strip().lower() == "live"
     live_matchups_by_batter = build_live_pitcher_matchup_stats((live_data.get("plays") or {}).get("allPlays") or [])
     result_teams = []
 
@@ -185,11 +185,17 @@ def get_live_mlb_batter_report(game_id: str):
         pitcher_id = pitcher.get("id")
         pitcher_name = pitcher.get("fullName") or pitcher.get("name")
         pitcher_source = "abridor previsto" if pitcher_id else None
-        # In a live half-inning, prefer the actual defensive pitcher for the team currently batting.
-        if side == active_batting_side and active_pitcher_id:
-            pitcher_id = active_pitcher_id
-            pitcher_name = active_pitcher_name or pitcher_name
-            pitcher_source = "pitcher actual en juego"
+        if is_live_game:
+            # A probable starter is not a reliable proxy for the next PA once the game is live.
+            # Only use the actual defensive pitcher for the side batting right now.
+            if side == active_batting_side and active_pitcher_id:
+                pitcher_id = active_pitcher_id
+                pitcher_name = active_pitcher_name or pitcher_name
+                pitcher_source = "pitcher actual en juego; puede cambiar"
+            else:
+                pitcher_id = None
+                pitcher_name = None
+                pitcher_source = "próximo pitcher no confirmado"
         result_teams.append({
             "side": side,
             "team_id": team_info.get("id"),

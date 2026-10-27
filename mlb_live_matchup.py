@@ -54,3 +54,26 @@ def build_live_pitcher_matchup_stats(all_plays):
     for entries in by_batter.values():
         entries.sort(key=lambda item: (item["pitcher_name"].casefold(), item["pitcher_id"]))
     return by_batter
+
+
+
+def resolve_active_batting_side(linescore, game_teams):
+    """Resolve which team is batting now; return None when the feed is ambiguous."""
+    linescore = linescore if isinstance(linescore, dict) else {}
+    game_teams = game_teams if isinstance(game_teams, dict) else {}
+
+    offense_team = ((linescore.get("offense") or {}).get("team") or {})
+    offense_team_id = _int(offense_team.get("id"))
+    if offense_team_id is not None:
+        for side in ("away", "home"):
+            team_id = _int((game_teams.get(side) or {}).get("id"))
+            if team_id is not None and team_id == offense_team_id:
+                return side
+
+    # Fall back only for explicit Top/Bottom states. Never assume "not Top" means Home.
+    inning_state = str(linescore.get("inningState") or "").strip().lower()
+    if inning_state == "top":
+        return "away"
+    if inning_state == "bottom":
+        return "home"
+    return None
