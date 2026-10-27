@@ -132,6 +132,13 @@ def get_live_mlb_batter_report(game_id: str):
     teams_data = boxscore.get("teams") or {}
     linescore = live_data.get("linescore") or {}
     game_teams = game_data.get("teams") or {}
+    probable_pitchers = game_data.get("probablePitchers") or {}
+    defense = linescore.get("defense") or {}
+    active_pitcher = defense.get("pitcher") or {}
+    active_pitcher_id = active_pitcher.get("id")
+    active_pitcher_name = active_pitcher.get("fullName") or active_pitcher.get("name")
+    inning_half = str(linescore.get("inningState") or "").lower()
+    active_batting_side = "away" if inning_half == "top" else ("home" if inning_half == "bottom" else None)
     result_teams = []
 
     for side in ("away", "home"):
@@ -170,11 +177,24 @@ def get_live_mlb_batter_report(game_id: str):
                 "game_avg": round(hits / at_bats, 3) if hits is not None and at_bats else None,
             })
         team_info = game_teams.get(side) or {}
+        opposing_side = "home" if side == "away" else "away"
+        pitcher = probable_pitchers.get(opposing_side) or {}
+        pitcher_id = pitcher.get("id")
+        pitcher_name = pitcher.get("fullName") or pitcher.get("name")
+        pitcher_source = "abridor previsto" if pitcher_id else None
+        # In a live half-inning, prefer the actual defensive pitcher for the team currently batting.
+        if side == active_batting_side and active_pitcher_id:
+            pitcher_id = active_pitcher_id
+            pitcher_name = active_pitcher_name or pitcher_name
+            pitcher_source = "pitcher actual en juego"
         result_teams.append({
             "side": side,
             "team_id": team_info.get("id"),
             "team_name": team_info.get("name") or team_box.get("team", {}).get("name") or side,
             "lineup_available": bool(batting_order),
+            "opposing_pitcher_id": pitcher_id,
+            "opposing_pitcher_name": pitcher_name,
+            "pitcher_source": pitcher_source,
             "hitters": hitters,
         })
 
@@ -208,8 +228,7 @@ def get_live_mlb_batter_report(game_id: str):
         "probabilities_available": bool(live_projection.get("available")),
         "live_hit_projections": live_projection,
         "notice": (
-            "Contexto en vivo de MLB con proyección experimental separada de 1+ hit hasta el final del partido. "
-            "La estimación usa AVG de temporada y oportunidades restantes aproximadas; no está calibrada con backtesting "
-            "y no modifica el análisis oficial ni el historial."
+            "Contexto en vivo MLB con proyección experimental 1+ hit hasta el final. Usa AVG de temporada, oportunidades restantes y, cuando está disponible, historial directo ante el pitcher identificado con ajuste conservador. "
+            "No está calibrada con backtesting y no modifica el análisis oficial ni el historial."
         ),
     }
