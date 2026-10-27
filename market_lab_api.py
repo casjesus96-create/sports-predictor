@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import APIRouter, HTTPException, Query
 from market_lab_engine import catalog_for, normalize_sport, project_snapshot
 from repository import get_supabase_client
+from batter_hit_projection import build_live_batter_hit_projections
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/market-lab", tags=["Laboratorio de Mercados"])
@@ -177,6 +178,20 @@ def get_live_mlb_batter_report(game_id: str):
             "hitters": hitters,
         })
 
+    game_datetime = (game_data.get("datetime") or {}).get("originalDate") or (game_data.get("datetime") or {}).get("date") or ""
+    try:
+        season = int(str(game_datetime)[:4])
+    except (TypeError, ValueError):
+        from datetime import datetime
+        season = datetime.now().year
+    live_projection = build_live_batter_hit_projections(
+        result_teams,
+        season=season,
+        current_inning=linescore.get("currentInning") or 1,
+        inning_state=linescore.get("inningState") or "Top",
+        game_status=status_data.get("abstractGameState") or status_data.get("detailedState") or "Warmup",
+    )
+
     return {
         "success": True,
         "report_type": "live_boxscore_context",
@@ -190,9 +205,11 @@ def get_live_mlb_batter_report(game_id: str):
         "inning_state": linescore.get("inningState"),
         "outs": linescore.get("outs"),
         "teams": result_teams,
-        "probabilities_available": False,
+        "probabilities_available": bool(live_projection.get("available")),
+        "live_hit_projections": live_projection,
         "notice": (
-            "Contexto en vivo de MLB; muestra únicamente alineación y estadísticas observadas. "
-            "No genera probabilidades condicionales de hits ni modifica el análisis oficial o el historial."
+            "Contexto en vivo de MLB con proyección experimental separada de 1+ hit hasta el final del partido. "
+            "La estimación usa AVG de temporada y oportunidades restantes aproximadas; no está calibrada con backtesting "
+            "y no modifica el análisis oficial ni el historial."
         ),
     }
