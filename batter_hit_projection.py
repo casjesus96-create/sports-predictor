@@ -457,9 +457,15 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "status": "experimental" if available_count else "unavailable",
         "teams": projected_teams,
         "note": (
+            (
+                "Partido en entradas extra: la estimación solo considera la parte restante de la entrada actual; "
+                "no predice cuántas entradas extra habrá después. "
+            )
+            if extra_innings else ""
+        ) + (
             "Proyección experimental condicional de 1+ hit hasta el final del partido. "
-            "Usa AVG de temporada, oportunidades restantes aproximadas y, cuando existe historial, un ajuste conservador bateador-vs-pitcher; no está calibrada con backtesting "
-            "y no sustituye al modelo oficial."
+            "Usa AVG de temporada, oportunidades restantes aproximadas y, cuando existe historial, un ajuste conservador bateador-vs-pitcher; "
+            "no está calibrada con backtesting y no sustituye al modelo oficial."
         ),
     })
     return result
