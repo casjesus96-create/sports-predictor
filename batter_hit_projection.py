@@ -359,7 +359,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "teams": projected_teams,
         "note": (
             "Proyección experimental condicional de 1+ hit hasta el final del partido. "
-            "Usa AVG de temporada y oportunidades restantes aproximadas; no está calibrada con backtesting "
+            "Usa AVG de temporada, oportunidades restantes aproximadas y, cuando existe historial, un ajuste conservador bateador-vs-pitcher; no está calibrada con backtesting "
             "y no sustituye al modelo oficial."
         ),
     })
