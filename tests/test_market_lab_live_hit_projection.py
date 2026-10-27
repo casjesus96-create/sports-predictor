@@ -100,4 +100,5 @@ def test_live_hit_projection_shrinks_pitcher_history_toward_season_average(monke
     assert hitter["vs_pitcher_at_bats"] == 10
     assert 0.300 < hitter["adjusted_avg"] < 0.500
     assert hitter["pitcher_source"] == "pitcher actual en juego"
-    assert hitter["probability_percent"] > 1 - (1 - 0.3) ** 4.35 and hitter["probability_percent"] < 100
+    baseline_percent = (1 - (1 - 0.300) ** 4.35) * 100
+    assert baseline_percent < hitter["probability_percent"] < 100
