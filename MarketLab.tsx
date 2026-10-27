@@ -3,7 +3,10 @@ type Market = { market_id: string; label: string; value?: unknown; probability: 
 type Candidate = { snapshot_id: string; event_id: string; sport: string; model_version: string; created_at: string | null; home: string; away: string; data_quality: number | null; markets: Market[] };
 type LiveHitter = { player_id: number; player_name: string; batting_order: number; position?: string | null; hits_in_game: number | null; at_bats_in_game: number | null; game_avg: number | null };
 type LiveTeam = { side: string; team_id: number | null; team_name: string; lineup_available: boolean; hitters: LiveHitter[] };
-type LiveProjectionHitter = { player_id: number; probability_percent: number | null; season_avg: number | null; expected_remaining_at_bats: number | null; status: string; projection_note: string };\ntype LiveProjectionTeam = { side: string; team_name: string; hitters: LiveProjectionHitter[] };\ntype LiveHitProjection = { available: boolean; status: string; season: number; method: string; remaining_game_fraction: number; teams: LiveProjectionTeam[]; note: string };\ntype LiveReport = { event_id: string; game_status: string | null; detailed_status: string | null; home_score: number | null; away_score: number | null; current_inning: number | null; inning_state: string | null; outs: number | null; teams: LiveTeam[]; live_hit_projections?: LiveHitProjection; notice: string };
+type LiveProjectionHitter = { player_id: number; probability_percent: number | null; season_avg: number | null; expected_remaining_at_bats: number | null; status: string; projection_note: string };
+type LiveProjectionTeam = { side: string; team_name: string; hitters: LiveProjectionHitter[] };
+type LiveHitProjection = { available: boolean; status: string; season: number; method: string; remaining_game_fraction: number; teams: LiveProjectionTeam[]; note: string };
+type LiveReport = { event_id: string; game_status: string | null; detailed_status: string | null; home_score: number | null; away_score: number | null; current_inning: number | null; inning_state: string | null; outs: number | null; teams: LiveTeam[]; live_hit_projections?: LiveHitProjection; notice: string };
 const API = "/api/v1/market-lab";
 const panel: React.CSSProperties = { border: "1px solid #dbe3ee", borderRadius: 12, padding: 14, minWidth: 0 };
 const statusText: Record<string,string> = { available: "Disponible", experimental: "Experimental", unavailable: "No disponible" };
@@ -22,7 +25,8 @@ export default function MarketLab() {
   } catch(e){if(active)setError(e instanceof Error?e.message:"Error cargando el Laboratorio de Mercados.");}
   finally{if(active)setLoading(false);}} void load();return()=>{active=false;};},[day]);
  const current=items.find(x=>x.snapshot_id===selected);
- const liveProjectionFor=(side:string,playerId:number)=>liveReport?.live_hit_projections?.teams.find(t=>t.side===side)?.hitters.find(h=>h.player_id===playerId);\n const displayValue=(value:unknown)=>value==null?"Sin proyección disponible":typeof value==="object"?
+ const liveProjectionFor=(side:string,playerId:number)=>liveReport?.live_hit_projections?.teams.find(t=>t.side===side)?.hitters.find(h=>h.player_id===playerId);
+ const displayValue=(value:unknown)=>value==null?"Sin proyección disponible":typeof value==="object"?
   Object.entries(value as Record<string,unknown>).map(([k,v])=>`${k}: ${v??"—"}`).join(" · "):String(value);
  async function loadLiveReport(){
   const id=liveGameId.trim();
