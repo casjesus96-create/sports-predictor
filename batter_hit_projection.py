@@ -192,3 +192,138 @@ def build_batter_hit_projections(batter_pitcher_matchups, season=2026):
         ),
     })
     return result
+
+
+def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1, inning_state="Top", game_status="Warmup"):
+    """Experimental P(1+ hit by game end), conditional on observed hits and game progress.
+
+    For batters with a hit already, the event is already achieved (100%, not a forecast).
+    For batters without a hit, estimate remaining AB opportunities from lineup slot and
+    the fraction of game remaining, then apply season AVG. This is an uncalibrated
+    approximation and must not be confused with a validated in-play betting model.
+    """
+    try:
+        inning = max(1, int(current_inning or 1))
+    except (TypeError, ValueError):
+        inning = 1
+    half = str(inning_state or "Top").lower()
+    remaining_ninths = max(0.0, min(1.0, (10.0 - inning + (0.5 if half == "top" else 0.0)) / 9.0))
+    status = str(game_status or "").lower()
+    if status in {"final", "game over", "completed early"}:
+        remaining_ninths = 0.0
+
+    normalized_teams = []
+    player_ids = []
+    for team in live_teams if isinstance(live_teams, list) else []:
+        if not isinstance(team, dict):
+            continue
+        hitters = []
+        for hitter in team.get("hitters") or []:
+            if not isinstance(hitter, dict):
+                continue
+            player_id = _int(hitter.get("player_id"))
+            slot = _int(hitter.get("batting_order"))
+            name = str(hitter.get("player_name") or "").strip()
+            if not player_id or not name or not slot or slot not in EXPECTED_AT_BATS_BY_SLOT:
+                continue
+            hits = _int(hitter.get("hits_in_game"))
+            at_bats = _int(hitter.get("at_bats_in_game"))
+            normalized = {
+                "player_id": player_id,
+                "player_name": name,
+                "batting_order": slot,
+                "position": hitter.get("position"),
+                "hits_in_game": max(0, hits or 0),
+                "at_bats_in_game": max(0, at_bats or 0),
+            }
+            hitters.append(normalized)
+            player_ids.append(player_id)
+        if hitters:
+            normalized_teams.append({
+                "side": team.get("side"),
+                "team_name": team.get("team_name") or team.get("side") or "Equipo",
+                "hitters": hitters,
+            })
+
+    result = {
+        "available": False,
+        "status": "unavailable",
+        "season": int(season),
+        "method": "live_remaining_opportunities_season_avg_v1",
+        "current_inning": inning,
+        "inning_state": inning_state,
+        "remaining_game_fraction": round(remaining_ninths, 3),
+        "teams": [],
+        "note": "Se requieren alineación publicada y estadísticas de bateo de temporada para estimar los hits restantes.",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if not normalized_teams:
+        return result
+    try:
+        stats_by_player = _fetch_season_hitting_stats(player_ids, season)
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        result["note"] = "No se pudieron recuperar estadísticas de temporada para calcular la proyección en vivo."
+        result["error_type"] = type(exc).__name__
+        return result
+
+    projected_teams = []
+    for team in normalized_teams:
+        projected_hitters = []
+        for hitter in team["hitters"]:
+            stats = stats_by_player.get(hitter["player_id"])
+            if not stats:
+                projected_hitters.append({
+                    **hitter,
+                    "season_avg": None,
+                    "expected_remaining_at_bats": None,
+                    "probability_1plus_hit": None,
+                    "probability_percent": None,
+                    "status": "unavailable",
+                    "projection_note": "Sin AVG de temporada utilizable para este bateador.",
+                })
+                continue
+            if hitter["hits_in_game"] > 0:
+                probability = 1.0
+                expected_remaining_ab = max(
+                    0.0,
+                    EXPECTED_AT_BATS_BY_SLOT[hitter["batting_order"]] * remaining_ninths,
+                )
+                note = "Ya consiguió al menos un hit en este partido; el evento 1+ hit ya se cumplió."
+            else:
+                expected_remaining_ab = max(
+                    0.0,
+                    EXPECTED_AT_BATS_BY_SLOT[hitter["batting_order"]] * remaining_ninths,
+                )
+                probability = calculate_one_plus_hit_probability(stats["avg"], expected_remaining_ab)
+                note = "Estimación experimental de un hit en las oportunidades restantes, basada en AVG de temporada y tiempo de juego restante."
+            projected_hitters.append({
+                **hitter,
+                "season_avg": round(stats["avg"], 3),
+                "season_hits": stats["hits"],
+                "season_at_bats": stats["at_bats"],
+                "expected_remaining_at_bats": round(expected_remaining_ab, 2),
+                "probability_1plus_hit": round(probability, 6) if probability is not None else None,
+                "probability_percent": round(probability * 100, 2) if probability is not None else None,
+                "status": "experimental" if probability is not None else "unavailable",
+                "projection_note": note,
+            })
+        projected_teams.append({
+            "side": team["side"],
+            "team_name": team["team_name"],
+            "hitters": projected_hitters,
+        })
+    available_count = sum(
+        1 for team in projected_teams for hitter in team["hitters"]
+        if hitter.get("probability_percent") is not None
+    )
+    result.update({
+        "available": available_count > 0,
+        "status": "experimental" if available_count else "unavailable",
+        "teams": projected_teams,
+        "note": (
+            "Proyección experimental condicional de 1+ hit hasta el final del partido. "
+            "Usa AVG de temporada y oportunidades restantes aproximadas; no está calibrada con backtesting "
+            "y no sustituye al modelo oficial."
+        ),
+    })
+    return result
