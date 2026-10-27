@@ -32,7 +32,7 @@ def test_live_hit_projection_uses_season_avg_and_remaining_opportunities(monkeyp
     assert result["available"] is True
     assert result["status"] == "experimental"
     assert hitters[0]["probability_percent"] == 100.0
-    assert "already" not in hitters[0]["projection_note"].lower()
+    assert "Ya consiguió" in hitters[0]["projection_note"]
     assert hitters[1]["probability_percent"] is not None
     assert 0 < hitters[1]["probability_percent"] < 100
     assert hitters[1]["expected_remaining_at_bats"] > 0
