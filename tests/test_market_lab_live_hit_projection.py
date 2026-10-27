@@ -209,3 +209,39 @@ def test_unconfirmed_next_pitcher_ignores_stale_pitcher_id_and_explains_no_adjus
     assert "próximo pitcher no confirmado" in hitter["projection_note"].lower()
     assert "no se aplicó ajuste directo" in hitter["projection_note"].lower()
     assert "pitcher identificado solo se aplica" not in hitter["projection_note"].lower()
+
+def test_extra_innings_do_not_force_remaining_hit_probability_to_zero(monkeypatch):
+    monkeypatch.setattr(
+        "batter_hit_projection._fetch_season_hitting_stats",
+        lambda player_ids, season: {
+            101: {"season": season, "avg": 0.300, "at_bats": 100, "hits": 30},
+        },
+    )
+    monkeypatch.setattr(
+        "batter_hit_projection._fetch_vs_pitcher_stats",
+        lambda player_ids, pitcher_id: {},
+    )
+    result = build_live_batter_hit_projections(
+        [{
+            "side": "away",
+            "team_name": "Away",
+            "hitters": [{
+                "player_id": 101,
+                "player_name": "Hitter Example",
+                "batting_order": 1,
+                "hits_in_game": 0,
+                "at_bats_in_game": 4,
+            }],
+        }],
+        season=2026,
+        current_inning=10,
+        inning_state="Top",
+        game_status="Live",
+    )
+    hitter = result["teams"][0]["hitters"][0]
+    assert result["remaining_opportunities_method"] == "solo_entrada_extra_actual"
+    assert result["remaining_game_fraction"] > 0
+    assert hitter["expected_remaining_at_bats"] > 0
+    assert hitter["probability_percent"] > 0
+    assert "no predice cuántas entradas extra habrá después" in result["note"].lower()
+

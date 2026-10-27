@@ -208,11 +208,30 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         inning = max(1, int(current_inning or 1))
     except (TypeError, ValueError):
         inning = 1
-    half = str(inning_state or "Top").lower()
-    remaining_ninths = max(0.0, min(1.0, (10.0 - inning + (0.5 if half == "top" else 0.0)) / 9.0))
-    status = str(game_status or "").lower()
-    if status in {"final", "game over", "completed early"}:
+    half = str(inning_state or "Top").strip().lower()
+    status = str(game_status or "").strip().lower()
+    is_top_half = half in {"top", "top of inning"}
+    is_bottom_half = half in {"bottom", "bottom of inning"}
+    is_final = status in {"final", "game over", "completed early"}
+    extra_innings = inning > 9 and not is_final
+
+    if is_final:
         remaining_ninths = 0.0
+    elif extra_innings:
+        # Do not return a false zero merely because the regulation innings ended.
+        # Estimate only the remainder of the current extra inning; later extra
+        # innings are unknowable and intentionally are not projected.
+        if is_top_half:
+            remaining_ninths = 1.0 / 9.0
+        elif is_bottom_half:
+            remaining_ninths = 0.5 / 9.0
+        else:
+            remaining_ninths = 0.0
+    else:
+        remaining_ninths = max(
+            0.0,
+            min(1.0, (10.0 - inning + (0.5 if is_top_half else 0.0)) / 9.0),
+        )
 
     normalized_teams = []
     player_ids = []
@@ -270,8 +289,17 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "current_inning": inning,
         "inning_state": inning_state,
         "remaining_game_fraction": round(remaining_ninths, 3),
+        "remaining_opportunities_method": (
+            "solo_entrada_extra_actual"
+            if extra_innings
+            else "fraccion_simplificada_de_9_entradas"
+        ),
         "teams": [],
-        "note": "Se requieren alineación publicada y estadísticas de bateo de temporada para estimar los hits restantes.",
+        "note": (
+            "Partido en entradas extra: la estimación solo considera la parte restante de la entrada actual; no predice cuántas entradas extra habrá después."
+            if extra_innings
+            else "Se requieren alineación publicada y estadísticas de bateo de temporada para estimar los hits restantes. Los turnos restantes son una aproximación por fracción del partido, no una predicción individual basada en outs o próxima aparición."
+        ),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     if not normalized_teams:
@@ -429,9 +457,15 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "status": "experimental" if available_count else "unavailable",
         "teams": projected_teams,
         "note": (
+            (
+                "Partido en entradas extra: la estimación solo considera la parte restante de la entrada actual; "
+                "no predice cuántas entradas extra habrá después. "
+            )
+            if extra_innings else ""
+        ) + (
             "Proyección experimental condicional de 1+ hit hasta el final del partido. "
-            "Usa AVG de temporada, oportunidades restantes aproximadas y, cuando existe historial, un ajuste conservador bateador-vs-pitcher; no está calibrada con backtesting "
-            "y no sustituye al modelo oficial."
+            "Usa AVG de temporada, oportunidades restantes aproximadas y, cuando existe historial, un ajuste conservador bateador-vs-pitcher; "
+            "no está calibrada con backtesting y no sustituye al modelo oficial."
         ),
     })
     return result
