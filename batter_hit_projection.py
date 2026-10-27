@@ -311,20 +311,37 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
             if vs_pitcher_avg is not None and vs_pitcher_ab > 0:
                 adjusted_avg = (stats["avg"] * (1.0 - matchup_weight)) + (vs_pitcher_avg * matchup_weight)
                 adjusted_avg = min(0.60, max(0.05, adjusted_avg))
+            expected_remaining_ab = max(
+                0.0,
+                EXPECTED_AT_BATS_BY_SLOT[hitter["batting_order"]] * remaining_ninths,
+            )
+            # Treat the identified pitcher as relevant for at most the next plate
+            # appearance. Later appearances use season AVG because the bullpen/
+            # future pitcher is unknown; do not project the current pitcher across
+            # every remaining at-bat.
+            next_pa_ab = min(1.0, expected_remaining_ab)
+            later_ab = max(0.0, expected_remaining_ab - next_pa_ab)
+            probability_additional_hit = (
+                1.0
+                - ((1.0 - adjusted_avg) ** next_pa_ab)
+                * ((1.0 - stats["avg"]) ** later_ab)
+            ) if expected_remaining_ab > 0 else 0.0
+            probability_additional_hit = min(1.0, max(0.0, probability_additional_hit))
             if hitter["hits_in_game"] > 0:
                 probability = 1.0
-                expected_remaining_ab = max(
-                    0.0,
-                    EXPECTED_AT_BATS_BY_SLOT[hitter["batting_order"]] * remaining_ninths,
+                note = (
+                    "Ya consiguió al menos un hit; el 1+ hit del partido está cumplido. "
+                    "La probabilidad de otro hit es una estimación separada; el pitcher identificado "
+                    "solo se aplica a la próxima aparición y las posteriores usan AVG de temporada."
                 )
-                note = "Ya consiguió al menos un hit en este partido; el evento 1+ hit ya se cumplió."
             else:
-                expected_remaining_ab = max(
-                    0.0,
-                    EXPECTED_AT_BATS_BY_SLOT[hitter["batting_order"]] * remaining_ninths,
-                )
                 probability = calculate_one_plus_hit_probability(adjusted_avg, expected_remaining_ab)
-                note = "Estimación experimental con AVG de temporada y oportunidades restantes; ajusta de forma conservadora por historial directo ante el pitcher identificado." if vs_pitcher_ab > 0 and vs_pitcher_avg is not None else "Estimación experimental basada en AVG de temporada y tiempo restante; sin ajuste directo fiable ante el pitcher."
+                note = (
+                    "Estimación experimental: el pitcher identificado solo se aplica a la próxima "
+                    "aparición; las oportunidades posteriores usan AVG de temporada."
+                    if vs_pitcher_ab > 0 and vs_pitcher_avg is not None
+                    else "Estimación experimental basada en AVG de temporada y oportunidades restantes; pitcher rival sin ajuste directo fiable."
+                )
             projected_hitters.append({
                 **hitter,
                 "season_avg": round(stats["avg"], 3),
@@ -339,6 +356,8 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
                 "expected_remaining_at_bats": round(expected_remaining_ab, 2),
                 "probability_1plus_hit": round(probability, 6) if probability is not None else None,
                 "probability_percent": round(probability * 100, 2) if probability is not None else None,
+                "probability_additional_hit": round(probability_additional_hit, 6),
+                "probability_additional_hit_percent": round(probability_additional_hit * 100, 2),
                 "status": "experimental" if probability is not None else "unavailable",
                 "projection_note": note,
             })
