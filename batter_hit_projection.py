@@ -335,7 +335,9 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
                     "solo se aplica a la próxima aparición y las posteriores usan AVG de temporada."
                 )
             else:
-                probability = calculate_one_plus_hit_probability(adjusted_avg, expected_remaining_ab)
+                # With no hit yet, "1+ hit by game end" is the same event as
+                # "an additional hit from now"; use the same one-PA pitcher scope.
+                probability = probability_additional_hit if expected_remaining_ab > 0 else 0.0
                 note = (
                     "Estimación experimental: el pitcher identificado solo se aplica a la próxima "
                     "aparición; las oportunidades posteriores usan AVG de temporada."
