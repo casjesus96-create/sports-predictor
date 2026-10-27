@@ -139,3 +139,26 @@ def test_hit_already_achieved_keeps_100_percent_and_separates_next_hit(monkeypat
         (1 - (1 - 0.291) ** hitter["expected_remaining_at_bats"]) * 100
     )
     assert "otro hit" in hitter["projection_note"].lower()
+
+
+def test_live_projection_note_reports_exact_hit_count_and_adjusted_probability(monkeypatch):
+    monkeypatch.setattr("batter_hit_projection._fetch_season_hitting_stats", lambda player_ids, season: {
+        101: {"season": season, "avg": 0.291, "at_bats": 100, "hits": 29},
+    })
+    monkeypatch.setattr("batter_hit_projection._fetch_vs_pitcher_stats", lambda player_ids, pitcher_id: {
+        101: {"available": True, "avg": 0.0, "at_bats": 4, "hits": 0, "sample_size": 4},
+    })
+    result = build_live_batter_hit_projections(
+        [{"side": "away", "team_name": "Brewers", "opposing_pitcher_id": 999,
+          "opposing_pitcher_name": "Pitcher Example", "hitters": [{
+              "player_id": 101, "player_name": "Hitter Example", "batting_order": 1,
+              "hits_in_game": 2, "at_bats_in_game": 2,
+          }]}],
+        season=2026, current_inning=7, inning_state="Top", game_status="Live",
+    )
+    hitter = result["teams"][0]["hitters"][0]
+    baseline = 1 - (1 - 0.291) ** hitter["expected_remaining_at_bats"]
+    assert hitter["probability_percent"] == 100.0
+    assert hitter["probability_additional_hit_percent"] < baseline * 100
+    assert "2 hit(s)" in hitter["projection_note"]
+    assert hitter["vs_pitcher_hits"] == 0
