@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 
 import requests
 
+from batter_pitcher_engine import _fetch_vs_pitcher_stats
+
 MLB_API = "https://statsapi.mlb.com/api/v1"
 TIMEOUT_SECONDS = 15
 HEADERS = {"User-Agent": "Sports-Predictor/1.0", "Accept": "application/json"}
@@ -164,6 +166,12 @@ def build_batter_hit_projections(batter_pitcher_matchups, season=2026):
             hitters.append({
                 **hitter,
                 "season_avg": round(stats["avg"], 3),
+                "adjusted_avg": round(adjusted_avg, 3),
+                "vs_pitcher_avg": round(vs_pitcher_avg, 3) if vs_pitcher_avg is not None and vs_pitcher_ab > 0 else None,
+                "vs_pitcher_at_bats": vs_pitcher_ab,
+                "opposing_pitcher_name": team.get("opposing_pitcher_name"),
+                "pitcher_source": team.get("pitcher_source"),
+                "matchup_weight": round(matchup_weight, 3),
                 "season_hits": stats["hits"],
                 "season_at_bats": stats["at_bats"],
                 "expected_at_bats": expected_ab,
@@ -242,6 +250,9 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
             normalized_teams.append({
                 "side": team.get("side"),
                 "team_name": team.get("team_name") or team.get("side") or "Equipo",
+                "opposing_pitcher_id": _int(team.get("opposing_pitcher_id")),
+                "opposing_pitcher_name": team.get("opposing_pitcher_name"),
+                "pitcher_source": team.get("pitcher_source"),
                 "hitters": hitters,
             })
 
@@ -249,7 +260,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "available": False,
         "status": "unavailable",
         "season": int(season),
-        "method": "live_remaining_opportunities_season_avg_v1",
+        "method": "live_remaining_opportunities_shrunk_batter_vs_pitcher_v2",
         "current_inning": inning,
         "inning_state": inning_state,
         "remaining_game_fraction": round(remaining_ninths, 3),
@@ -266,9 +277,24 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         result["error_type"] = type(exc).__name__
         return result
 
+    # Direct batter-vs-pitcher history is optional. Keep the season-AVG baseline
+    # intact if the pitcher or reliable history is unavailable.
+    pitcher_stats_by_team = {}
+    for team in normalized_teams:
+        pitcher_id = team.get("opposing_pitcher_id")
+        if not pitcher_id:
+            continue
+        try:
+            pitcher_stats_by_team[team["side"]] = _fetch_vs_pitcher_stats(
+                [h["player_id"] for h in team["hitters"]], pitcher_id
+            )
+        except (requests.RequestException, ValueError, TypeError, KeyError):
+            pitcher_stats_by_team[team["side"]] = {}
+
     projected_teams = []
     for team in normalized_teams:
         projected_hitters = []
+        matchup_stats = pitcher_stats_by_team.get(team["side"], {})
         for hitter in team["hitters"]:
             stats = stats_by_player.get(hitter["player_id"])
             if not stats:
@@ -282,6 +308,15 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
                     "projection_note": "Sin AVG de temporada utilizable para este bateador.",
                 })
                 continue
+            vs_pitcher = matchup_stats.get(hitter["player_id"]) or {}
+            vs_pitcher_ab = _int(vs_pitcher.get("at_bats")) or 0
+            vs_pitcher_avg = _float(vs_pitcher.get("avg"))
+            # Shrink direct matchup AVG toward season AVG; small samples get little weight.
+            matchup_weight = vs_pitcher_ab / (vs_pitcher_ab + 50.0) if vs_pitcher_ab > 0 else 0.0
+            adjusted_avg = stats["avg"]
+            if vs_pitcher_avg is not None and vs_pitcher_ab > 0:
+                adjusted_avg = (stats["avg"] * (1.0 - matchup_weight)) + (vs_pitcher_avg * matchup_weight)
+                adjusted_avg = min(0.60, max(0.05, adjusted_avg))
             if hitter["hits_in_game"] > 0:
                 probability = 1.0
                 expected_remaining_ab = max(
@@ -294,8 +329,8 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
                     0.0,
                     EXPECTED_AT_BATS_BY_SLOT[hitter["batting_order"]] * remaining_ninths,
                 )
-                probability = calculate_one_plus_hit_probability(stats["avg"], expected_remaining_ab)
-                note = "Estimación experimental de un hit en las oportunidades restantes, basada en AVG de temporada y tiempo de juego restante."
+                probability = calculate_one_plus_hit_probability(adjusted_avg, expected_remaining_ab)
+                note = "Estimación experimental con AVG de temporada y oportunidades restantes; ajusta de forma conservadora por historial directo ante el pitcher identificado." if vs_pitcher_ab > 0 and vs_pitcher_avg is not None else "Estimación experimental basada en AVG de temporada y tiempo restante; sin ajuste directo fiable ante el pitcher."
             projected_hitters.append({
                 **hitter,
                 "season_avg": round(stats["avg"], 3),
@@ -310,6 +345,8 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         projected_teams.append({
             "side": team["side"],
             "team_name": team["team_name"],
+            "opposing_pitcher_name": team.get("opposing_pitcher_name"),
+            "pitcher_source": team.get("pitcher_source"),
             "hitters": projected_hitters,
         })
     available_count = sum(
