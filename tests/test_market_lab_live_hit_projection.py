@@ -53,3 +53,52 @@ def test_live_hit_projection_reports_unavailable_when_stats_missing(monkeypatch)
     assert result["available"] is False
     assert result["teams"][0]["hitters"][0]["probability_percent"] is None
     assert result["teams"][0]["hitters"][0]["status"] == "unavailable"
+
+
+
+def test_live_hit_projection_shrinks_pitcher_history_toward_season_average(monkeypatch):
+    monkeypatch.setattr(
+        "batter_hit_projection._fetch_season_hitting_stats",
+        lambda player_ids, season: {
+            101: {"season": season, "avg": 0.300, "at_bats": 100, "hits": 30},
+        },
+    )
+    monkeypatch.setattr(
+        "batter_hit_projection._fetch_vs_pitcher_stats",
+        lambda player_ids, pitcher_id: {
+            101: {
+                "available": True,
+                "avg": 0.500,
+                "at_bats": 10,
+                "hits": 5,
+                "sample_size": 10,
+            },
+        },
+    )
+    result = build_live_batter_hit_projections(
+        [{
+            "side": "away",
+            "team_name": "Away",
+            "opposing_pitcher_id": 999,
+            "opposing_pitcher_name": "Pitcher Example",
+            "pitcher_source": "pitcher actual en juego",
+            "hitters": [{
+                "player_id": 101,
+                "player_name": "Hitter Example",
+                "batting_order": 1,
+                "hits_in_game": 0,
+                "at_bats_in_game": 0,
+            }],
+        }],
+        season=2026,
+        current_inning=1,
+        inning_state="Top",
+        game_status="Live",
+    )
+    hitter = result["teams"][0]["hitters"][0]
+    assert hitter["vs_pitcher_avg"] == 0.5
+    assert hitter["vs_pitcher_at_bats"] == 10
+    assert 0.300 < hitter["adjusted_avg"] < 0.500
+    assert hitter["pitcher_source"] == "pitcher actual en juego"
+    baseline_percent = (1 - (1 - 0.300) ** 4.35) * 100
+    assert baseline_percent < hitter["probability_percent"] < 100

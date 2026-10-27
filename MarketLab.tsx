@@ -3,8 +3,8 @@ type Market = { market_id: string; label: string; value?: unknown; probability: 
 type Candidate = { snapshot_id: string; event_id: string; sport: string; model_version: string; created_at: string | null; home: string; away: string; data_quality: number | null; markets: Market[] };
 type LiveHitter = { player_id: number; player_name: string; batting_order: number; position?: string | null; hits_in_game: number | null; at_bats_in_game: number | null; game_avg: number | null };
 type LiveTeam = { side: string; team_id: number | null; team_name: string; lineup_available: boolean; hitters: LiveHitter[] };
-type LiveProjectionHitter = { player_id: number; probability_percent: number | null; season_avg: number | null; expected_remaining_at_bats: number | null; status: string; projection_note: string };
-type LiveProjectionTeam = { side: string; team_name: string; hitters: LiveProjectionHitter[] };
+type LiveProjectionHitter = { player_id: number; probability_percent: number | null; season_avg: number | null; adjusted_avg?: number | null; vs_pitcher_avg?: number | null; vs_pitcher_at_bats?: number; opposing_pitcher_name?: string | null; pitcher_source?: string | null; expected_remaining_at_bats: number | null; status: string; projection_note: string };
+type LiveProjectionTeam = { side: string; team_name: string; opposing_pitcher_name?: string | null; pitcher_source?: string | null; hitters: LiveProjectionHitter[] };
 type LiveHitProjection = { available: boolean; status: string; season: number; method: string; remaining_game_fraction: number; teams: LiveProjectionTeam[]; note: string };
 type LiveReport = { event_id: string; game_status: string | null; detailed_status: string | null; home_score: number | null; away_score: number | null; current_inning: number | null; inning_state: string | null; outs: number | null; teams: LiveTeam[]; live_hit_projections?: LiveHitProjection; notice: string };
 const API = "/api/v1/market-lab";
@@ -71,7 +71,8 @@ export default function MarketLab() {
       {liveProjectionFor(team.side,h.player_id)?.probability_percent!=null&&<div style={{gridColumn:"1 / -1",fontSize:13,color:"#166534",background:"#f0fdf4",padding:"7px 9px",borderRadius:7}}>
        <strong>Proyección experimental 1+ hit: {liveProjectionFor(team.side,h.player_id)?.probability_percent?.toFixed(2)}%</strong>
        <div style={{color:"#475569",fontSize:12}}>AVG temporada: {liveProjectionFor(team.side,h.player_id)?.season_avg==null?"—":(liveProjectionFor(team.side,h.player_id)!.season_avg!*100).toFixed(1)+"%"} · Turnos restantes estimados: {liveProjectionFor(team.side,h.player_id)?.expected_remaining_at_bats??"—"}</div>
-       <div style={{color:"#475569",fontSize:12}}>{liveProjectionFor(team.side,h.player_id)?.projection_note}</div>
+       {liveProjectionFor(team.side,h.player_id)?.vs_pitcher_avg!=null&&<div style={{color:"#475569",fontSize:12}}>AVG vs {liveProjectionFor(team.side,h.player_id)?.opposing_pitcher_name||"pitcher rival"}: {(liveProjectionFor(team.side,h.player_id)!.vs_pitcher_avg!*100).toFixed(1)}% · Muestra: {liveProjectionFor(team.side,h.player_id)?.vs_pitcher_at_bats??0} AB · AVG ajustado: {((liveProjectionFor(team.side,h.player_id)?.adjusted_avg??0)*100).toFixed(1)}%</div>}
+       <div style={{color:"#475569",fontSize:12}}>{liveProjectionFor(team.side,h.player_id)?.pitcher_source?`Referencia: ${liveProjectionFor(team.side,h.player_id)?.pitcher_source}. `:""}{liveProjectionFor(team.side,h.player_id)?.projection_note}</div>
       </div>}
       {liveProjectionFor(team.side,h.player_id)?.probability_percent==null&&<div style={{gridColumn:"1 / -1",fontSize:12,color:"#64748b"}}>Proyección no disponible: faltan estadísticas de temporada utilizables.</div>}
      </div>)}</div>}
