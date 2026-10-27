@@ -330,7 +330,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
             if hitter["hits_in_game"] > 0:
                 probability = 1.0
                 note = (
-                    "Ya consiguió al menos un hit; el 1+ hit del partido está cumplido. "
+                    f"Ya consiguió {hitter['hits_in_game']} hit(s) en este partido; el objetivo de 1+ hit está cumplido. "
                     "La probabilidad de otro hit es una estimación separada; el pitcher identificado "
                     "solo se aplica a la próxima aparición y las posteriores usan AVG de temporada."
                 )
@@ -350,6 +350,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
                 "adjusted_avg": round(adjusted_avg, 3),
                 "vs_pitcher_avg": round(vs_pitcher_avg, 3) if vs_pitcher_avg is not None and vs_pitcher_ab > 0 else None,
                 "vs_pitcher_at_bats": vs_pitcher_ab,
+                "vs_pitcher_hits": _int(vs_pitcher.get("hits")) or 0,
                 "opposing_pitcher_name": team.get("opposing_pitcher_name"),
                 "pitcher_source": team.get("pitcher_source"),
                 "matchup_weight": round(matchup_weight, 3),
