@@ -162,3 +162,50 @@ def test_live_projection_note_reports_exact_hit_count_and_adjusted_probability(m
     assert hitter["probability_additional_hit_percent"] < baseline * 100
     assert "2 hit(s)" in hitter["projection_note"]
     assert hitter["vs_pitcher_hits"] == 0
+
+
+
+def test_unconfirmed_next_pitcher_ignores_stale_pitcher_id_and_explains_no_adjustment(monkeypatch):
+    monkeypatch.setattr(
+        "batter_hit_projection._fetch_season_hitting_stats",
+        lambda player_ids, season: {
+            101: {"season": season, "avg": 0.291, "at_bats": 100, "hits": 29},
+        },
+    )
+
+    def unexpected_matchup_lookup(player_ids, pitcher_id):
+        raise AssertionError("No debe consultarse historial con pitcher no confirmado")
+
+    monkeypatch.setattr(
+        "batter_hit_projection._fetch_vs_pitcher_stats",
+        unexpected_matchup_lookup,
+    )
+    result = build_live_batter_hit_projections(
+        [{
+            "side": "away",
+            "team_name": "Brewers",
+            # Deliberately stale ID: the source status must take precedence.
+            "opposing_pitcher_id": 999,
+            "opposing_pitcher_name": "Stale Pitcher",
+            "pitcher_source": "próximo pitcher no confirmado",
+            "hitters": [{
+                "player_id": 101,
+                "player_name": "Hitter Example",
+                "batting_order": 1,
+                "hits_in_game": 4,
+                "at_bats_in_game": 4,
+            }],
+        }],
+        season=2026,
+        current_inning=7,
+        inning_state="Top",
+        game_status="Live",
+    )
+    hitter = result["teams"][0]["hitters"][0]
+    assert hitter["probability_percent"] == 100.0
+    assert hitter["matchup_adjustment_applied"] is False
+    assert hitter["vs_pitcher_avg"] is None
+    assert hitter["opposing_pitcher_name"] is None
+    assert "próximo pitcher no confirmado" in hitter["projection_note"].lower()
+    assert "no se aplicó ajuste directo" in hitter["projection_note"].lower()
+    assert "pitcher identificado solo se aplica" not in hitter["projection_note"].lower()

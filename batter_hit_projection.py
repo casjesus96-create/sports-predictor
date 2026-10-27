@@ -244,8 +244,20 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
             normalized_teams.append({
                 "side": team.get("side"),
                 "team_name": team.get("team_name") or team.get("side") or "Equipo",
-                "opposing_pitcher_id": _int(team.get("opposing_pitcher_id")),
-                "opposing_pitcher_name": team.get("opposing_pitcher_name"),
+                # A stale pitcher ID must never be treated as confirmed when the
+                # API explicitly says the next pitcher is unknown.
+                "opposing_pitcher_id": (
+                    None
+                    if str(team.get("pitcher_source") or "").strip().lower()
+                    == "próximo pitcher no confirmado"
+                    else _int(team.get("opposing_pitcher_id"))
+                ),
+                "opposing_pitcher_name": (
+                    None
+                    if str(team.get("pitcher_source") or "").strip().lower()
+                    == "próximo pitcher no confirmado"
+                    else team.get("opposing_pitcher_name")
+                ),
                 "pitcher_source": team.get("pitcher_source"),
                 "hitters": hitters,
             })
@@ -327,22 +339,58 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
                 * ((1.0 - stats["avg"]) ** later_ab)
             ) if expected_remaining_ab > 0 else 0.0
             probability_additional_hit = min(1.0, max(0.0, probability_additional_hit))
+            pitcher_source = str(team.get("pitcher_source") or "").strip().lower()
+            matchup_adjustment_applied = bool(
+                team.get("opposing_pitcher_id")
+                and vs_pitcher_ab > 0
+                and vs_pitcher_avg is not None
+            )
+            if pitcher_source == "próximo pitcher no confirmado":
+                pitcher_explanation = (
+                    "Próximo pitcher no confirmado; no se aplicó ajuste directo bateador-vs-pitcher. "
+                    "La estimación usa AVG de temporada."
+                )
+            elif pitcher_source == "pitcher actual en juego; puede cambiar":
+                pitcher_explanation = (
+                    "Referencia: pitcher que está defendiendo ahora, pero puede cambiar antes de la próxima aparición al plato. "
+                    + (
+                        "El ajuste histórico bateador-vs-pitcher se aplicó solo como referencia para la próxima aparición."
+                        if matchup_adjustment_applied
+                        else "No se aplicó ajuste histórico directo por falta de una muestra utilizable."
+                    )
+                )
+            elif pitcher_source == "abridor previsto":
+                pitcher_explanation = (
+                    "Referencia: abridor previsto; no confirma quién lanzará en la próxima aparición. "
+                    + (
+                        "El ajuste histórico se limita a la próxima aparición estimada."
+                        if matchup_adjustment_applied
+                        else "No se aplicó ajuste histórico directo por falta de una muestra utilizable."
+                    )
+                )
+            else:
+                pitcher_explanation = (
+                    "No hay pitcher confirmado para la próxima aparición; no se aplicó ajuste directo bateador-vs-pitcher."
+                    if not matchup_adjustment_applied
+                    else "El ajuste histórico bateador-vs-pitcher se limita a la próxima aparición estimada."
+                )
+
             if hitter["hits_in_game"] > 0:
                 probability = 1.0
                 note = (
                     f"Ya consiguió {hitter['hits_in_game']} hit(s) en este partido; el objetivo de 1+ hit está cumplido. "
-                    "La probabilidad de otro hit es una estimación separada; el pitcher identificado "
-                    "solo se aplica a la próxima aparición y las posteriores usan AVG de temporada."
+                    "La probabilidad de otro hit es una estimación separada. "
+                    + pitcher_explanation
+                    + " Las apariciones posteriores usan AVG de temporada."
                 )
             else:
                 # With no hit yet, "1+ hit by game end" is the same event as
                 # "an additional hit from now"; use the same one-PA pitcher scope.
                 probability = probability_additional_hit if expected_remaining_ab > 0 else 0.0
                 note = (
-                    "Estimación experimental: el pitcher identificado solo se aplica a la próxima "
-                    "aparición; las oportunidades posteriores usan AVG de temporada."
-                    if vs_pitcher_ab > 0 and vs_pitcher_avg is not None
-                    else "Estimación experimental basada en AVG de temporada y oportunidades restantes; pitcher rival sin ajuste directo fiable."
+                    "Estimación experimental basada en oportunidades restantes. "
+                    + pitcher_explanation
+                    + " Las apariciones posteriores usan AVG de temporada."
                 )
             projected_hitters.append({
                 **hitter,
@@ -351,6 +399,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
                 "vs_pitcher_avg": round(vs_pitcher_avg, 3) if vs_pitcher_avg is not None and vs_pitcher_ab > 0 else None,
                 "vs_pitcher_at_bats": vs_pitcher_ab,
                 "vs_pitcher_hits": _int(vs_pitcher.get("hits")) or 0,
+                "matchup_adjustment_applied": matchup_adjustment_applied,
                 "opposing_pitcher_name": team.get("opposing_pitcher_name"),
                 "pitcher_source": team.get("pitcher_source"),
                 "matchup_weight": round(matchup_weight, 3),
