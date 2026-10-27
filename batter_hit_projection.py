@@ -166,12 +166,6 @@ def build_batter_hit_projections(batter_pitcher_matchups, season=2026):
             hitters.append({
                 **hitter,
                 "season_avg": round(stats["avg"], 3),
-                "adjusted_avg": round(adjusted_avg, 3),
-                "vs_pitcher_avg": round(vs_pitcher_avg, 3) if vs_pitcher_avg is not None and vs_pitcher_ab > 0 else None,
-                "vs_pitcher_at_bats": vs_pitcher_ab,
-                "opposing_pitcher_name": team.get("opposing_pitcher_name"),
-                "pitcher_source": team.get("pitcher_source"),
-                "matchup_weight": round(matchup_weight, 3),
                 "season_hits": stats["hits"],
                 "season_at_bats": stats["at_bats"],
                 "expected_at_bats": expected_ab,
