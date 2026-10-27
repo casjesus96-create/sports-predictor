@@ -20,3 +20,25 @@ def test_live_matchup_ignores_incomplete_plays_and_invalid_ids():
         {"matchup": {"batter": {"id": 10}, "pitcher": {"id": 20}}, "result": {}},
         {"matchup": {"batter": {}, "pitcher": {"id": 20}}, "result": {"eventType": "single"}},
     ]) == {}
+
+
+
+def test_resolve_active_batting_side_prefers_mlb_offense_team_id():
+    from mlb_live_matchup import resolve_active_batting_side
+
+    linescore = {
+        "inningState": "Middle",
+        "offense": {"team": {"id": 108}},
+    }
+    game_teams = {"away": {"id": 109}, "home": {"id": 108}}
+    assert resolve_active_batting_side(linescore, game_teams) == "home"
+
+
+def test_resolve_active_batting_side_only_falls_back_for_explicit_halves():
+    from mlb_live_matchup import resolve_active_batting_side
+
+    game_teams = {"away": {"id": 109}, "home": {"id": 108}}
+    assert resolve_active_batting_side({"inningState": "Top"}, game_teams) == "away"
+    assert resolve_active_batting_side({"inningState": "Bottom"}, game_teams) == "home"
+    assert resolve_active_batting_side({"inningState": "Middle"}, game_teams) is None
+    assert resolve_active_batting_side({}, game_teams) is None
