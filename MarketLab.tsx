@@ -3,7 +3,10 @@ type Market = { market_id: string; label: string; value?: unknown; probability: 
 type Candidate = { snapshot_id: string; event_id: string; sport: string; model_version: string; created_at: string | null; home: string; away: string; data_quality: number | null; markets: Market[] };
 type LiveHitter = { player_id: number; player_name: string; batting_order: number; position?: string | null; hits_in_game: number | null; at_bats_in_game: number | null; game_avg: number | null };
 type LiveTeam = { side: string; team_id: number | null; team_name: string; lineup_available: boolean; hitters: LiveHitter[] };
-type LiveReport = { event_id: string; game_status: string | null; detailed_status: string | null; home_score: number | null; away_score: number | null; current_inning: number | null; inning_state: string | null; outs: number | null; teams: LiveTeam[]; notice: string };
+type LiveProjectionHitter = { player_id: number; probability_percent: number | null; season_avg: number | null; expected_remaining_at_bats: number | null; status: string; projection_note: string };
+type LiveProjectionTeam = { side: string; team_name: string; hitters: LiveProjectionHitter[] };
+type LiveHitProjection = { available: boolean; status: string; season: number; method: string; remaining_game_fraction: number; teams: LiveProjectionTeam[]; note: string };
+type LiveReport = { event_id: string; game_status: string | null; detailed_status: string | null; home_score: number | null; away_score: number | null; current_inning: number | null; inning_state: string | null; outs: number | null; teams: LiveTeam[]; live_hit_projections?: LiveHitProjection; notice: string };
 const API = "/api/v1/market-lab";
 const panel: React.CSSProperties = { border: "1px solid #dbe3ee", borderRadius: 12, padding: 14, minWidth: 0 };
 const statusText: Record<string,string> = { available: "Disponible", experimental: "Experimental", unavailable: "No disponible" };
@@ -22,6 +25,7 @@ export default function MarketLab() {
   } catch(e){if(active)setError(e instanceof Error?e.message:"Error cargando el Laboratorio de Mercados.");}
   finally{if(active)setLoading(false);}} void load();return()=>{active=false;};},[day]);
  const current=items.find(x=>x.snapshot_id===selected);
+ const liveProjectionFor=(side:string,playerId:number)=>liveReport?.live_hit_projections?.teams.find(t=>t.side===side)?.hitters.find(h=>h.player_id===playerId);
  const displayValue=(value:unknown)=>value==null?"Sin proyección disponible":typeof value==="object"?
   Object.entries(value as Record<string,unknown>).map(([k,v])=>`${k}: ${v??"—"}`).join(" · "):String(value);
  async function loadLiveReport(){
@@ -58,12 +62,18 @@ export default function MarketLab() {
    {liveReport&&<div style={{display:"grid",gap:10}}>
     <article style={panel}><strong>{liveReport.teams.find(t=>t.side==="away")?.team_name||"Visitante"} {liveReport.away_score??"—"} — {liveReport.home_score??"—"} {liveReport.teams.find(t=>t.side==="home")?.team_name||"Local"}</strong>
      <p style={{margin:"6px 0",color:"#475569",fontSize:13}}>Estado: {liveReport.detailed_status||liveReport.game_status||"No disponible"}{liveReport.current_inning? ` · Entrada ${liveReport.current_inning} ${liveReport.inning_state||""}`:""}{liveReport.outs!=null? ` · Outs: ${liveReport.outs}`:""}</p>
-     <p style={{margin:0,fontSize:13,color:"#92400e"}}>{liveReport.notice}</p></article>
+     <p style={{margin:0,fontSize:13,color:"#92400e"}}>{liveReport.notice}</p>{liveReport.live_hit_projections&&<p style={{margin:"6px 0 0",fontSize:13,color:"#475569"}}>{liveReport.live_hit_projections.note}</p>}</article>
     {liveReport.teams.map(team=><article key={team.side} style={panel}><h4 style={{margin:"0 0 8px"}}>{team.team_name}</h4>
      {!team.lineup_available&&<p style={{color:"#64748b",fontSize:13}}>MLB no ha publicado un orden al bate disponible en el boxscore.</p>}
      {team.hitters.length>0&&<div style={{display:"grid",gap:8}}>{team.hitters.map(h=><div key={h.player_id} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:8,borderBottom:"1px solid #e2e8f0",paddingBottom:7}}>
       <div><strong>{h.batting_order}. {h.player_name}</strong><div style={{fontSize:12,color:"#64748b"}}>{h.position||"Posición no disponible"}</div></div>
       <div style={{textAlign:"right",whiteSpace:"nowrap"}}><strong>{h.hits_in_game??"—"} H</strong><div style={{fontSize:12,color:"#64748b"}}>{h.at_bats_in_game??"—"} AB</div></div>
+      {liveProjectionFor(team.side,h.player_id)?.probability_percent!=null&&<div style={{gridColumn:"1 / -1",fontSize:13,color:"#166534",background:"#f0fdf4",padding:"7px 9px",borderRadius:7}}>
+       <strong>Proyección experimental 1+ hit: {liveProjectionFor(team.side,h.player_id)?.probability_percent?.toFixed(2)}%</strong>
+       <div style={{color:"#475569",fontSize:12}}>AVG temporada: {liveProjectionFor(team.side,h.player_id)?.season_avg==null?"—":(liveProjectionFor(team.side,h.player_id)!.season_avg!*100).toFixed(1)+"%"} · Turnos restantes estimados: {liveProjectionFor(team.side,h.player_id)?.expected_remaining_at_bats??"—"}</div>
+       <div style={{color:"#475569",fontSize:12}}>{liveProjectionFor(team.side,h.player_id)?.projection_note}</div>
+      </div>}
+      {liveProjectionFor(team.side,h.player_id)?.probability_percent==null&&<div style={{gridColumn:"1 / -1",fontSize:12,color:"#64748b"}}>Proyección no disponible: faltan estadísticas de temporada utilizables.</div>}
      </div>)}</div>}
     </article>)}
    </div>}

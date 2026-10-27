@@ -1,0 +1,55 @@
+from batter_hit_projection import build_live_batter_hit_projections
+
+
+def test_live_hit_projection_uses_season_avg_and_remaining_opportunities(monkeypatch):
+    monkeypatch.setattr(
+        "batter_hit_projection._fetch_season_hitting_stats",
+        lambda player_ids, season: {
+            101: {"season": season, "avg": 0.300, "at_bats": 100, "hits": 30},
+            202: {"season": season, "avg": 0.250, "at_bats": 80, "hits": 20},
+        },
+    )
+    result = build_live_batter_hit_projections(
+        [
+            {
+                "side": "away",
+                "team_name": "Away",
+                "hitters": [
+                    {"player_id": 101, "player_name": "Hitter With Hit", "batting_order": 1,
+                     "hits_in_game": 1, "at_bats_in_game": 1},
+                    {"player_id": 202, "player_name": "Hitter No Hit", "batting_order": 2,
+                     "hits_in_game": 0, "at_bats_in_game": 1},
+                ],
+            }
+        ],
+        season=2026,
+        current_inning=5,
+        inning_state="Top",
+        game_status="Live",
+    )
+
+    hitters = result["teams"][0]["hitters"]
+    assert result["available"] is True
+    assert result["status"] == "experimental"
+    assert hitters[0]["probability_percent"] == 100.0
+    assert "Ya consiguió" in hitters[0]["projection_note"]
+    assert hitters[1]["probability_percent"] is not None
+    assert 0 < hitters[1]["probability_percent"] < 100
+    assert hitters[1]["expected_remaining_at_bats"] > 0
+
+
+def test_live_hit_projection_reports_unavailable_when_stats_missing(monkeypatch):
+    monkeypatch.setattr("batter_hit_projection._fetch_season_hitting_stats", lambda player_ids, season: {})
+    result = build_live_batter_hit_projections(
+        [{"side": "home", "team_name": "Home", "hitters": [
+            {"player_id": 999, "player_name": "Unknown", "batting_order": 1,
+             "hits_in_game": 0, "at_bats_in_game": 0}
+        ]}],
+        season=2026,
+        current_inning=1,
+        inning_state="Top",
+        game_status="Warmup",
+    )
+    assert result["available"] is False
+    assert result["teams"][0]["hitters"][0]["probability_percent"] is None
+    assert result["teams"][0]["hitters"][0]["status"] == "unavailable"
