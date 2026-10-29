@@ -200,9 +200,9 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
     """Experimental P(1+ hit by game end), conditional on observed hits and game progress.
 
     For batters with a hit already, the event is already achieved (100%, not a forecast).
-    For batters without a hit, estimate remaining AB opportunities from lineup slot and
-    the fraction of game remaining, then apply season AVG. This is an uncalibrated
-    approximation and must not be confused with a validated in-play betting model.
+    For batters without a hit, estimate remaining AB opportunities from lineup slot,
+    outs, inning half, and the team currently batting when known. This remains an
+    uncalibrated approximation, not a validated in-play betting model.
     """
     try:
         inning = max(1, int(current_inning or 1))
@@ -325,7 +325,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         ),
         "teams": [],
         "note": (
-            "Partido en entradas extra: la estimación solo considera la parte restante de la entrada actual; no predice cuántas entradas extra habrá después."
+            "Partido en entradas extra: la estimación solo considera las medias entradas pendientes de la entrada extra actual; no predice entradas extra posteriores."
             if extra_innings
             else "Se requieren alineación publicada y estadísticas de bateo de temporada para estimar los hits restantes. Los turnos restantes son una aproximación por fracción del partido, no una predicción individual basada en outs o próxima aparición."
         ),
@@ -489,8 +489,8 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "teams": projected_teams,
         "note": (
             (
-                "Partido en entradas extra: la estimación solo considera la parte restante de la entrada actual; "
-                "no predice cuántas entradas extra habrá después. "
+                "Partido en entradas extra: la estimación solo considera las medias entradas pendientes de la entrada extra actual; "
+                "no predice entradas extra posteriores. "
             )
             if extra_innings else ""
         ) + (
