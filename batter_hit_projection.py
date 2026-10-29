@@ -319,6 +319,8 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "remaining_opportunities_method": (
             "outs_y_mitad_por_equipo_entrada_extra_actual"
             if extra_innings and active_side
+            else "solo_entrada_extra_actual"
+            if extra_innings
             else "outs_y_mitad_por_equipo"
             if active_side
             else "fraccion_simplificada_sin_lado_activo"
