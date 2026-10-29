@@ -327,7 +327,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         ),
         "teams": [],
         "note": (
-            "Partido en entradas extra: la estimación solo considera las medias entradas pendientes de la entrada extra actual; no predice entradas extra posteriores."
+            "Partido en entradas extra: la estimación solo considera las medias entradas pendientes de la entrada extra actual; no predice cuántas entradas extra habrá después."
             if extra_innings
             else "Se requieren alineación publicada y estadísticas de bateo de temporada. Las oportunidades restantes usan entrada, mitad y outs cuando MLB identifica el lado que batea; siguen siendo una aproximación, no una predicción exacta del siguiente turno."
         ),
@@ -492,7 +492,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "note": (
             (
                 "Partido en entradas extra: la estimación solo considera las medias entradas pendientes de la entrada extra actual; "
-                "no predice entradas extra posteriores. "
+                "no predice cuántas entradas extra habrá después. "
             )
             if extra_innings else ""
         ) + (
