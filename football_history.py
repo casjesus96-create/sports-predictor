@@ -61,7 +61,7 @@ def settle_official_result(match: dict[str, Any], competition: str) -> bool:
         client = get_supabase_client()
         existing = client.table("football_prediction_snapshots").select("id,result_status").eq(
             "provider_match_id", match["id"]
-        ).eq("model_version", MODEL_VERSION).execute()
+        ).eq("model_version", MODEL_VERSION).eq("result_status", "PENDING").execute()
         if not (existing.data or []):
             return False
         client.table("football_prediction_snapshots").update({
@@ -73,7 +73,7 @@ def settle_official_result(match: dict[str, Any], competition: str) -> bool:
             "settled_at": datetime.now(timezone.utc).isoformat(),
         }).eq("provider_match_id", match["id"]).eq(
             "model_version", MODEL_VERSION
-        ).eq("result_status", "PENDING").execute()
+        ).execute()
         return True
     except Exception:
         logger.exception("Could not settle football result for match %s", match.get("id"))

@@ -90,8 +90,13 @@ def predict_1x2(
     away_attack = rate(a["scored_away"], a["away_games"], league_away_avg)
     away_defence = rate(a["conceded_away"], a["away_games"], league_home_avg)
 
-    expected_home = max(0.15, min(4.5, league_home_avg * (home_attack / max(0.2, league_home_avg)) * (away_defence / max(0.2, league_away_avg)) * home_advantage))
-    expected_away = max(0.15, min(4.5, league_away_avg * (away_attack / max(0.2, league_away_avg)) * (home_defence / max(0.2, league_home_avg)) / home_advantage))
+    # Convert raw goal rates into dimensionless strengths before applying league baselines.
+    home_attack_strength = home_attack / max(0.2, league_home_avg)
+    home_defence_weakness = home_defence / max(0.2, league_away_avg)
+    away_attack_strength = away_attack / max(0.2, league_away_avg)
+    away_defence_weakness = away_defence / max(0.2, league_home_avg)
+    expected_home = max(0.15, min(4.5, league_home_avg * home_attack_strength * away_defence_weakness * home_advantage))
+    expected_away = max(0.15, min(4.5, league_away_avg * away_attack_strength * away_defence_weakness / home_advantage))
 
     home_pmf = [_poisson_pmf(expected_home, goals) for goals in range(MAX_GOALS + 1)]
     away_pmf = [_poisson_pmf(expected_away, goals) for goals in range(MAX_GOALS + 1)]
