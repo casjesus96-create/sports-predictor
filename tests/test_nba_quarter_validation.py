@@ -76,3 +76,33 @@ def test_validation_still_rejects_snapshot_created_at_or_after_kickoff():
     assert result["evaluated_games"] == 0
     assert result["skipped"]["invalid_or_postgame_cutoff"] == 1
     assert result["skipped_details"][0]["reason"] == "snapshot_created_at_or_after_kickoff"
+
+
+
+def test_selector_keeps_only_latest_valid_pregame_snapshot_per_game():
+    from nba_quarter_validation import select_latest_pregame_snapshots
+
+    older = snapshot("g1")
+    older["created_at"] = "2026-01-01T01:00:00+00:00"
+    newer = snapshot("g1")
+    newer["created_at"] = "2026-01-01T02:00:00+00:00"
+    postgame = snapshot("g1")
+    postgame["created_at"] = "2026-01-02T00:00:00+00:00"
+    selected, duplicates = select_latest_pregame_snapshots([older, newer, postgame])
+
+    assert len(selected) == 1
+    assert selected[0]["created_at"] == newer["created_at"]
+    assert duplicates == 1
+
+
+def test_selector_keeps_separate_games_and_ignores_invalid_snapshots():
+    from nba_quarter_validation import select_latest_pregame_snapshots
+
+    first = snapshot("g1")
+    second = snapshot("g2")
+    invalid = snapshot("g3")
+    invalid["created_at"] = "2026-01-02T00:00:00+00:00"
+    selected, duplicates = select_latest_pregame_snapshots([first, second, invalid])
+
+    assert {row["event_id"] for row in selected} == {"g1", "g2"}
+    assert duplicates == 0
