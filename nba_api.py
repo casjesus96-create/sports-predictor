@@ -7,7 +7,7 @@ from nba_client import get_game, get_upcoming_games, _get_boxscore_for_game
 from nba_player_stats import fetch_player_boxscore
 from nba_analyzer import analyze_nba_game
 from nba_prediction import MODEL_VERSION
-from nba_quarter_validation import evaluate_quarter_projections
+from nba_quarter_validation import evaluate_quarter_projections, select_latest_pregame_snapshots
 from nba_repository import (
     save_nba_analysis, refresh_nba_analysis, get_nba_predictions, settle_nba_prediction,
     get_nba_performance,
@@ -263,7 +263,8 @@ def nba_quarter_projection_audit(limit: int = Query(100, ge=1, le=250)):
             and len((((row.get("features") or {}).get("projections") or {}).get("quarter_points") or {}).get("periods") or []) >= 4
         )
         eligible_all = [row for row in rows if has_quarter_projection(row)]
-        eligible = [row for row in settled_rows if has_quarter_projection(row)]
+        eligible_all_settled = [row for row in settled_rows if has_quarter_projection(row)]
+        eligible, duplicate_pregame_snapshots = select_latest_pregame_snapshots(eligible_all_settled)
 
         actuals = {}
         fetch_errors = []
@@ -306,7 +307,7 @@ def nba_quarter_projection_audit(limit: int = Query(100, ge=1, le=250)):
             "pending_snapshots_scanned": len(pending_rows),
             "snapshots_with_quarter_projection": len(eligible_all),
             "pending_with_quarter_projection": sum(1 for row in pending_rows if has_quarter_projection(row)),
-            "settled_with_quarter_projection": len(eligible),
+            "settled_with_quarter_projection": len(eligible_all_settled),\n            "unique_pregame_games_selected": len(eligible),\n            "duplicate_pregame_snapshots_excluded": duplicate_pregame_snapshots,
             "games_with_actual_quarters": len(actuals),
             "actual_data_fetch_issues": len(fetch_errors),
         }
@@ -316,7 +317,7 @@ def nba_quarter_projection_audit(limit: int = Query(100, ge=1, le=250)):
             "Solo evalúa proyecciones guardadas antes del inicio; no reconstruye proyecciones con información posterior.",
             "Los MAE son errores históricos descriptivos y no cambian el modelo oficial NBA-1.1.0.",
             "La evaluación depende de que ESPN conserve los parciales por cuarto.",
-            "Si existen varias capturas históricas del mismo partido, cada snapshot se evalúa por separado; no deben interpretarse como partidos independientes.",
+            "Cuando existen varias capturas válidas pregame del mismo partido, se utiliza únicamente la más reciente anterior al inicio; las demás se contabilizan como duplicadas excluidas.",
         ]
         return report
     except Exception as exc:
