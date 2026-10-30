@@ -29,6 +29,35 @@ def _mae(pairs):
     return round(sum(errors) / len(errors), 3) if errors else None
 
 
+def select_latest_pregame_snapshots(rows):
+    """Select one latest valid pregame quarter-projection snapshot per event."""
+    latest = {}
+    duplicate_count = 0
+    for row in rows or []:
+        features = row.get("features") or {}
+        game = features.get("game") or {}
+        projection = (features.get("projections") or {}).get("quarter_points") or {}
+        periods = projection.get("periods") or []
+        event_id = str(row.get("event_id") or game.get("game_id") or "")
+        kickoff = _parse_dt(game.get("kickoff"))
+        cutoff = _parse_dt(row.get("data_cutoff") or features.get("analysis_data_cutoff"))
+        captured = _parse_dt(row.get("created_at") or features.get("analysis_generated_at"))
+        if (not event_id or not projection.get("available") or len(periods) < 4
+                or kickoff is None or cutoff is None or captured is None
+                or cutoff > kickoff or captured >= kickoff):
+            continue
+        current = latest.get(event_id)
+        if current is None:
+            latest[event_id] = row
+        else:
+            duplicate_count += 1
+            current_features = current.get("features") or {}
+            current_capture = _parse_dt(current.get("created_at") or current_features.get("analysis_generated_at"))
+            if captured > current_capture:
+                latest[event_id] = row
+    return list(latest.values()), duplicate_count
+
+
 def evaluate_quarter_projections(rows, actual_quarters_by_game):
     """Compare stored pregame projections with actual Q1-Q4 scores.
 
