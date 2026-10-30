@@ -10,7 +10,7 @@ import math
 from collections import defaultdict
 from typing import Any
 
-MODEL_VERSION = "FOOTBALL-POISSON-0.3.0"
+MODEL_VERSION = "FOOTBALL-POISSON-0.5.0"
 MAX_GOALS = 10
 MIN_TEAM_MATCHES = 5
 PRIOR_MATCH_EQUIVALENT = 8.0
