@@ -196,13 +196,13 @@ def build_batter_hit_projections(batter_pitcher_matchups, season=2026):
     return result
 
 
-def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1, inning_state="Top", game_status="Warmup"):
+def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1, inning_state="Top", game_status="Warmup", outs=0, active_batting_side=None):
     """Experimental P(1+ hit by game end), conditional on observed hits and game progress.
 
     For batters with a hit already, the event is already achieved (100%, not a forecast).
-    For batters without a hit, estimate remaining AB opportunities from lineup slot and
-    the fraction of game remaining, then apply season AVG. This is an uncalibrated
-    approximation and must not be confused with a validated in-play betting model.
+    For batters without a hit, estimate remaining AB opportunities from lineup slot,
+    outs, inning half, and the team currently batting when known. This remains an
+    uncalibrated approximation, not a validated in-play betting model.
     """
     try:
         inning = max(1, int(current_inning or 1))
@@ -214,13 +214,17 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
     is_bottom_half = half in {"bottom", "bottom of inning"}
     is_final = status in {"final", "game over", "completed early"}
     extra_innings = inning > 9 and not is_final
+    outs_value = _int(outs)
+    outs_value = min(3, max(0, outs_value if outs_value is not None else 0))
+    active_side = str(active_batting_side or "").strip().lower()
+    if active_side not in {"away", "home"}:
+        active_side = None
 
+    # Retain the coarse overall fraction for compatibility; calculate each
+    # team's remaining batting opportunities from its own half-innings below.
     if is_final:
         remaining_ninths = 0.0
     elif extra_innings:
-        # Do not return a false zero merely because the regulation innings ended.
-        # Estimate only the remainder of the current extra inning; later extra
-        # innings are unknowable and intentionally are not projected.
         if is_top_half:
             remaining_ninths = 1.0 / 9.0
         elif is_bottom_half:
@@ -232,6 +236,27 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
             0.0,
             min(1.0, (10.0 - inning + (0.5 if is_top_half else 0.0)) / 9.0),
         )
+
+    def remaining_innings_for_team(side):
+        if is_final:
+            return 0.0
+        side = str(side or "").strip().lower()
+        if side not in {"away", "home"} or active_side is None or not (is_top_half or is_bottom_half):
+            return remaining_ninths * 9.0
+        if extra_innings:
+            if side == active_side:
+                return (3 - outs_value) / 3.0
+            if is_top_half and side == "home":
+                return 1.0
+            return 0.0
+        future_innings = max(0, 9 - inning)
+        if side == active_side:
+            current_half_remaining = (3 - outs_value) / 3.0
+        elif is_top_half and side == "home":
+            current_half_remaining = 1.0
+        else:
+            current_half_remaining = 0.0
+        return float(future_innings) + current_half_remaining
 
     normalized_teams = []
     player_ids = []
@@ -289,16 +314,22 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "current_inning": inning,
         "inning_state": inning_state,
         "remaining_game_fraction": round(remaining_ninths, 3),
+        "outs_used": outs_value,
+        "active_batting_side": active_side,
         "remaining_opportunities_method": (
-            "solo_entrada_extra_actual"
+            "outs_y_mitad_por_equipo_entrada_extra_actual"
+            if extra_innings and active_side
+            else "solo_entrada_extra_actual"
             if extra_innings
-            else "fraccion_simplificada_de_9_entradas"
+            else "outs_y_mitad_por_equipo"
+            if active_side
+            else "fraccion_simplificada_sin_lado_activo"
         ),
         "teams": [],
         "note": (
-            "Partido en entradas extra: la estimación solo considera la parte restante de la entrada actual; no predice cuántas entradas extra habrá después."
+            "Partido en entradas extra: la estimación solo considera las medias entradas pendientes de la entrada extra actual; no predice cuántas entradas extra habrá después."
             if extra_innings
-            else "Se requieren alineación publicada y estadísticas de bateo de temporada para estimar los hits restantes. Los turnos restantes son una aproximación por fracción del partido, no una predicción individual basada en outs o próxima aparición."
+            else "Se requieren alineación publicada y estadísticas de bateo de temporada. Las oportunidades restantes usan entrada, mitad y outs cuando MLB identifica el lado que batea; siguen siendo una aproximación, no una predicción exacta del siguiente turno."
         ),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -351,9 +382,10 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
             if vs_pitcher_avg is not None and vs_pitcher_ab > 0:
                 adjusted_avg = (stats["avg"] * (1.0 - matchup_weight)) + (vs_pitcher_avg * matchup_weight)
                 adjusted_avg = min(0.60, max(0.05, adjusted_avg))
+            team_remaining_innings = remaining_innings_for_team(team.get("side"))
             expected_remaining_ab = max(
                 0.0,
-                EXPECTED_AT_BATS_BY_SLOT[hitter["batting_order"]] * remaining_ninths,
+                EXPECTED_AT_BATS_BY_SLOT[hitter["batting_order"]] * team_remaining_innings / 9.0,
             )
             # Treat the identified pitcher as relevant for at most the next plate
             # appearance. Later appearances use season AVG because the bullpen/
@@ -434,6 +466,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
                 "season_hits": stats["hits"],
                 "season_at_bats": stats["at_bats"],
                 "expected_remaining_at_bats": round(expected_remaining_ab, 2),
+                "estimated_team_innings_remaining": round(team_remaining_innings, 2),
                 "probability_1plus_hit": round(probability, 6) if probability is not None else None,
                 "probability_percent": round(probability * 100, 2) if probability is not None else None,
                 "probability_additional_hit": round(probability_additional_hit, 6),
@@ -458,7 +491,7 @@ def build_live_batter_hit_projections(live_teams, season=2026, current_inning=1,
         "teams": projected_teams,
         "note": (
             (
-                "Partido en entradas extra: la estimación solo considera la parte restante de la entrada actual; "
+                "Partido en entradas extra: la estimación solo considera las medias entradas pendientes de la entrada extra actual; "
                 "no predice cuántas entradas extra habrá después. "
             )
             if extra_innings else ""

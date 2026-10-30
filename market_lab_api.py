@@ -219,6 +219,8 @@ def get_live_mlb_batter_report(game_id: str):
         current_inning=linescore.get("currentInning") or 1,
         inning_state=linescore.get("inningState") or "Top",
         game_status=status_data.get("abstractGameState") or status_data.get("detailedState") or "Warmup",
+        outs=linescore.get("outs"),
+        active_batting_side=active_batting_side,
     )
 
     return {
