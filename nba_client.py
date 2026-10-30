@@ -51,7 +51,9 @@ def _normalize_event(event):
     return {
         "game_id": str(event.get("id") or ""),
         "league": "NBA",
-        "season": (event.get("season") or {}).get("year"),\n        "season_type": ((event.get("season") or {}).get("type") or (competition.get("season") or {}).get("type")),\n        "season_type_name": ((event.get("season") or {}).get("typeName") or (competition.get("season") or {}).get("typeName")),
+        "season": (event.get("season") or {}).get("year"),
+        "season_type": ((event.get("season") or {}).get("type") or (competition.get("season") or {}).get("type")),
+        "season_type_name": ((event.get("season") or {}).get("typeName") or (competition.get("season") or {}).get("typeName")),
         "name": event.get("name"),
         "short_name": event.get("shortName"),
         "kickoff": kickoff.isoformat() if kickoff else None,
