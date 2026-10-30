@@ -13,10 +13,13 @@ from football_data_client import (
     get_matches,
     get_team_matches,
     get_match,
+    get_match_head_to_head,
     get_standings,
 )
 from football_model import MODEL_VERSION, predict_1x2
 from football_history import record_pregame_snapshot, settle_official_result
+from football_h2h_experiment import evaluate_h2h_candidate, EXPERIMENT_VERSION
+from football_backtest import run_chronological_backtest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/football", tags=["Football"])
@@ -265,6 +268,7 @@ def football_head_to_head(
     competition: str = Query(..., description="Código de liga, por ejemplo PL o PD"),
     home_team_id: int = Query(..., gt=0),
     away_team_id: int = Query(..., gt=0),
+    match_id: int | None = Query(None, gt=0),
     limit: int = Query(10, ge=1, le=50),
 ):
     """Historical meetings found in each team's recent finished fixtures."""
@@ -294,9 +298,13 @@ def football_head_to_head(
             continue
         score = (match.get("score") or {}).get("fullTime") or {}
         hs, aws = score.get("home"), score.get("away")
-        if not isinstance(hs, int) or isinstance(hs, bool) or not isinstance(aws, int) or isinstance(aws, bool):
+        if (
+            not isinstance(hs, int) or isinstance(hs, bool)
+            or not isinstance(aws, int) or isinstance(aws, bool)
+        ):
             continue
         winner = "draw" if hs == aws else ("home" if hs > aws else "away")
+        comp = match.get("competition") or {}
         meetings.append({
             "id": match.get("id"),
             "date": match.get("utcDate"),
@@ -315,10 +323,14 @@ def football_head_to_head(
             "venue": match.get("venue"),
             "half_time": (match.get("score") or {}).get("halfTime"),
             "duration": (match.get("score") or {}).get("duration"),
-            "result_source": "football-data.org",
+            "result_source": source,
         })
 
+    # Deduplicate by fixture ID in case the upstream payload repeats a match.
+    unique = {row["id"]: row for row in meetings if row.get("id") is not None}
+    meetings = list(unique.values())
     meetings.sort(key=lambda row: str(row.get("date") or ""), reverse=True)
+
     home_wins = draws = away_wins = home_goals = away_goals = total_goals = 0
     for row in meetings:
         if row["home_team_id"] == home_team_id:
@@ -361,6 +373,186 @@ def football_head_to_head(
         "meetings": meetings[:limit],
         "returned_matches": min(count, limit),
     }
+
+
+@router.get("/experimental-h2h")
+def football_experimental_h2h(
+    competition: str = Query(..., description="Código de liga, por ejemplo BL1"),
+    home_team_id: int = Query(..., gt=0),
+    away_team_id: int = Query(..., gt=0),
+    match_id: int = Query(..., gt=0),
+    home_team: str = Query(..., min_length=1, max_length=120),
+    away_team: str = Query(..., min_length=1, max_length=120),
+    kickoff_at: str = Query(..., min_length=10, max_length=40),
+):
+    """Compare the official baseline with the isolated H2H candidate on demand."""
+    if home_team_id == away_team_id or home_team.strip().casefold() == away_team.strip().casefold():
+        raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
+
+    try:
+        kickoff = datetime.fromisoformat(kickoff_at.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="kickoff_at no es una fecha ISO 8601 válida.") from exc
+    if kickoff.tzinfo is None:
+        raise HTTPException(status_code=400, detail="kickoff_at debe incluir zona horaria.")
+    if kickoff <= datetime.now(UTC):
+        raise HTTPException(status_code=400, detail="El análisis H2H experimental solo está disponible antes del inicio.")
+
+    competition_data = _provider_call(get_matches, competition)
+    completed = [
+        item for item in competition_data.get("matches", [])
+        if str(item.get("status", "")).upper() == "FINISHED" and _has_numeric_full_time(item)
+        and (item.get("utcDate") and datetime.fromisoformat(str(item["utcDate"]).replace("Z", "+00:00")) < kickoff)
+    ]
+    base = predict_1x2(home_team.strip(), away_team.strip(), completed)
+    h2h = football_head_to_head(
+        competition=competition,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        match_id=match_id,
+        limit=50,
+    )
+    normalized_meetings = []
+    for meeting in h2h.get("meetings", []):
+        # Normalize historical aliases to the exact target fixture names using
+        # provider team IDs, while preserving each historical home/away order.
+        historical_home_name = home_team.strip() if meeting.get("home_team_id") == home_team_id else away_team.strip()
+        historical_away_name = away_team.strip() if meeting.get("away_team_id") == away_team_id else home_team.strip()
+        normalized_meetings.append({
+            "id": meeting.get("id"),
+            "status": "FINISHED",
+            "utcDate": meeting.get("date"),
+            "homeTeam": {"name": historical_home_name},
+            "awayTeam": {"name": historical_away_name},
+            "score": {"fullTime": {
+                "home": meeting.get("home_score"),
+                "away": meeting.get("away_score"),
+            }},
+        })
+    candidate = evaluate_h2h_candidate(
+        home_team.strip(),
+        away_team.strip(),
+        kickoff_at,
+        base,
+        normalized_meetings,
+    )
+    return {
+        "success": True,
+        "experiment_version": EXPERIMENT_VERSION,
+        "mode": "SHADOW_ONLY",
+        "official_model_version": MODEL_VERSION,
+        "base_prediction": base,
+        "candidate": candidate,
+        "h2h_sample_size": candidate.get("h2h", {}).get("valid_meetings", 0),
+        "note": "La comparación es experimental; no cambia las probabilidades oficiales ni guarda ni sobrescribe snapshots.",
+    }
+
+
+@router.get("/backtest")
+def football_chronological_backtest(
+    competition: str = Query(..., description="Código de liga, por ejemplo PL o PD"),
+    include_external_h2h: bool = Query(
+        False,
+        description="Consulta H2H externo para una muestra de hasta 10 partidos, con límite de solicitudes.",
+    ),
+):
+    """Evaluate official Poisson vs H2H candidate chronologically, read-only."""
+    data = _provider_call(get_matches, competition)
+    matches = data.get("matches", [])
+    external_h2h_by_match_id: dict[int, list[dict]] = {}
+    external_h2h_attempted = 0
+    external_h2h_failed = 0
+
+    if include_external_h2h:
+        eligible_targets = []
+        for match in matches:
+            kickoff = _parse_football_datetime(match.get("utcDate") or match.get("date"))
+            if (
+                kickoff is not None
+                and str(match.get("status", "")).upper() == "FINISHED"
+                and _has_numeric_full_time(match)
+                and isinstance(match.get("id"), int)
+                and (match.get("homeTeam") or {}).get("id")
+                and (match.get("awayTeam") or {}).get("id")
+            ):
+                eligible_targets.append((kickoff, match))
+        eligible_targets.sort(key=lambda row: (row[0], row[1]["id"]))
+        cap = min(10, len(eligible_targets))
+        if cap:
+            indices = sorted({round(i * (len(eligible_targets) - 1) / max(1, cap - 1)) for i in range(cap)})
+            for index in indices:
+                target = eligible_targets[index][1]
+                external_h2h_attempted += 1
+                try:
+                    payload = _provider_call(get_match_head_to_head, int(target["id"]), 50)
+                    normalized_meetings = []
+                    target_home = target["homeTeam"]
+                    target_away = target["awayTeam"]
+                    home_id, away_id = target_home["id"], target_away["id"]
+                    for meeting in payload.get("matches", []):
+                        historical_home = meeting.get("homeTeam") or {}
+                        historical_away = meeting.get("awayTeam") or {}
+                        if {historical_home.get("id"), historical_away.get("id")} != {home_id, away_id}:
+                            continue
+                        score = (meeting.get("score") or {}).get("fullTime") or {}
+                        hs, aws = score.get("home"), score.get("away")
+                        if (
+                            str(meeting.get("status", "")).upper() != "FINISHED"
+                            or not isinstance(hs, int) or isinstance(hs, bool) or hs < 0
+                            or not isinstance(aws, int) or isinstance(aws, bool) or aws < 0
+                        ):
+                            continue
+                        normalized_meetings.append({
+                            "id": meeting.get("id"),
+                            "status": "FINISHED",
+                            "utcDate": meeting.get("utcDate"),
+                            "homeTeam": {"name": target_home["name"] if historical_home.get("id") == home_id else target_away["name"]},
+                            "awayTeam": {"name": target_away["name"] if historical_away.get("id") == away_id else target_home["name"]},
+                            "score": {"fullTime": {"home": hs, "away": aws}},
+                        })
+                    external_h2h_by_match_id[int(target["id"])] = normalized_meetings
+                except HTTPException as exc:
+                    external_h2h_failed += 1
+                    logger.warning("External H2H backtest lookup failed for match %s: %s", target.get("id"), exc.detail)
+                    if exc.status_code == 429:
+                        # Stop immediately when the provider signals quota exhaustion.
+                        break
+
+    result = run_chronological_backtest(matches, external_h2h_by_match_id)
+    result["external_h2h_lookup"] = {
+        "requested": include_external_h2h,
+        "request_cap": 10,
+        "attempted": external_h2h_attempted,
+        "failed": external_h2h_failed,
+        "successful": external_h2h_attempted - external_h2h_failed,
+        "fixtures_with_external_h2h_payload": len(external_h2h_by_match_id),
+    }
+    return {
+        "success": True,
+        "provider": "football-data.org",
+        "competition": competition.strip().upper(),
+        "generated_at": datetime.now(UTC).isoformat(),
+        "history_scope": (
+            "Historial de la competición disponible en el plan. Si se activa H2H externo, "
+            "se consultan como máximo 10 partidos distribuidos cronológicamente; solo esos "
+            "objetivos usan H2H externo. Los demás usan la competición seleccionada. "
+            "Todos los enfrentamientos H2H se filtran para excluir fechas iguales o posteriores "
+            "al kickoff del partido evaluado; no se escriben snapshots."
+        ),
+        "backtest": result,
+    }
+
+
+def _parse_football_datetime(value):
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return None
+        return parsed
+    except (TypeError, ValueError):
+        return None
 
 
 @router.get("/standings")

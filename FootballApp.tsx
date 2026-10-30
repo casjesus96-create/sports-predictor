@@ -105,16 +105,22 @@ const cardStyle: React.CSSProperties = { padding: 14, border: "1px solid #374151
 
 function HeadToHeadPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
+  const [experiment, setExperiment] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [experimentLoading, setExperimentLoading] = useState(false);
   const [error, setError] = useState("");
+  const [experimentError, setExperimentError] = useState("");
   const homeId = match.homeTeam?.id;
   const awayId = match.awayTeam?.id;
+  const homeName = match.homeTeam?.name || "";
+  const awayName = match.awayTeam?.name || "";
+  const kickoffAt = match.utcDate || "";
 
   async function loadHistory() {
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
     setLoading(true); setError("");
     try {
-      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&home_team_id=${homeId}&away_team_id=${awayId}&limit=10`);
+      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&match_id=${match.id}&home_team_id=${homeId}&away_team_id=${awayId}&limit=10`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo cargar el historial.");
       setData(body);
@@ -122,6 +128,36 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
       setError(err instanceof Error ? err.message : "Error consultando enfrentamientos históricos.");
     } finally { setLoading(false); }
   }
+
+  async function loadExperiment() {
+    if (!homeId || !awayId || !kickoffAt || !homeName || !awayName) {
+      setExperimentError("Faltan los equipos o la fecha de inicio del encuentro.");
+      return;
+    }
+    setExperimentLoading(true); setExperimentError("");
+    try {
+      const params = new URLSearchParams({
+        competition, match_id: String(match.id), home_team_id: String(homeId),
+        away_team_id: String(awayId), home_team: homeName, away_team: awayName,
+        kickoff_at: kickoffAt,
+      });
+      const response = await fetch(`${API}/experimental-h2h?${params.toString()}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo calcular la variante H2H.");
+      setExperiment(body);
+    } catch (err: unknown) {
+      setExperimentError(err instanceof Error ? err.message : "Error calculando el modelo H2H experimental.");
+    } finally { setExperimentLoading(false); }
+  }
+
+  const candidate = experiment?.candidate;
+  const baseProbabilities = candidate?.base_probabilities;
+  const candidateProbabilities = candidate?.candidate_probabilities;
+  const comparisonRows = baseProbabilities && candidateProbabilities ? [
+    { key: "home", label: `Gana ${homeName}` },
+    { key: "draw", label: "Empate" },
+    { key: "away", label: `Gana ${awayName}` },
+  ] : [];
 
   return <section style={{ marginTop: 12, padding: 12, border: "1px solid #475569", borderRadius: 8, background: "#0b1220" }}>
     <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -151,6 +187,30 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
         </div>
       </> : <p>La API no devolvió enfrentamientos directos finalizados para esta pareja dentro de la muestra disponible. Esto puede deberse a límites de cobertura o profundidad histórica del proveedor; no significa que nunca se hayan enfrentado.</p>}
     </>}
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #334155" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div><strong>Modelo H2H experimental</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>Comparación bajo demanda · no modifica el modelo oficial</div></div>
+        <button type="button" onClick={loadExperiment} disabled={experimentLoading || !homeId || !awayId || !kickoffAt || new Date(kickoffAt).getTime() <= Date.now()} style={buttonStyle}>{experimentLoading ? "Calculando…" : experiment ? "Actualizar comparación" : "Calcular variante H2H"}</button>
+      </div>
+      {experimentError && <p role="alert" style={{ color: "#fecaca" }}>{experimentError}</p>}
+      {experiment && <>
+        <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 8 }}>Variante: {experiment.experiment_version} · Estado: {candidate?.status || "no disponible"} · H2H válidos usados: {experiment.h2h_sample_size ?? 0}</p>
+        {comparisonRows.length ? <>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Resultado</th><th style={cellStyle}>Modelo base</th><th style={cellStyle}>Candidato H2H</th><th style={cellStyle}>Cambio</th></tr></thead>
+              <tbody>{comparisonRows.map((row) => {
+                const baseValue = baseProbabilities[row.key];
+                const candidateValue = candidateProbabilities[row.key];
+                const delta = (candidateValue - baseValue) * 100;
+                return <tr key={row.key}><td style={cellStyle}>{row.label}</td><td style={cellStyle}>{percent(baseValue)}</td><td style={cellStyle}><strong>{percent(candidateValue)}</strong></td><td style={{ ...cellStyle, color: Math.abs(delta) < 0.05 ? "#9ca3af" : delta > 0 ? "#86efac" : "#fca5a5" }}>{delta > 0 ? "+" : ""}{delta.toFixed(1)} pp</td></tr>;
+              })}</tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 12, color: "#fbbf24", marginBottom: 0 }}>{candidate?.note || experiment.note} Esta variante es solo experimental: sus probabilidades no están calibradas y no sustituyen a las oficiales.</p>
+        </> : <p style={{ color: "#fbbf24", fontSize: 13 }}>{candidate?.reason || candidate?.note || "No se pudo generar la comparación con los datos disponibles."}</p>}
+      </>}
+    </div>
   </section>;
 }
 
@@ -166,6 +226,10 @@ export default function FootballApp() {
   const [loadingCompetitions, setLoadingCompetitions] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [backtest, setBacktest] = useState<any>(null);
+  const [backtestLoading, setBacktestLoading] = useState(false);
+  const [backtestError, setBacktestError] = useState("");
+  const [includeExternalH2h, setIncludeExternalH2h] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -205,6 +269,18 @@ export default function FootballApp() {
     } finally { setLoading(false); }
   }
 
+  async function loadBacktest() {
+    setBacktestLoading(true); setBacktestError(""); setBacktest(null);
+    try {
+      const response = await fetch(`${API}/backtest?competition=${encodeURIComponent(competition)}&include_external_h2h=${includeExternalH2h}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo evaluar el histórico.");
+      setBacktest(body);
+    } catch (err: unknown) {
+      setBacktestError(err instanceof Error ? err.message : "Error ejecutando el backtest cronológico.");
+    } finally { setBacktestLoading(false); }
+  }
+
   const visibleMatches = useMemo(() => {
     const now = Date.now();
     return matches.filter((match) => {
@@ -223,7 +299,7 @@ export default function FootballApp() {
         <h1 style={{ marginBottom: 6 }}>⚽ Football Predictor</h1>
         <p style={{ marginTop: 0, color: "#9ca3af" }}>Partidos, datos del proveedor y probabilidades 1X2 por encuentro</p>
         <div style={{ padding: 12, border: "1px solid #475569", borderRadius: 10, background: "#172033" }}>
-          <strong>Motor experimental · FOOTBALL-POISSON-0.2.0</strong>
+          <strong>Motor experimental · FOOTBALL-POISSON-0.5.0</strong>
           <p style={{ margin: "6px 0 0" }}>Proyecta 1X2, goles por equipo, total de goles, ambos marcan, porterías a cero, doble oportunidad y marcadores probables. Las cuotas justas son cálculos matemáticos, no cuotas reales. Aún no está calibrado ni validado para apuestas.</p>
         </div>
       </header>
@@ -235,7 +311,7 @@ export default function FootballApp() {
         </label>
         <label style={{ display: "grid", gap: 6, fontWeight: 700 }}>
           Competición
-          <select value={competition} onChange={(event) => { setCompetition(event.target.value); setMatches([]); setStandings([]); setError(""); setNotice(""); }}
+          <select value={competition} onChange={(event) => { setCompetition(event.target.value); setMatches([]); setStandings([]); setError(""); setNotice(""); setBacktest(null); setBacktestError(""); }}
             style={{ minHeight: 44, padding: 10, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#f9fafb" }}>
             {LEAGUES.map((league) => {
               const item = availability.find((entry) => entry.code === league.code);
@@ -249,9 +325,79 @@ export default function FootballApp() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <button type="button" onClick={() => loadData("games")} disabled={loading || loadingCompetitions || !selectedDate} style={buttonStyle}>{loading && view === "games" ? "Cargando…" : `Buscar partidos del ${selectedDate}`}</button>
         <button type="button" onClick={() => loadData("standings")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "standings" ? "Cargando…" : "Ver clasificación"}</button>
+        <button type="button" onClick={loadBacktest} disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}><input type="checkbox" checked={includeExternalH2h} onChange={(event) => setIncludeExternalH2h(event.target.checked)} /> Consultar H2H externo (máx. 10 solicitudes)</label>
       </div>
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: "#451a1a", color: "#fecaca" }}>{error}</p>}
       {notice && <p role="status" style={{ color: "#cbd5e1" }}>{notice}</p>}
+      {backtestError && <p role="alert" style={{ padding: 12, borderRadius: 8, background: "#451a1a", color: "#fecaca" }}>{backtestError}</p>}
+      {backtest && (() => {
+        const result = backtest.backtest || {};
+        const metrics = result.metrics || {};
+        const base = metrics.base || {};
+        const candidate = metrics.h2h_candidate || {};
+        const delta = metrics.delta_candidate_minus_base || {};
+        const metricRows = [
+          { label: "Accuracy (más alto es mejor)", base: percent(base.accuracy), candidate: percent(candidate.accuracy), delta: typeof delta.accuracy === "number" ? `${delta.accuracy > 0 ? "+" : ""}${(delta.accuracy * 100).toFixed(2)} pp` : "—" },
+          { label: "Brier Score (más bajo es mejor)", base: typeof base.brier_score === "number" ? base.brier_score.toFixed(4) : "—", candidate: typeof candidate.brier_score === "number" ? candidate.brier_score.toFixed(4) : "—", delta: typeof delta.brier_score === "number" ? `${delta.brier_score > 0 ? "+" : ""}${delta.brier_score.toFixed(4)}` : "—" },
+          { label: "Log Loss (más bajo es mejor)", base: typeof base.log_loss === "number" ? base.log_loss.toFixed(4) : "—", candidate: typeof candidate.log_loss === "number" ? candidate.log_loss.toFixed(4) : "—", delta: typeof delta.log_loss === "number" ? `${delta.log_loss > 0 ? "+" : ""}${delta.log_loss.toFixed(4)}` : "—" },
+        ];
+        const externalComparison = result.external_h2h_comparison;
+        const externalEligible = externalComparison?.eligible_sample;
+        const externalBase = externalEligible?.base || {};
+        const externalCandidate = externalEligible?.h2h_candidate || {};
+        const externalDelta = externalEligible?.delta_candidate_minus_base || {};
+        const externalMetricRows = [
+          { label: "Accuracy", base: percent(externalBase.accuracy), candidate: percent(externalCandidate.accuracy), delta: typeof externalDelta.accuracy === "number" ? `${externalDelta.accuracy > 0 ? "+" : ""}${(externalDelta.accuracy * 100).toFixed(2)} pp` : "—" },
+          { label: "Brier Score", base: typeof externalBase.brier_score === "number" ? externalBase.brier_score.toFixed(4) : "—", candidate: typeof externalCandidate.brier_score === "number" ? externalCandidate.brier_score.toFixed(4) : "—", delta: typeof externalDelta.brier_score === "number" ? `${externalDelta.brier_score > 0 ? "+" : ""}${externalDelta.brier_score.toFixed(4)}` : "—" },
+          { label: "Log Loss", base: typeof externalBase.log_loss === "number" ? externalBase.log_loss.toFixed(4) : "—", candidate: typeof externalCandidate.log_loss === "number" ? externalCandidate.log_loss.toFixed(4) : "—", delta: typeof externalDelta.log_loss === "number" ? `${externalDelta.log_loss > 0 ? "+" : ""}${externalDelta.log_loss.toFixed(4)}` : "—" },
+        ];
+        const outcomes = [
+          { key: "home", label: "Local" }, { key: "draw", label: "Empate" }, { key: "away", label: "Visitante" },
+        ];
+        return <section style={{ ...cardStyle, borderColor: "#7c3aed" }}>
+          <h2 style={{ marginTop: 0 }}>Backtest cronológico · {backtest.competition}</h2>
+          <p style={{ color: "#cbd5e1" }}>Partidos evaluados: <strong>{result.scored_matches ?? 0}</strong> de {result.eligible_finished_matches ?? 0} finalizados válidos. Se omiten encuentros sin suficiente historial previo para el modelo base.</p>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Métrica</th><th style={cellStyle}>Poisson oficial</th><th style={cellStyle}>Candidato H2H</th><th style={cellStyle}>Cambio</th></tr></thead>
+              <tbody>{metricRows.map((row) => <tr key={row.label}><td style={cellStyle}>{row.label}</td><td style={cellStyle}>{row.base}</td><td style={cellStyle}><strong>{row.candidate}</strong></td><td style={cellStyle}>{row.delta}</td></tr>)}</tbody>
+            </table>
+          </div>
+          {result.h2h_diagnostics && <section style={{ marginTop: 14, padding: 12, borderRadius: 8, background: "#0f172a" }}><h3 style={{ marginTop: 0 }}>Diagnóstico del candidato H2H</h3><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(135px, 1fr))", gap: 8 }}>{[
+            { label: "Probabilidades ajustadas", value: result.h2h_diagnostics.matches_with_probability_adjustment },
+            { label: "Sin cambio frente a base", value: result.h2h_diagnostics.matches_unchanged_from_base },
+            { label: "H2H insuficiente", value: result.h2h_diagnostics.matches_with_insufficient_h2h },
+            { label: "Consultas externas con respuesta", value: result.h2h_diagnostics.matches_using_external_provider_h2h },
+            { label: "Con al menos 3 H2H", value: result.h2h_diagnostics.matches_with_usable_external_h2h },
+            { label: "Con ajuste externo real", value: result.h2h_diagnostics.matches_with_external_h2h_adjustment },
+          ].map((item) => <div key={item.label} style={{ padding: 9, borderRadius: 7, background: "#1e293b" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 20 }}>{item.value ?? 0}</strong></div>)}</div><p style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 0 }}>Solicitudes H2H externas: {result.external_h2h_lookup?.attempted ?? 0} intentadas, {result.external_h2h_lookup?.failed ?? 0} fallidas. Si no se activa la opción, el backtest no realiza consultas adicionales.</p></section>}
+          {externalComparison && externalComparison.queried_sample_size > 0 && <section style={{ marginTop: 14, padding: 12, borderRadius: 8, background: "#111827" }}>
+            <h3 style={{ marginTop: 0 }}>Comparación aislada · H2H externo</h3>
+            <p style={{ color: "#cbd5e1", fontSize: 13 }}>Consultados: <strong>{externalComparison.queried_sample_size}</strong> partidos; muestra con al menos 3 enfrentamientos previos válidos: <strong>{externalComparison.usable_h2h_sample_size}</strong>; partidos donde el candidato cambió probabilidades: <strong>{externalComparison.adjusted_sample_size}</strong>.</p>
+            <p style={{ color: "#9ca3af", fontSize: 12 }}>La tabla evalúa Poisson y H2H sobre exactamente la misma submuestra con datos H2H suficientes. Un Brier o Log Loss negativo favorece al candidato; Accuracy positivo lo favorece. La muestra es pequeña y no permite declarar superioridad estadística.</p>
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead><tr><th style={cellStyle}>Métrica · muestra elegible</th><th style={cellStyle}>Poisson oficial</th><th style={cellStyle}>Candidato H2H</th><th style={cellStyle}>Cambio</th></tr></thead>
+                <tbody>{externalMetricRows.map((row) => <tr key={row.label}><td style={cellStyle}>{row.label}</td><td style={cellStyle}>{row.base}</td><td style={cellStyle}><strong>{row.candidate}</strong></td><td style={cellStyle}>{row.delta}</td></tr>)}</tbody>
+              </table>
+            </div>
+          </section>}
+          <h3>Calibración por resultado</h3>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Resultado</th><th style={cellStyle}>Base: prob. media</th><th style={cellStyle}>Base: frecuencia real</th><th style={cellStyle}>H2H: prob. media</th><th style={cellStyle}>H2H: frecuencia real</th></tr></thead>
+              <tbody>{outcomes.map((outcome) => {
+                const b = base.outcome_calibration?.[outcome.key] || {};
+                const c = candidate.outcome_calibration?.[outcome.key] || {};
+                return <tr key={outcome.key}><td style={cellStyle}>{outcome.label}</td><td style={cellStyle}>{percent(b.mean_predicted_probability)}</td><td style={cellStyle}>{percent(b.observed_rate)}</td><td style={cellStyle}>{percent(c.mean_predicted_probability)}</td><td style={cellStyle}>{percent(c.observed_rate)}</td></tr>;
+              })}</tbody>
+            </table>
+          </div>
+          <p style={{ color: "#fbbf24", fontSize: 12 }}>{backtest.history_scope}</p>
+          <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 0 }}>Solo lectura: no modifica snapshots ni las probabilidades oficiales. Para Brier Score y Log Loss, un cambio negativo favorece al candidato; para Accuracy, uno positivo. El diagnóstico distingue cuándo el candidato cambia probabilidades y cuándo usa H2H externo. Las consultas externas son opcionales y están limitadas a 10 por ejecución.</p>
+        </section>;
+      })()}
 
       {view === "games" && <>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "14px 0" }}>
@@ -347,7 +493,7 @@ export default function FootballApp() {
       </table></div>}
 
       <footer style={{ marginTop: 24, paddingTop: 12, borderTop: "1px solid #374151", color: "#9ca3af", fontSize: 12 }}>
-        Data provided by football-data.org. Modelo FOOTBALL-POISSON-0.2.0 experimental y no calibrado. Las cuotas justas no son cuotas de mercado ni garantizan valor esperado positivo. Solo se usan marcadores finalizados; no se incorporan alineaciones, lesiones, xG ni cuotas reales. La cobertura depende del plan de API.
+        Data provided by football-data.org. Modelo FOOTBALL-POISSON-0.5.0 experimental y no calibrado. Las cuotas justas no son cuotas de mercado ni garantizan valor esperado positivo. Solo se usan marcadores finalizados; no se incorporan alineaciones, lesiones, xG ni cuotas reales. La cobertura depende del plan de API.
       </footer>
     </main>
   );

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from nfl_client import get_game, build_team_history
+from nfl_score_projection import project_score_lines
 from nfl_prediction import (
     MODEL_VERSION,
     calculate_probability,
@@ -173,6 +174,8 @@ def analyze_nfl_game(game_id):
     )
 
     # ---------------------------------------------------------
+    score_projection = project_score_lines(home_history, away_history, game)
+
     # Resultado completo
     # ---------------------------------------------------------
 
@@ -228,7 +231,10 @@ def analyze_nfl_game(game_id):
             "market": {
                 "spread_line": game.get("spread_line"),
                 "total_line": game.get("total_line"),
+                "source": "nflverse schedule",
                 "used_in_probability": False,
             },
+
+            "score_projection": score_projection,
         },
     }
