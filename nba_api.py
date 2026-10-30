@@ -240,6 +240,74 @@ def nba_player_impact_audit(limit: int = Query(500, ge=1, le=500)):
         raise HTTPException(status_code=500, detail="No fue posible auditar los snapshots de impacto individual NBA.") from exc
 
 
+@router.get("/audit/settlements")
+def nba_settlement_integrity_audit(limit: int = Query(50, ge=1, le=100)):
+    """Read-only comparison of stored settled NBA rows against current ESPN final status."""
+    try:
+        rows = get_nba_predictions(status="SETTLED", limit=limit, model_version=MODEL_VERSION)
+        checked_at = datetime.now(UTC).isoformat()
+        discrepancies = []
+        unavailable = []
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def inspect(row):
+            event_id = str(row.get("event_id") or "")
+            if not event_id:
+                return ("unavailable", {"prediction_id": row.get("id"), "reason": "missing_event_id"})
+            game = get_game(event_id)
+            if not game:
+                return ("unavailable", {"event_id": event_id, "prediction_id": row.get("id"),
+                    "reason": "ESPN did not return this event"})
+            if not game.get("completed") or game.get("home_score") is None or game.get("away_score") is None:
+                return ("discrepancy", {"event_id": event_id, "prediction_id": row.get("id"),
+                    "stored_status": row.get("result_status"), "provider_status": game.get("status"),
+                    "provider_completed": game.get("completed"), "reason": "Stored SETTLED row is not currently confirmed final by ESPN"})
+            try:
+                stored_home = float(row.get("actual_home_score"))
+                stored_away = float(row.get("actual_away_score"))
+                provider_home = float(game.get("home_score"))
+                provider_away = float(game.get("away_score"))
+            except (TypeError, ValueError):
+                return ("discrepancy", {"event_id": event_id, "prediction_id": row.get("id"),
+                    "reason": "Stored or provider score is missing or invalid"})
+            if stored_home != provider_home or stored_away != provider_away:
+                return ("discrepancy", {"event_id": event_id, "prediction_id": row.get("id"),
+                    "stored_score": {"home": stored_home, "away": stored_away},
+                    "provider_score": {"home": provider_home, "away": provider_away},
+                    "provider_status": game.get("status"), "reason": "Stored score differs from ESPN"})
+            return ("consistent", {"event_id": event_id})
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {pool.submit(inspect, row): row for row in rows}
+            consistent = 0
+            for future in as_completed(futures):
+                try:
+                    kind, item = future.result()
+                    if kind == "discrepancy":
+                        discrepancies.append(item)
+                    elif kind == "unavailable":
+                        unavailable.append(item)
+                    else:
+                        consistent += 1
+                except Exception as exc:
+                    row = futures[future]
+                    unavailable.append({"event_id": str(row.get("event_id") or ""),
+                        "prediction_id": row.get("id"), "reason": "ESPN verification request failed",
+                        "error_type": type(exc).__name__, "details": str(exc)[:200]})
+        return {"success": True, "sport": "NBA", "model_version": MODEL_VERSION,
+            "mode": "read_only_no_database_changes", "checked_at": checked_at,
+            "summary": {"settled_rows_scanned": len(rows), "consistent": consistent,
+                "discrepancies": len(discrepancies), "provider_unavailable": len(unavailable)},
+            "discrepancies": discrepancies, "provider_unavailable": unavailable,
+            "limitations": ["La auditoría compara el estado actual de ESPN con el marcador almacenado; no reconstruye el estado histórico al momento de liquidar.",
+                "No reabre, corrige ni modifica ninguna predicción. Cada discrepancia requiere revisión manual antes de cualquier reparación."]}
+    except Exception as exc:
+        logger.exception("Error auditando integridad de liquidaciones NBA")
+        raise HTTPException(status_code=500, detail={"error": "NBA_SETTLEMENT_AUDIT_ERROR",
+            "message": "No fue posible verificar la integridad de las liquidaciones NBA.",
+            "details": str(exc)}) from exc
+
+
 @router.get("/performance")
 def nba_performance():
     try:
