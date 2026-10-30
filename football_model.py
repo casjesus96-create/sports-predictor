@@ -12,7 +12,8 @@ from typing import Any
 
 MODEL_VERSION = "FOOTBALL-POISSON-0.3.0"
 MAX_GOALS = 10
-MIN_TEAM_MATCHES = 3
+MIN_TEAM_MATCHES = 5
+PRIOR_MATCH_EQUIVALENT = 8.0
 
 
 def _poisson_pmf(rate: float, goals: int) -> float:
@@ -21,7 +22,7 @@ def _poisson_pmf(rate: float, goals: int) -> float:
     return math.exp(-rate) * (rate ** goals) / math.factorial(goals)
 
 
-def _match_goals(match: dict[str, Any]) -> tuple[str, str, int, int] | None:
+def _match_goals(match: dict[str, Any]) -> tuple[str, str, int, int, str | None] | None:
     if str(match.get("status", "")).upper() != "FINISHED":
         return None
     home = (match.get("homeTeam") or {}).get("name")
@@ -32,7 +33,7 @@ def _match_goals(match: dict[str, Any]) -> tuple[str, str, int, int] | None:
         return None
     if hg < 0 or ag < 0:
         return None
-    return str(home), str(away), hg, ag
+    return str(home), str(away), hg, ag, str(match.get("utcDate") or match.get("date") or "") or None
 
 
 def _fair_odds(probability: float) -> float | None:
@@ -44,9 +45,9 @@ def predict_1x2(
     away_team: str,
     completed_matches: list[dict[str, Any]],
     *,
-    home_advantage: float = 1.08,
+    home_advantage: float = 1.0,
 ) -> dict[str, Any]:
-    """Estimate 1X2 and goal markets using independent Poisson score matrix."""
+    """Estimate 1X2 and goal markets using independent Poisson score matrix. League home/away scoring averages already encode average home advantage, so the explicit multiplier defaults to neutral (1.0) to avoid double counting. Non-neutral overrides are retained for controlled validation."""
     if not home_team.strip() or not away_team.strip() or home_team == away_team:
         raise ValueError("Se requieren dos equipos distintos y nombres válidos.")
     if not 0.8 <= home_advantage <= 1.3:
@@ -56,8 +57,8 @@ def predict_1x2(
     if not parsed:
         return {"available": False, "reason": "No hay partidos finalizados válidos.", "model_version": MODEL_VERSION}
 
-    league_home_avg = sum(h for _, _, h, _ in parsed) / len(parsed)
-    league_away_avg = sum(a for _, _, _, a in parsed) / len(parsed)
+    league_home_avg = sum(row[2] for row in parsed) / len(parsed)
+    league_away_avg = sum(row[3] for row in parsed) / len(parsed)
     league_avg = max(0.2, (league_home_avg + league_away_avg) / 2)
 
     stats: dict[str, dict[str, float]] = defaultdict(lambda: {
@@ -65,7 +66,7 @@ def predict_1x2(
         "scored_away": 0, "conceded_away": 0, "away_games": 0,
         "scored": 0, "conceded": 0, "games": 0,
     })
-    for home, away, hg, ag in parsed:
+    for home, away, hg, ag, _match_date in parsed:
         hs, aws = stats[home], stats[away]
         hs["scored_home"] += hg; hs["conceded_home"] += ag; hs["home_games"] += 1
         aws["scored_away"] += ag; aws["conceded_away"] += hg; aws["away_games"] += 1
@@ -82,7 +83,7 @@ def predict_1x2(
         }
 
     def rate(total: float, count: float, prior: float) -> float:
-        return (total + prior * 4.0) / (count + 4.0)
+        return (total + prior * PRIOR_MATCH_EQUIVALENT) / (count + PRIOR_MATCH_EQUIVALENT)
 
     home_attack = rate(h["scored_home"], h["home_games"], league_home_avg)
     home_defence = rate(h["conceded_home"], h["home_games"], league_away_avg)
@@ -172,10 +173,14 @@ def predict_1x2(
         "most_likely_scorelines": scorelines,
         "sample": {
             "completed_matches_in_competition": len(parsed),
+            "weighted_form": False,
+            "home_advantage_multiplier": home_advantage,
+            "home_advantage_policy": "neutral_multiplier_league_split_baseline",
+            "prior_match_equivalent": PRIOR_MATCH_EQUIVALENT,
             "home_team_matches": int(h["games"]),
             "away_team_matches": int(a["games"]),
         },
-        "method": "Distribución de Poisson independiente, tasas local/visitante y regresión a la media de la competición",
+        "method": "Distribución de Poisson independiente con mayor regresión a la media para reducir sobreajuste en muestras pequeñas; no calibrada",
         "calibration": {
             "status": "not_calibrated",
             "note": "Las cuotas justas son inversos matemáticos de las probabilidades estimadas, no cuotas de mercado ni evidencia de valor esperado positivo.",
@@ -184,6 +189,7 @@ def predict_1x2(
         "limitations": [
             "Estimación experimental; no calibrada ni validada como rentable.",
             "No incorpora alineaciones, lesiones, xG, descanso, forma ponderada ni cuotas de mercado.",
+            "La versión 0.5 neutraliza el multiplicador adicional de ventaja local porque las medias separadas local/visitante ya reflejan parte de esa ventaja; requiere backtesting cronológico.",
             "Las probabilidades de mercados derivados proceden de la misma matriz de goles; no son señales independientes.",
         ],
     }

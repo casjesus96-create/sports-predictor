@@ -6,6 +6,7 @@ from data_coverage import calculate_data_coverage
 from run_projections import calculate_game_projections
 from matchup_engine import get_matchup_data
 from batter_pitcher_engine import get_batter_pitcher_matchups
+from batter_hit_projection import build_batter_hit_projections
 from experimental_probability import calculate_experimental_probability
 from prediction import (
     MODEL_VERSION,
@@ -303,6 +304,7 @@ def analyze_mlb_game(game_id):
         },
         "matchup": matchup_data,
         "batter_pitcher_matchups": batter_pitcher_matchups,
+        "batter_hit_projections": build_batter_hit_projections(batter_pitcher_matchups, season=2026),
         # El bullpen llega exclusivamente desde matchup_engine.py.
         "bullpen": matchup_data.get("bullpen", {
             "available": False,
