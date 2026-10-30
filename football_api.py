@@ -271,9 +271,12 @@ def football_head_to_head(
     match_id: int | None = Query(None, gt=0),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Return direct meetings from the provider's H2H endpoint for this fixture."""
+    """Return valid direct meetings, preferring the provider's dedicated H2H endpoint."""
     if home_team_id == away_team_id:
         raise HTTPException(status_code=400, detail="Los equipos deben ser distintos.")
+    code = competition.strip().upper()
+    if code not in LEAGUES:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.")
 
     source = "football-data.org"
     raw_matches = []
@@ -282,58 +285,66 @@ def football_head_to_head(
         "la profundidad depende de la cobertura y del plan de API."
     )
 
-    # Use the provider's dedicated H2H endpoint when the selected fixture ID is
-    # known. This avoids intersecting two team feeds filtered to the selected
-    # competition, which omitted historical meetings outside that competition.
+    def valid_direct_meetings(items):
+        valid = []
+        for item in items:
+            if str(item.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
+                continue
+            home = item.get("homeTeam") or {}
+            away = item.get("awayTeam") or {}
+            if {home.get("id"), away.get("id")} != {home_team_id, away_team_id}:
+                continue
+            score = (item.get("score") or {}).get("fullTime") or {}
+            hs, aws = score.get("home"), score.get("away")
+            if (
+                not isinstance(hs, int) or isinstance(hs, bool) or hs < 0
+                or not isinstance(aws, int) or isinstance(aws, bool) or aws < 0
+            ):
+                continue
+            valid.append(item)
+        return valid
+
     if match_id is not None:
         try:
             h2h_data = _provider_call(get_match_head_to_head, match_id, limit)
-            raw_matches = h2h_data.get("matches", [])
+            raw_matches = valid_direct_meetings(h2h_data.get("matches", []))
         except HTTPException as exc:
             logger.warning(
                 "Provider H2H endpoint unavailable for match %s; falling back to team history: %s",
                 match_id, exc.detail,
             )
 
-    # Compatibility fallback for clients that do not send a fixture ID or if
-    # the provider H2H endpoint is unavailable. Results remain explicitly scoped.
+    # Fall back only when the dedicated endpoint is unavailable or contains no
+    # valid completed direct meetings. Valid provider H2H results are authoritative.
     if not raw_matches:
-        home_data = _provider_call(get_team_matches, home_team_id, competition, "FINISHED", 500)
-        away_data = _provider_call(get_team_matches, away_team_id, competition, "FINISHED", 500)
+        home_data = _provider_call(get_team_matches, home_team_id, code, "FINISHED", 500)
+        away_data = _provider_call(get_team_matches, away_team_id, code, "FINISHED", 500)
         away_ids = {
             item.get("id") for item in away_data.get("matches", [])
             if item.get("id") is not None
         }
-        raw_matches = [
+        raw_matches = valid_direct_meetings([
             item for item in home_data.get("matches", [])
             if item.get("id") in away_ids
-        ]
+        ])
+        source = "football-data.org"
         history_scope = (
             "Historial accesible dentro de la competición seleccionada como alternativa; "
             "no equivale al historial completo entre ambos clubes."
         )
 
     meetings = []
-    for match in raw_matches:
-        if str(match.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
-            continue
-        home = match.get("homeTeam") or {}
-        away = match.get("awayTeam") or {}
-        if {home.get("id"), away.get("id")} != {home_team_id, away_team_id}:
-            continue
-        score = (match.get("score") or {}).get("fullTime") or {}
-        hs, aws = score.get("home"), score.get("away")
-        if (
-            not isinstance(hs, int) or isinstance(hs, bool)
-            or not isinstance(aws, int) or isinstance(aws, bool)
-        ):
-            continue
+    for item in raw_matches:
+        home = item.get("homeTeam") or {}
+        away = item.get("awayTeam") or {}
+        score = (item.get("score") or {}).get("fullTime") or {}
+        hs, aws = score["home"], score["away"]
         winner = "draw" if hs == aws else ("home" if hs > aws else "away")
-        comp = match.get("competition") or {}
+        comp = item.get("competition") or {}
         meetings.append({
-            "id": match.get("id"),
-            "date": match.get("utcDate"),
-            "competition": comp.get("name") or comp.get("code") or competition.upper(),
+            "id": item.get("id"),
+            "date": item.get("utcDate"),
+            "competition": comp.get("name") or comp.get("code") or code,
             "competition_code": comp.get("code"),
             "home_team": home.get("name"),
             "home_team_id": home.get("id"),
@@ -343,15 +354,14 @@ def football_head_to_head(
             "away_score": aws,
             "total_goals": hs + aws,
             "winner": winner,
-            "matchday": match.get("matchday"),
-            "stage": match.get("stage"),
-            "venue": match.get("venue"),
-            "half_time": (match.get("score") or {}).get("halfTime"),
-            "duration": (match.get("score") or {}).get("duration"),
+            "matchday": item.get("matchday"),
+            "stage": item.get("stage"),
+            "venue": item.get("venue"),
+            "half_time": (item.get("score") or {}).get("halfTime"),
+            "duration": (item.get("score") or {}).get("duration"),
             "result_source": source,
         })
 
-    # Deduplicate by fixture ID in case the upstream payload repeats a match.
     unique = {row["id"]: row for row in meetings if row.get("id") is not None}
     meetings = list(unique.values())
     meetings.sort(key=lambda row: str(row.get("date") or ""), reverse=True)
@@ -361,14 +371,14 @@ def football_head_to_head(
         if row["home_team_id"] == home_team_id:
             home_goals += row["home_score"]
             away_goals += row["away_score"]
-            outcome = row["winner"]
+            result_for_home = row["winner"]
         else:
             home_goals += row["away_score"]
             away_goals += row["home_score"]
-            outcome = {"home": "away", "away": "home", "draw": "draw"}[row["winner"]]
-        if outcome == "home":
+            result_for_home = "away" if row["winner"] == "home" else "home" if row["winner"] == "away" else "draw"
+        if result_for_home == "home":
             home_wins += 1
-        elif outcome == "away":
+        elif result_for_home == "away":
             away_wins += 1
         else:
             draws += 1
@@ -377,8 +387,9 @@ def football_head_to_head(
     count = len(meetings)
     return {
         "success": True,
-        "provider": source,
-        "competition": competition.strip().upper(),
+        "provider": "football-data.org",
+        "competition": code,
+        "history_scope": history_scope,
         "teams": {"home": {"id": home_team_id}, "away": {"id": away_team_id}},
         "sample_size": count,
         "summary": {
@@ -395,7 +406,6 @@ def football_head_to_head(
             "under_2_5_count": sum(1 for row in meetings if row["total_goals"] <= 2),
         },
         "meetings": meetings[:limit],
-        "history_scope": history_scope,
         "returned_matches": min(count, limit),
     }
 
