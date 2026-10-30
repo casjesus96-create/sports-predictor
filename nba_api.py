@@ -375,7 +375,9 @@ def nba_quarter_projection_audit(limit: int = Query(100, ge=1, le=250)):
             "pending_snapshots_scanned": len(pending_rows),
             "snapshots_with_quarter_projection": len(eligible_all),
             "pending_with_quarter_projection": sum(1 for row in pending_rows if has_quarter_projection(row)),
-            "settled_with_quarter_projection": len(eligible_all_settled),\n            "unique_pregame_games_selected": len(eligible),\n            "duplicate_pregame_snapshots_excluded": duplicate_pregame_snapshots,
+            "settled_with_quarter_projection": len(eligible_all_settled),
+            "unique_pregame_games_selected": len(eligible),
+            "duplicate_pregame_snapshots_excluded": duplicate_pregame_snapshots,
             "games_with_actual_quarters": len(actuals),
             "actual_data_fetch_issues": len(fetch_errors),
         }
