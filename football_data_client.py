@@ -15,7 +15,7 @@ import requests
 
 BASE_URL = "https://api.football-data.org/v4"
 REQUEST_TIMEOUT_SECONDS = 12
-CACHE_TTL_SECONDS = 60
+CACHE_TTL_SECONDS = 300
 LEAGUES = {
     "PL": {"name": "Premier League", "country": "England"},
     "PD": {"name": "LaLiga", "country": "Spain"},
