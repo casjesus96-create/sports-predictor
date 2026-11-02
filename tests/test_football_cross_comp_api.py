@@ -32,7 +32,7 @@ def test_cross_comp_api_uses_team_histories_and_competition_baselines(monkeypatc
     result = football_api._cross_competition_prediction(
         "CL", 10, 20, "Home FC", "Away FC", "2026-02-01T15:00:00+00:00", cl_matches,
     )
-    assert result["available"] is True
+    assert result["available"] is True, result
     assert result["status"] == "SHADOW_ONLY"
     assert result["sample"]["home_matches"] == 7
     assert result["sample"]["away_matches"] == 7
