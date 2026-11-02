@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 
 from football_data_client import (
     LEAGUES,
@@ -18,7 +18,7 @@ from football_data_client import (
 )
 from football_model import MODEL_VERSION, predict_1x2
 from football_cross_comp_model import predict_cross_competition, EXPERIMENT_VERSION as CROSS_COMP_EXPERIMENT_VERSION
-from football_history import record_pregame_snapshot, settle_official_result
+from football_history import record_pregame_snapshot, settle_official_result, record_experimental_snapshot, settle_experimental_results
 from football_h2h_experiment import evaluate_h2h_candidate, EXPERIMENT_VERSION
 from football_backtest import run_chronological_backtest
 
@@ -330,6 +330,7 @@ def football_games(
 
         # Only official full-time numeric scores can settle a previously saved snapshot.
         settle_official_result(item, competition)
+        settle_experimental_results(item)
         enriched_matches.append(item)
 
     return {
@@ -503,6 +504,27 @@ def football_head_to_head(
         "meetings": meetings[:limit],
         "returned_matches": min(count, limit),
     }
+
+
+@router.post("/experimental-snapshots")
+def save_experimental_snapshot(payload: dict = Body(...)):
+    """Save an explicitly selected cross-competition shadow projection."""
+    match = payload.get("match") or {}
+    prediction = payload.get("prediction") or {}
+    competition = str(payload.get("competition") or "").strip().upper()
+    kickoff_at = match.get("utcDate")
+    try:
+        kickoff = datetime.fromisoformat(str(kickoff_at).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="El encuentro no contiene una fecha válida.")
+    if kickoff.tzinfo is None or kickoff <= datetime.now(UTC):
+        raise HTTPException(status_code=400, detail="Solo se pueden guardar proyecciones antes del inicio.")
+    if not competition or len(competition) > 8:
+        raise HTTPException(status_code=400, detail="Código de competición no válido.")
+    if not record_experimental_snapshot(match, competition, prediction):
+        raise HTTPException(status_code=503, detail="No se pudo confirmar el guardado. Verifica la conexión y la tabla de historial.")
+    return {"success": True, "saved": True, "model_version": prediction.get("model_version"),
+            "message": "Proyección experimental guardada; no modifica el historial oficial."}
 
 
 @router.get("/experimental-h2h")
