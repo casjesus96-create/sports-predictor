@@ -317,17 +317,6 @@ def football_games(
                     "available": False,
                     "reason": "No se pudo calcular una estimación válida con los datos disponibles.",
                 }
-            item["cross_competition_prediction"] = {"available": False, "reason": "No se requiere: la predicción oficial está disponible."}
-            if (
-                not item["prediction"].get("available")
-                and item.get("homeTeam", {}).get("id")
-                and item.get("awayTeam", {}).get("id")
-                and item.get("utcDate")
-            ):
-                item["cross_competition_prediction"] = _cross_competition_prediction(
-                    competition, int(item["homeTeam"]["id"]), int(item["awayTeam"]["id"]),
-                    home, away, item["utcDate"], history_matches,
-                )
         else:
             item["prediction"] = {
                 "available": False,
