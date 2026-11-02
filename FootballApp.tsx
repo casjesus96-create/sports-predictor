@@ -256,7 +256,7 @@ export default function FootballApp() {
   const providerCompetition = availability.find((item) => item.code === competition);
   const available = providerCompetition?.available_in_plan;
 
-  async function loadData(nextView: "games" | "standings" = view) {
+  async function loadData(nextView: "games" | "standings" | "history" = view) {
     setLoading(true); setError(""); setNotice(""); setView(nextView);
     try {
       const response = await fetch(nextView === "games"
@@ -431,7 +431,7 @@ export default function FootballApp() {
       {view === "history" && <section style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <div><h2 style={{ margin: 0 }}>Historial de predicciones guardadas</h2><p style={{ color: "#9ca3af", fontSize: 12, margin: "5px 0 0" }}>Snapshots originales e inmutables del modelo oficial · {selectedLeague.name}</p></div>
-          <button type="button" onClick={loadHistory} disabled={historyLoading} style={buttonStyle}>{historyLoading ? "Actualizando…" : "Actualizar"}</button>
+          <button type="button" onClick={() => loadHistory()} disabled={historyLoading} style={buttonStyle}>{historyLoading ? "Actualizando…" : "Actualizar"}</button>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
           {(["ALL", "PENDING", "SETTLED"] as const).map((status) => <button key={status} type="button" onClick={() => { setHistoryStatus(status); loadHistory(status); }} style={{ ...buttonStyle, background: historyStatus === status ? "#0f766e" : "#1f2937" }}>{status === "ALL" ? "Todos" : status === "PENDING" ? "Pendientes" : "Liquidados"}</button>)}
