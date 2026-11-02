@@ -493,7 +493,7 @@ export default function FootballApp() {
           const outcomeLabel = actualOutcome === "HOME" ? "Local" : actualOutcome === "AWAY" ? "Visitante" : actualOutcome === "DRAW" ? "Empate" : "—";
           return <article key={item.id} style={{ marginTop: 10, padding: 12, border: "1px solid #475569", borderRadius: 9, background: "#0b1220" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}><strong>{item.home_team} vs {item.away_team}</strong><span style={{ color: item.result_status === "SETTLED" ? "#86efac" : "#fbbf24" }}>{item.result_status === "SETTLED" ? "Liquidado" : item.result_status}</span></div>
-            <p style={{ margin: "5px 0", color: "#9ca3af", fontSize: 12 }}>{item.competition_code} · {localDate(item.kickoff_at)} · {item.model_version}</p>
+            <p style={{ margin: "5px 0", color: "#9ca3af", fontSize: 12 }}>{item.competition_code} · {localDate(item.kickoff_at)} · {item.model_version} · {String(item.model_version || "").startsWith("FOOTBALL-CROSSCOMP-SHADOW-") ? "EXPERIMENTAL" : "OFICIAL"}</p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 7 }}>
               <div style={{ background: "#172033", padding: 8, borderRadius: 7 }}>Local <strong>{percent(probs.home)}</strong></div>
               <div style={{ background: "#172033", padding: 8, borderRadius: 7 }}>Empate <strong>{percent(probs.draw)}</strong></div>
