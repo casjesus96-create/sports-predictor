@@ -169,6 +169,24 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     } finally { setSavingExperiment(false); }
   }
 
+  async function saveFormEloProjection() {
+    const prediction = experiment?.form_elo_prediction;
+    if (!prediction?.available || !prediction?.probabilities || savingExperiment) return;
+    setSavingExperiment(true); setExperimentSaveMessage("");
+    try {
+      const response = await fetch(API + "/experimental-snapshots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ competition, match: { id: match.id, utcDate: kickoffAt, homeTeam: { name: homeName }, awayTeam: { name: awayName } }, prediction }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo guardar la variante Form + Elo.");
+      setExperimentSaveMessage("Proyección Form + Elo guardada en el historial experimental. Se liquidará al recibirse el resultado final.");
+    } catch (err: unknown) {
+      setExperimentSaveMessage(err instanceof Error ? err.message : "No se pudo confirmar el guardado.");
+    } finally { setSavingExperiment(false); }
+  }
+
   const candidate = experiment?.candidate;
   const crossBase = experiment?.cross_competition_prediction;
   const baseProbabilities = candidate?.base_probabilities;
@@ -228,6 +246,21 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
           <button type="button" onClick={saveCrossCompetitionProjection} disabled={savingExperiment || new Date(kickoffAt).getTime() <= Date.now()} style={{ ...buttonStyle, background: "#854d0e" }}>{savingExperiment ? "Guardando…" : "Guardar proyección experimental"}</button>
           {experimentSaveMessage && <p role="status" style={{ color: experimentSaveMessage.includes("guardada") ? "#86efac" : "#fca5a5", fontSize: 12 }}>{experimentSaveMessage}</p>}
         </section>}
+        {(() => {
+          const formElo = experiment.form_elo_prediction;
+          return <section style={{ background: "#172b2a", border: "1px solid #0f766e", padding: 12, borderRadius: 8, marginBottom: 10 }}>
+            <strong>Forma reciente + fuerza de rivales (Elo) · Experimental</strong>
+            <p style={{ color: "#99f6e4", fontSize: 12 }}>Pondera los últimos resultados, ajusta la forma por la calidad de los rivales y calcula Elo cronológicamente. No modifica el Poisson oficial y todavía no está calibrado.</p>
+            {formElo?.available && formElo.probabilities ? <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                {[{ label: "Gana local", value: formElo.probabilities.home }, { label: "Empate", value: formElo.probabilities.draw }, { label: "Gana visitante", value: formElo.probabilities.away }].map((item) => <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: 9, textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 18 }}>{percent(item.value)}</strong></div>)}
+              </div>
+              <p style={{ fontSize: 11, color: "#cbd5e1" }}>Goles esperados: {formElo.expected_goals.home.toFixed(2)}–{formElo.expected_goals.away.toFixed(2)} · Elo: {formElo.strength.home_elo} vs {formElo.strength.away_elo} · Muestra: {formElo.sample.home_matches} local / {formElo.sample.away_matches} visitante · {formElo.model_version}</p>
+              <button type="button" onClick={saveFormEloProjection} disabled={savingExperiment || new Date(kickoffAt).getTime() <= Date.now()} style={{ ...buttonStyle, background: "#0f766e" }}>{savingExperiment ? "Guardando…" : "Guardar Form + Elo en historial"}</button>
+            </> : <p style={{ color: "#fbbf24", fontSize: 12 }}>{formElo?.reason || "No hay muestra suficiente para esta variante."}</p>}
+            {experimentSaveMessage && <p role="status" style={{ color: experimentSaveMessage.includes("guardada") ? "#86efac" : "#fca5a5", fontSize: 12 }}>{experimentSaveMessage}</p>}
+          </section>;
+        })()}
         {!crossBase?.available && crossBase?.reason && <p style={{ color: "#fbbf24", fontSize: 12 }}>Proyección intercompetición no disponible: {crossBase.reason}</p>}
         {comparisonRows.length ? <>
           <div style={{ overflowX: "auto" }}>
