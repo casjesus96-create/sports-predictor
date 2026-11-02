@@ -6,6 +6,7 @@ from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Query
 
 from repository import get_supabase_client
+from football_model import MODEL_VERSION
 
 router = APIRouter(prefix="/api/v1/football", tags=["Football evaluation"])
 
@@ -114,8 +115,8 @@ def football_evaluation(
         )
         if competition:
             query = query.eq("competition_code", competition.upper())
-        if model_version:
-            query = query.eq("model_version", model_version)
+        # Never mix shadow experiments into official dashboard metrics.
+        query = query.eq("model_version", model_version or MODEL_VERSION)
         rows = query.execute().data or []
         result = evaluate_rows(rows)
         result.update({
