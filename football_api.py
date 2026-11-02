@@ -127,18 +127,18 @@ def football_games(
     if date_to and (date_to.year < 1990 or date_to.year > datetime.now(UTC).year + 2):
         raise HTTPException(status_code=400, detail="dateTo fuera del rango admitido.")
 
-    data = _provider_call(
-        get_matches,
-        competition,
-        date_from.isoformat() if date_from else None,
-        date_to.isoformat() if date_to else None,
-    )
-    matches = data.get("matches", [])
-
-    # Query competition history separately: selected-date results are fixtures,
-    # not a sufficient training sample and can lag behind final score updates.
-    history = _provider_call(get_matches, competition)
-    history_matches = history.get("matches", [])
+    # Fetch the competition schedule/history once. The previous date-filtered
+    # request plus a second full-history request doubled quota usage and could
+    # make otherwise valid fixture requests fail with HTTP 429.
+    data = _provider_call(get_matches, competition)
+    history_matches = data.get("matches", [])
+    matches = [
+        match for match in history_matches
+        if (
+            (not date_from or str(match.get("utcDate") or "")[:10] >= date_from.isoformat())
+            and (not date_to or str(match.get("utcDate") or "")[:10] <= date_to.isoformat())
+        )
+    ]
     history_by_id = {
         match.get("id"): match for match in history_matches if match.get("id") is not None
     }
@@ -249,7 +249,7 @@ def football_games(
         "provider": "football-data.org",
         "competition": competition.upper(),
         "generated_at": datetime.now(UTC).isoformat(),
-        "count": data.get("resultSet", {}).get("count", len(matches)),
+        "count": len(matches),
         "filters": {
             "dateFrom": date_from.isoformat() if date_from else None,
             "dateTo": date_to.isoformat() if date_to else None,
