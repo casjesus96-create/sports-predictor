@@ -92,7 +92,7 @@ def _cross_competition_prediction(
                 if code not in codes:
                     codes.append(code)
         target_code = competition.strip().upper()
-        codes = [target_code] + [code for code in codes if code != target_code][:4]
+        codes = [target_code] + [code for code in codes if code != target_code][:2]
 
         baselines = {}
         for code in codes:
