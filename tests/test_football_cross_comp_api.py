@@ -19,7 +19,7 @@ def test_cross_comp_api_uses_team_histories_and_competition_baselines(monkeypatc
     away_history = [make_match(i + 20, 200 + i, 20, 1, 2, i, "PD") for i in range(1, 8)]
     cl_matches = [make_match(i + 40, 300 + i, 400 + i, 1, 1, i, "CL") for i in range(1, 12)]
     pl_matches = [make_match(i + 60, 500 + i, 600 + i, 2, 1, i, "PL") for i in range(1, 12)]
-    pd_matches = [make_match(i + 80, 700 + i, 800 + i, 1, 0, i, "PD") for i in range(1, 12)]
+    pd_matches = [make_match(i + 80, 700 + i, 800 + i, 1, 1, i, "PD") for i in range(1, 12)]
 
     calls = []
     def provider_call(function, *args, **kwargs):
