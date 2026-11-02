@@ -84,3 +84,90 @@ def settle_official_result(match: dict[str, Any], competition: str) -> bool:
     except Exception:
         logger.exception("Could not settle football result for match %s", match.get("id"))
         return False
+
+
+
+def record_experimental_snapshot(match: dict[str, Any], competition: str, prediction: dict[str, Any]) -> bool:
+    """Persist an explicitly saved shadow projection without overwriting official snapshots."""
+    version = str(prediction.get("model_version") or "")
+    if not version.startswith("FOOTBALL-CROSSCOMP-SHADOW-"):
+        return False
+    if not prediction.get("available") or not isinstance(match.get("id"), int):
+        return False
+    home = (match.get("homeTeam") or {}).get("name")
+    away = (match.get("awayTeam") or {}).get("name")
+    probs = prediction.get("probabilities") or {}
+    if not home or not away or not all(
+        isinstance(probs.get(k), (int, float)) and 0 <= probs[k] <= 1
+        for k in ("home", "draw", "away")
+    ):
+        return False
+    if abs(sum(probs[k] for k in ("home", "draw", "away")) - 1.0) > 0.02:
+        return False
+    payload = {
+        "provider_match_id": match["id"],
+        "competition_code": competition.upper(),
+        "kickoff_at": match.get("utcDate"),
+        "home_team": home,
+        "away_team": away,
+        "model_version": version,
+        "home_probability": probs["home"],
+        "draw_probability": probs["draw"],
+        "away_probability": probs["away"],
+        "expected_goals": prediction.get("expected_goals") or {},
+        "prediction_payload": {**prediction, "snapshot_type": "EXPERIMENTAL"},
+        "data_cutoff_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        client = get_supabase_client()
+        client.table("football_prediction_snapshots").upsert(
+            payload, on_conflict="provider_match_id,model_version", ignore_duplicates=True
+        ).execute()
+        confirmed = client.table("football_prediction_snapshots").select("id").eq(
+            "provider_match_id", match["id"]
+        ).eq("model_version", version).limit(1).execute()
+        return bool(confirmed.data)
+    except Exception:
+        logger.exception("Could not persist experimental football snapshot for match %s", match.get("id"))
+        return False
+
+
+def settle_experimental_results(match: dict[str, Any]) -> bool:
+    """Settle every saved cross-competition shadow snapshot for a completed fixture."""
+    if str(match.get("status") or "").upper() not in {"FINISHED", "AWARDED"}:
+        return False
+    if not isinstance(match.get("id"), int):
+        return False
+    score = (match.get("score") or {}).get("fullTime") or {}
+    home_score, away_score = score.get("home"), score.get("away")
+    if not (isinstance(home_score, int) and not isinstance(home_score, bool)
+            and isinstance(away_score, int) and not isinstance(away_score, bool)
+            and home_score >= 0 and away_score >= 0):
+        return False
+    try:
+        client = get_supabase_client()
+        rows = client.table("football_prediction_snapshots").select("model_version").eq(
+            "provider_match_id", match["id"]
+        ).eq("result_status", "PENDING").like(
+            "model_version", "FOOTBALL-CROSSCOMP-SHADOW-%"
+        ).execute().data or []
+        changed = False
+        for row in rows:
+            version = row.get("model_version")
+            if not version:
+                continue
+            client.table("football_prediction_snapshots").update({
+                "result_status": "SETTLED",
+                "actual_home_score": home_score,
+                "actual_away_score": away_score,
+                "actual_outcome": _outcome(home_score, away_score),
+                "result_source": "football-data.org",
+                "settled_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("provider_match_id", match["id"]).eq("model_version", version).eq(
+                "result_status", "PENDING"
+            ).execute()
+            changed = True
+        return changed
+    except Exception:
+        logger.exception("Could not settle experimental football snapshots for match %s", match.get("id"))
+        return False
