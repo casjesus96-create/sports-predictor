@@ -21,7 +21,9 @@ def test_cross_comp_api_uses_team_histories_and_competition_baselines(monkeypatc
     pl_matches = [make_match(i + 60, 500 + i, 600 + i, 2, 1, i, "PL") for i in range(1, 12)]
     pd_matches = [make_match(i + 80, 700 + i, 800 + i, 1, 0, i, "PD") for i in range(1, 12)]
 
+    calls = []
     def provider_call(function, *args, **kwargs):
+        calls.append((function.__name__, args))
         if function is football_api.get_team_matches:
             return {"matches": home_history if args[0] == 10 else away_history}
         if function is football_api.get_matches:
@@ -32,6 +34,7 @@ def test_cross_comp_api_uses_team_histories_and_competition_baselines(monkeypatc
     result = football_api._cross_competition_prediction(
         "CL", 10, 20, "Home FC", "Away FC", "2026-02-01T15:00:00+00:00", cl_matches,
     )
+    assert calls == [("get_team_matches", (10, None, "FINISHED", 60)), ("get_team_matches", (20, None, "FINISHED", 60)), ("get_matches", ("PL",)), ("get_matches", ("PD",))], calls
     assert result["available"] is True, result
     assert result["status"] == "SHADOW_ONLY"
     assert result["sample"]["home_matches"] == 7
