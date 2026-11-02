@@ -108,6 +108,8 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
   const [experiment, setExperiment] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [experimentLoading, setExperimentLoading] = useState(false);
+  const [savingExperiment, setSavingExperiment] = useState(false);
+  const [experimentSaveMessage, setExperimentSaveMessage] = useState("");
   const [error, setError] = useState("");
   const [experimentError, setExperimentError] = useState("");
   const homeId = match.homeTeam?.id;
@@ -148,6 +150,23 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     } catch (err: unknown) {
       setExperimentError(err instanceof Error ? err.message : "Error calculando el modelo H2H experimental.");
     } finally { setExperimentLoading(false); }
+  }
+
+  async function saveCrossCompetitionProjection() {
+    if (!crossBase?.available || !crossBase?.probabilities || savingExperiment) return;
+    setSavingExperiment(true); setExperimentSaveMessage("");
+    try {
+      const response = await fetch(API + "/experimental-snapshots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ competition, match: { id: match.id, utcDate: kickoffAt, homeTeam: { name: homeName }, awayTeam: { name: awayName } }, prediction: crossBase }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo guardar la proyección experimental.");
+      setExperimentSaveMessage("Proyección experimental guardada en el historial. Se liquidará al recibirse el resultado final.");
+    } catch (err: unknown) {
+      setExperimentSaveMessage(err instanceof Error ? err.message : "No se pudo confirmar el guardado.");
+    } finally { setSavingExperiment(false); }
   }
 
   const candidate = experiment?.candidate;
@@ -205,7 +224,9 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
             {[{ label: "Goles local", value: crossBase.expected_goals.home }, { label: "Goles visitante", value: crossBase.expected_goals.away }, { label: "Total", value: crossBase.expected_goals.total ?? 0 }].map((item) => <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: 9, textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong>{item.value.toFixed(2)}</strong></div>)}
           </div>
-          <p style={{ fontSize: 11, color: "#cbd5e1", marginBottom: 0 }}>Muestra: {crossBase.sample?.home_matches ?? 0} partidos local · {crossBase.sample?.away_matches ?? 0} visitante · Competiciones: {crossBase.sample?.competitions_used?.join(", ") || "—"} · {crossBase.model_version}</p>
+          <p style={{ fontSize: 11, color: "#cbd5e1", marginBottom: 8 }}>Muestra: {crossBase.sample?.home_matches ?? 0} partidos local · {crossBase.sample?.away_matches ?? 0} visitante · Competiciones: {crossBase.sample?.competitions_used?.join(", ") || "—"} · {crossBase.model_version}</p>
+          <button type="button" onClick={saveCrossCompetitionProjection} disabled={savingExperiment || new Date(kickoffAt).getTime() <= Date.now()} style={{ ...buttonStyle, background: "#854d0e" }}>{savingExperiment ? "Guardando…" : "Guardar proyección experimental"}</button>
+          {experimentSaveMessage && <p role="status" style={{ color: experimentSaveMessage.includes("guardada") ? "#86efac" : "#fca5a5", fontSize: 12 }}>{experimentSaveMessage}</p>}
         </section>}
         {!crossBase?.available && crossBase?.reason && <p style={{ color: "#fbbf24", fontSize: 12 }}>Proyección intercompetición no disponible: {crossBase.reason}</p>}
         {comparisonRows.length ? <>
