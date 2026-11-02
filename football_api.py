@@ -21,6 +21,7 @@ from football_cross_comp_model import predict_cross_competition, EXPERIMENT_VERS
 from football_history import record_pregame_snapshot, settle_official_result, record_experimental_snapshot, settle_experimental_results
 from football_h2h_experiment import evaluate_h2h_candidate, EXPERIMENT_VERSION
 from football_backtest import run_chronological_backtest
+from football_form_elo_experiment import predict_form_elo, EXPERIMENT_VERSION as FORM_ELO_EXPERIMENT_VERSION
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/football", tags=["Football"])
@@ -579,6 +580,37 @@ def football_experimental_h2h(
             competition, home_team_id, away_team_id, home_team.strip(), away_team.strip(),
             kickoff_at, competition_data.get("matches", []),
         )
+    # Independent form/Elo shadow candidate. Histories are fetched once per team;
+    # the model itself excludes every result at or after kickoff.
+    form_elo_candidate = {"available": False, "model_version": FORM_ELO_EXPERIMENT_VERSION,
+                          "reason": "No se pudo reunir el historial verificable."}
+    try:
+        home_history_data = _provider_call(get_team_matches, home_team_id, None, "FINISHED", 60)
+        away_history_data = _provider_call(get_team_matches, away_team_id, None, "FINISHED", 60)
+        valid_scores = []
+        for row in completed:
+            score = (row.get("score") or {}).get("fullTime") or {}
+            valid_scores.append((score["home"], score["away"]))
+        baseline = None
+        if valid_scores:
+            baseline = {
+                "home": sum(x[0] for x in valid_scores) / len(valid_scores),
+                "away": sum(x[1] for x in valid_scores) / len(valid_scores),
+            }
+        # For early-stage competitions, reuse only the separately labeled
+        # cross-competition estimate's verified scoring baseline if available.
+        if not baseline and cross_competition_base and cross_competition_base.get("available"):
+            baseline = cross_competition_base.get("competition_baseline")
+        form_elo_candidate = predict_form_elo(
+            home_team_id, away_team_id, home_team.strip(), away_team.strip(),
+            kickoff_at, home_history_data.get("matches", []),
+            away_history_data.get("matches", []), baseline,
+        )
+    except HTTPException as exc:
+        form_elo_candidate = {"available": False, "model_version": FORM_ELO_EXPERIMENT_VERSION,
+                              "reason": "El proveedor no permitió completar el historial auxiliar.",
+                              "provider_error_status": exc.status_code}
+
     h2h = football_head_to_head(
         competition=competition,
         home_team_id=home_team_id,
@@ -622,9 +654,10 @@ def football_experimental_h2h(
         "official_model_version": MODEL_VERSION,
         "base_prediction": base,
         "cross_competition_prediction": cross_competition_base,
+        "form_elo_prediction": form_elo_candidate,
         "candidate": candidate,
         "h2h_sample_size": candidate.get("h2h", {}).get("valid_meetings", 0),
-        "note": "La comparación es experimental; no cambia las probabilidades oficiales ni guarda ni sobrescribe snapshots.",
+        "note": "Las variantes experimentales no cambian las probabilidades oficiales. Guarda cada snapshot explícitamente para su evaluación histórica.",
     }
 
 
