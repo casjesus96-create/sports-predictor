@@ -132,3 +132,57 @@ def football_evaluation(
             status_code=503,
             detail="No fue posible leer el historial de fútbol. Verifica que la tabla football_prediction_snapshots esté creada y accesible.",
         ) from exc
+
+
+
+@router.get("/history")
+def football_prediction_history(
+    competition: str | None = Query(None, min_length=2, max_length=8),
+    team: str | None = Query(None, min_length=2, max_length=120),
+    result_status: str | None = Query(None, alias="status", pattern="^(PENDING|SETTLED|CANCELLED)$"),
+    model_version: str | None = Query(None, min_length=3, max_length=80),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Return immutable official-model snapshots for the football history screen."""
+    try:
+        query = (
+            get_supabase_client().table("football_prediction_snapshots")
+            .select(
+                "id,provider_match_id,competition_code,kickoff_at,home_team,away_team,"
+                "model_version,home_probability,draw_probability,away_probability,"
+                "expected_goals,prediction_payload,data_cutoff_at,created_at,"
+                "result_status,actual_home_score,actual_away_score,actual_outcome,"
+                "result_source,settled_at"
+            )
+            .order("kickoff_at", desc=True)
+            .limit(limit)
+        )
+        if competition:
+            query = query.eq("competition_code", competition.upper())
+        if result_status:
+            query = query.eq("result_status", result_status.upper())
+        if model_version:
+            query = query.eq("model_version", model_version)
+        if team:
+            # PostgREST OR filter searches either side without changing the stored snapshot.
+            escaped = team.strip().replace(",", "\\,").replace("%", "\\%").replace("_", "\\_")
+            query = query.or_(f"home_team.ilike.%{escaped}%,away_team.ilike.%{escaped}%")
+        rows = query.execute().data or []
+        return {
+            "success": True,
+            "read_only": True,
+            "count": len(rows),
+            "filters": {
+                "competition": competition.upper() if competition else None,
+                "team": team.strip() if team else None,
+                "status": result_status.upper() if result_status else None,
+                "model_version": model_version,
+            },
+            "snapshots": rows,
+            "source": "football_prediction_snapshots",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible consultar el historial persistente de fútbol.",
+        ) from exc

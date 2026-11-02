@@ -39,10 +39,16 @@ def record_pregame_snapshot(match: dict[str, Any], competition: str, prediction:
         "data_cutoff_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
-        get_supabase_client().table("football_prediction_snapshots").upsert(
+        client = get_supabase_client()
+        client.table("football_prediction_snapshots").upsert(
             payload, on_conflict="provider_match_id,model_version", ignore_duplicates=True
         ).execute()
-        return True
+        # ignore_duplicates may return no representation for an existing row.
+        # Confirm persistence explicitly instead of treating a request as proof.
+        confirmed = client.table("football_prediction_snapshots").select("id").eq(
+            "provider_match_id", match["id"]
+        ).eq("model_version", payload["model_version"]).limit(1).execute()
+        return bool(confirmed.data)
     except Exception:
         logger.exception("Could not persist football pregame snapshot for match %s", match.get("id"))
         return False
