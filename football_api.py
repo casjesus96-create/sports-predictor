@@ -304,19 +304,21 @@ def football_head_to_head(
             valid.append(item)
         return valid
 
+    rate_limited = False
     if match_id is not None:
         try:
             h2h_data = _provider_call(get_match_head_to_head, match_id, limit)
             raw_matches = valid_direct_meetings(h2h_data.get("matches", []))
         except HTTPException as exc:
+            rate_limited = exc.status_code == 429
             logger.warning(
-                "Provider H2H endpoint unavailable for match %s; falling back to team history: %s",
-                match_id, exc.detail,
+                "Provider H2H endpoint unavailable for match %s (rate_limited=%s): %s",
+                match_id, rate_limited, exc.detail,
             )
 
-    # Fall back only when the dedicated endpoint is unavailable or contains no
-    # valid completed direct meetings. Valid provider H2H results are authoritative.
-    if not raw_matches:
+    # Never issue two additional team-history requests after a 429. H2H is
+    # auxiliary context and must not amplify provider quota exhaustion.
+    if not raw_matches and not rate_limited:
         home_data = _provider_call(get_team_matches, home_team_id, code, "FINISHED", 500)
         away_data = _provider_call(get_team_matches, away_team_id, code, "FINISHED", 500)
         away_ids = {
@@ -389,7 +391,12 @@ def football_head_to_head(
         "success": True,
         "provider": "football-data.org",
         "competition": code,
-        "history_scope": history_scope,
+        "history_scope": (
+            "football-data.org alcanzó el límite de solicitudes. El historial H2H no está disponible temporalmente; "
+            "no se ejecutaron consultas alternativas para proteger la cuota."
+            if rate_limited else history_scope
+        ),
+        "availability": "rate_limited" if rate_limited else "available",
         "teams": {"home": {"id": home_team_id}, "away": {"id": away_team_id}},
         "sample_size": count,
         "summary": {
