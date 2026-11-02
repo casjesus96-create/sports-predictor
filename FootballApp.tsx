@@ -231,6 +231,7 @@ export default function FootballApp() {
   const [backtestError, setBacktestError] = useState("");
   const [includeExternalH2h, setIncludeExternalH2h] = useState(false);
   const [historyRows, setHistoryRows] = useState<any[]>([]);
+  const [historyEvaluation, setHistoryEvaluation] = useState<any>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [historyStatus, setHistoryStatus] = useState<"ALL" | "PENDING" | "SETTLED">("ALL");
@@ -280,10 +281,16 @@ export default function FootballApp() {
     try {
       const params = new URLSearchParams({ competition, limit: "200" });
       if (statusFilter !== "ALL") params.set("status", statusFilter);
-      const response = await fetch(`${API}/history?${params.toString()}`);
+      const [response, evaluationResponse] = await Promise.all([
+        fetch(`${API}/history?${params.toString()}`),
+        fetch(`${API}/evaluation?competition=${encodeURIComponent(competition)}`),
+      ]);
       const body = await response.json();
+      const evaluationBody = await evaluationResponse.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo consultar el historial guardado.");
+      if (!evaluationResponse.ok) throw new Error(evaluationBody.detail || "No se pudo calcular el rendimiento histórico.");
       setHistoryRows(body.snapshots || []);
+      setHistoryEvaluation(evaluationBody);
       setSelectedSnapshotId(null);
     } catch (err: unknown) {
       setHistoryError(err instanceof Error ? err.message : "Error consultando el historial persistente.");
@@ -431,6 +438,16 @@ export default function FootballApp() {
           <button type="button" onClick={() => { setView("games"); loadData("games"); }} style={{ ...buttonStyle, background: "#334155" }}>Volver a partidos</button>
         </div>
         {historyError && <p role="alert" style={{ color: "#fecaca" }}>{historyError}</p>}
+        {historyEvaluation && <section style={{ margin: "12px 0", padding: 11, borderRadius: 8, background: "#172033" }}>
+          <strong>Rendimiento del modelo oficial · {historyEvaluation.sample_size ?? 0} partidos liquidados</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, marginTop: 8 }}>
+            <div>Accuracy <strong>{percent(historyEvaluation.metrics?.accuracy)}</strong></div>
+            <div>Brier <strong>{typeof historyEvaluation.metrics?.brier_score === "number" ? historyEvaluation.metrics.brier_score.toFixed(4) : "—"}</strong></div>
+            <div>Log Loss <strong>{typeof historyEvaluation.metrics?.log_loss === "number" ? historyEvaluation.metrics.log_loss.toFixed(4) : "—"}</strong></div>
+          </div>
+          <p style={{ margin: "7px 0 0", color: "#fbbf24", fontSize: 11 }}>{historyEvaluation.status === "descriptive_only" ? "Evaluación descriptiva; no implica validación predictiva." : "Muestra insuficiente para conclusiones. Se requieren al menos 30 partidos y aun así interpretar con cautela."}</p>
+        </section>}
+
         {!historyLoading && !historyError && historyRows.length === 0 && <p style={{ color: "#fbbf24" }}>No hay snapshots para esta competición y filtro. Recuerda que el historial comienza a guardar predicciones desde que la persistencia está activa; no reconstruye predicciones antiguas que nunca se guardaron.</p>}
         {historyRows.map((item) => {
           const selected = selectedSnapshotId === item.id;
