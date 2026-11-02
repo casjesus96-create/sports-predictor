@@ -116,7 +116,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
   const awayName = match.awayTeam?.name || "";
   const kickoffAt = match.utcDate || "";
 
-  async function loadHistory(statusFilter: "ALL" | "PENDING" | "SETTLED" = historyStatus) {
+  async function loadHistory() {
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
     setLoading(true); setError("");
     try {
@@ -220,7 +220,7 @@ export default function FootballApp() {
   const [availability, setAvailability] = useState<CompetitionStatus[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
-  const [view, setView] = useState<"games" | "standings">("games");
+  const [view, setView] = useState<"games" | "standings" | "history">("games");
   const [matchFilter, setMatchFilter] = useState<"upcoming" | "all" | "finished">("all");
   const [loading, setLoading] = useState(false);
   const [loadingCompetitions, setLoadingCompetitions] = useState(true);
@@ -276,7 +276,7 @@ export default function FootballApp() {
     } finally { setLoading(false); }
   }
 
-  async function loadHistory() {
+  async function loadHistory(statusFilter: "ALL" | "PENDING" | "SETTLED" = historyStatus) {
     setHistoryLoading(true); setHistoryError(""); setView("history");
     try {
       const params = new URLSearchParams({ competition, limit: "200" });
@@ -353,7 +353,7 @@ export default function FootballApp() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <button type="button" onClick={() => loadData("games")} disabled={loading || loadingCompetitions || !selectedDate} style={buttonStyle}>{loading && view === "games" ? "Cargando…" : `Buscar partidos del ${selectedDate}`}</button>
         <button type="button" onClick={() => loadData("standings")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "standings" ? "Cargando…" : "Ver clasificación"}</button>
-        <button type="button" onClick={loadHistory} disabled={historyLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#0f766e" }}>{historyLoading ? "Cargando historial…" : "Historial y resultados"}</button>
+        <button type="button" onClick={() => loadHistory()} disabled={historyLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#0f766e" }}>{historyLoading ? "Cargando historial…" : "Historial y resultados"}</button>
         <button type="button" onClick={loadBacktest} disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}><input type="checkbox" checked={includeExternalH2h} onChange={(event) => setIncludeExternalH2h(event.target.checked)} /> Consultar H2H externo (máx. 10 solicitudes)</label>
       </div>
