@@ -565,11 +565,16 @@ def football_experimental_h2h(
                 "away": meeting.get("away_score"),
             }},
         })
+    candidate_base = (
+        cross_competition_base
+        if cross_competition_base and cross_competition_base.get("available")
+        else base
+    )
     candidate = evaluate_h2h_candidate(
         home_team.strip(),
         away_team.strip(),
         kickoff_at,
-        base,
+        candidate_base,
         normalized_meetings,
     )
     return {
