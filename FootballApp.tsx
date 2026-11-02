@@ -29,7 +29,7 @@ type Prediction = {
   double_chance?: Record<string, { probability: number; fair_odds?: number | null }>;
   most_likely_scorelines?: Array<{ home: number; away: number; probability: number }>;
   calibration?: { status?: string; note?: string; required_next_step?: string };
-  sample?: { completed_matches_in_competition: number; home_team_matches: number; away_team_matches: number };
+  sample?: { completed_matches_in_competition?: number; home_team_matches?: number; away_team_matches?: number; home_matches?: number; away_matches?: number };
   method?: string;
   limitations?: string[];
 };
