@@ -133,3 +133,25 @@ def test_h2h_rejects_same_team_ids():
         assert exc.status_code == 400
     else:
         raise AssertionError("Expected same-team IDs to be rejected")
+
+
+def test_h2h_does_not_spend_more_quota_after_provider_429(monkeypatch):
+    calls = []
+
+    def provider_call(function, *args, **kwargs):
+        calls.append(function.__name__)
+        raise HTTPException(status_code=429, detail="rate limited")
+
+    monkeypatch.setattr(football_api, "_provider_call", provider_call)
+    result = football_api.football_head_to_head(
+        competition="CL",
+        home_team_id=HOME_ID,
+        away_team_id=AWAY_ID,
+        match_id=987,
+        limit=10,
+    )
+
+    assert calls == ["get_match_head_to_head"]
+    assert result["availability"] == "rate_limited"
+    assert result["sample_size"] == 0
+    assert "no se ejecutaron consultas alternativas" in result["history_scope"]
