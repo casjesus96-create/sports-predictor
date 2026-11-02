@@ -98,3 +98,16 @@ def test_brazil_and_champions_league_codes_are_supported(monkeypatch):
     client.clear_cache()
     client.get_matches("CL")
     assert request.call_args.args[0].endswith("/competitions/CL/matches")
+
+
+
+def test_team_matches_can_fetch_cross_competition_history(monkeypatch):
+    response = Mock()
+    response.status_code = 200
+    response.json.return_value = {"matches": []}
+    request = Mock(return_value=response)
+    monkeypatch.setattr(client.requests, "get", request)
+
+    client.get_team_matches(123, None, "FINISHED", 60)
+    assert request.call_args.args[0].endswith("/teams/123/matches")
+    assert request.call_args.kwargs["params"] == {"limit": "60", "status": "FINISHED"}
