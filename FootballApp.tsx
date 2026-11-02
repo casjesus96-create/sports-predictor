@@ -190,8 +190,8 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     </>}
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #334155" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-        <div><strong>Modelo H2H experimental</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>Comparación bajo demanda · no modifica el modelo oficial</div></div>
-        <button type="button" onClick={loadExperiment} disabled={experimentLoading || !homeId || !awayId || !kickoffAt || new Date(kickoffAt).getTime() <= Date.now()} style={buttonStyle}>{experimentLoading ? "Calculando…" : experiment ? "Actualizar comparación" : "Calcular variante H2H"}</button>
+        <div><strong>Proyección intercompetición + H2H experimental</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>Forma reciente entre torneos normalizada · bajo demanda · no modifica el modelo oficial</div></div>
+        <button type="button" onClick={loadExperiment} disabled={experimentLoading || !homeId || !awayId || !kickoffAt || new Date(kickoffAt).getTime() <= Date.now()} style={buttonStyle}>{experimentLoading ? "Calculando…" : experiment ? "Actualizar proyección" : "Calcular proyección experimental"}</button>
       </div>
       {experimentError && <p role="alert" style={{ color: "#fecaca" }}>{experimentError}</p>}
       {experiment && <>
