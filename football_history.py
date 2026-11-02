@@ -90,7 +90,7 @@ def settle_official_result(match: dict[str, Any], competition: str) -> bool:
 def record_experimental_snapshot(match: dict[str, Any], competition: str, prediction: dict[str, Any]) -> bool:
     """Persist an explicitly saved shadow projection without overwriting official snapshots."""
     version = str(prediction.get("model_version") or "")
-    if not version.startswith("FOOTBALL-CROSSCOMP-SHADOW-"):
+    if not version.startswith(("FOOTBALL-CROSSCOMP-SHADOW-", "FOOTBALL-FORM-ELO-SHADOW-")):
         return False
     if not prediction.get("available") or not isinstance(match.get("id"), int):
         return False
@@ -148,8 +148,11 @@ def settle_experimental_results(match: dict[str, Any]) -> bool:
         client = get_supabase_client()
         rows = client.table("football_prediction_snapshots").select("model_version").eq(
             "provider_match_id", match["id"]
-        ).eq("result_status", "PENDING").like(
-            "model_version", "FOOTBALL-CROSSCOMP-SHADOW-%"
+        ).eq("result_status", "PENDING").in_(
+            "model_version", [
+                "FOOTBALL-CROSSCOMP-SHADOW-0.1.0",
+                "FOOTBALL-FORM-ELO-SHADOW-0.1.0",
+            ]
         ).execute().data or []
         changed = False
         for row in rows:
