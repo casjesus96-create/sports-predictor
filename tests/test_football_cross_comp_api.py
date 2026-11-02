@@ -31,10 +31,20 @@ def test_cross_comp_api_uses_team_histories_and_competition_baselines(monkeypatc
         raise AssertionError(f"Unexpected provider function: {function}")
 
     monkeypatch.setattr(football_api, "_provider_call", provider_call)
+    original_predict = football_api.predict_cross_competition
+    captured = {}
+    def spy_predict(*args, **kwargs):
+        captured["home_history"] = args[5]
+        captured["away_history"] = args[6]
+        captured["baselines"] = args[7]
+        return original_predict(*args, **kwargs)
+    monkeypatch.setattr(football_api, "predict_cross_competition", spy_predict)
     result = football_api._cross_competition_prediction(
         "CL", 10, 20, "Home FC", "Away FC", "2026-02-01T15:00:00+00:00", cl_matches,
     )
     assert calls == [("get_team_matches", (10, None, "FINISHED", 60)), ("get_team_matches", (20, None, "FINISHED", 60)), ("get_matches", ("PL",)), ("get_matches", ("PD",))], calls
+    assert len(captured["away_history"]) == 7
+    assert captured["baselines"].keys() == {"CL", "PL", "PD"}, captured["baselines"]
     assert result["available"] is True, result
     assert result["status"] == "SHADOW_ONLY"
     assert result["sample"]["home_matches"] == 7
