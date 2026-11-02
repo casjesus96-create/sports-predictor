@@ -603,8 +603,8 @@ def football_experimental_h2h(
             baseline = cross_competition_base.get("competition_baseline")
         form_elo_candidate = predict_form_elo(
             home_team_id, away_team_id, home_team.strip(), away_team.strip(),
-            kickoff_at, home_history_data.get("matches", []),
-            away_history_data.get("matches", []), baseline,
+            kickoff_at, home_history_data.get("matches", []) + competition_data.get("matches", []),
+            away_history_data.get("matches", []) + competition_data.get("matches", []), baseline,
         )
     except HTTPException as exc:
         form_elo_candidate = {"available": False, "model_version": FORM_ELO_EXPERIMENT_VERSION,
