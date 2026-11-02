@@ -29,7 +29,7 @@ type Prediction = {
   double_chance?: Record<string, { probability: number; fair_odds?: number | null }>;
   most_likely_scorelines?: Array<{ home: number; away: number; probability: number }>;
   calibration?: { status?: string; note?: string; required_next_step?: string };
-  sample?: { completed_matches_in_competition: number; home_team_matches: number; away_team_matches: number };
+  sample?: { completed_matches_in_competition?: number; home_team_matches?: number; away_team_matches?: number; home_matches?: number; away_matches?: number };
   method?: string;
   limitations?: string[];
 };
@@ -151,6 +151,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
   }
 
   const candidate = experiment?.candidate;
+  const crossBase = experiment?.cross_competition_prediction;
   const baseProbabilities = candidate?.base_probabilities;
   const candidateProbabilities = candidate?.candidate_probabilities;
   const comparisonRows = baseProbabilities && candidateProbabilities ? [
@@ -189,12 +190,24 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     </>}
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #334155" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-        <div><strong>Modelo H2H experimental</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>Comparación bajo demanda · no modifica el modelo oficial</div></div>
-        <button type="button" onClick={loadExperiment} disabled={experimentLoading || !homeId || !awayId || !kickoffAt || new Date(kickoffAt).getTime() <= Date.now()} style={buttonStyle}>{experimentLoading ? "Calculando…" : experiment ? "Actualizar comparación" : "Calcular variante H2H"}</button>
+        <div><strong>Proyección intercompetición + H2H experimental</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>Forma reciente entre torneos normalizada · bajo demanda · no modifica el modelo oficial</div></div>
+        <button type="button" onClick={loadExperiment} disabled={experimentLoading || !homeId || !awayId || !kickoffAt || new Date(kickoffAt).getTime() <= Date.now()} style={buttonStyle}>{experimentLoading ? "Calculando…" : experiment ? "Actualizar proyección" : "Calcular proyección experimental"}</button>
       </div>
       {experimentError && <p role="alert" style={{ color: "#fecaca" }}>{experimentError}</p>}
       {experiment && <>
         <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 8 }}>Variante: {experiment.experiment_version} · Estado: {candidate?.status || "no disponible"} · H2H válidos usados: {experiment.h2h_sample_size ?? 0}</p>
+        {crossBase?.available && crossBase.probabilities && crossBase.expected_goals && <section style={{ background: "#1c2435", border: "1px solid #a16207", padding: 12, borderRadius: 8, marginBottom: 10 }}>
+          <strong>Proyección base intercompetición · Experimental</strong>
+          <p style={{ color: "#fbbf24", fontSize: 12 }}>La muestra combina forma reciente de ambos equipos en sus competiciones disponibles, normalizada por el promedio goleador de cada torneo. No modifica el modelo oficial ni está calibrada.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+            {[{ label: "Gana local", value: crossBase.probabilities.home }, { label: "Empate", value: crossBase.probabilities.draw }, { label: "Gana visitante", value: crossBase.probabilities.away }].map((item) => <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: 9, textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 18 }}>{percent(item.value)}</strong></div>)}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
+            {[{ label: "Goles local", value: crossBase.expected_goals.home }, { label: "Goles visitante", value: crossBase.expected_goals.away }, { label: "Total", value: crossBase.expected_goals.total ?? 0 }].map((item) => <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: 9, textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong>{item.value.toFixed(2)}</strong></div>)}
+          </div>
+          <p style={{ fontSize: 11, color: "#cbd5e1", marginBottom: 0 }}>Muestra: {crossBase.sample?.home_matches ?? 0} partidos local · {crossBase.sample?.away_matches ?? 0} visitante · Competiciones: {crossBase.sample?.competitions_used?.join(", ") || "—"} · {crossBase.model_version}</p>
+        </section>}
+        {!crossBase?.available && crossBase?.reason && <p style={{ color: "#fbbf24", fontSize: 12 }}>Proyección intercompetición no disponible: {crossBase.reason}</p>}
         {comparisonRows.length ? <>
           <div style={{ overflowX: "auto" }}>
             <table style={tableStyle}>
@@ -550,7 +563,7 @@ export default function FootballApp() {
               </section>}
               <p style={{ marginBottom: 0, fontSize: 11, color: "#9ca3af" }}>Muestra: {prediction.sample?.home_team_matches ?? 0} partidos del local y {prediction.sample?.away_team_matches ?? 0} del visitante · {prediction.model_version}</p>
               {prediction.calibration?.note && <p style={{ marginBottom: 0, fontSize: 11, color: "#fbbf24" }}>{prediction.calibration.note}</p>}
-            </section> : <p style={{ color: "#fbbf24", fontSize: 13 }}>Probabilidad no disponible: {prediction?.reason || "faltan resultados finalizados suficientes."}</p>}
+            </section> : <p style={{ color: "#fbbf24", fontSize: 13 }}>Probabilidad oficial no disponible: {prediction?.reason || "faltan resultados finalizados suficientes."}</p>}
             <div style={{ marginTop: 10, fontSize: 13 }}>
               <div>Estadio: {match.venue || "No informado"} · Árbitro: {match.referees?.map((ref) => ref.name).filter(Boolean).join(", ") || "No informado"}</div>
               <div>Ganador oficial del proveedor: {match.score?.winner || "no informado"} · Duración: {match.score?.duration || "—"}</div>

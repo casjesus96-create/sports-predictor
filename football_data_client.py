@@ -142,15 +142,15 @@ def get_matches(
 
 def get_team_matches(
     team_id: int,
-    competition: str,
+    competition: str | None = None,
     status: str = "FINISHED",
     limit: int = 500,
 ) -> dict[str, Any]:
-    """Fetch a team's completed matches in a competition, including past seasons where available."""
+    """Fetch a team's matches; omit competition to retrieve cross-competition form."""
     if isinstance(team_id, bool) or not isinstance(team_id, int) or team_id <= 0:
         raise FootballDataError("Identificador de equipo no válido.", 400)
-    code = competition.strip().upper()
-    if code not in LEAGUES:
+    code = competition.strip().upper() if competition else None
+    if code is not None and code not in LEAGUES:
         raise FootballDataError(
             f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.",
             400,

@@ -17,6 +17,7 @@ from football_data_client import (
     get_standings,
 )
 from football_model import MODEL_VERSION, predict_1x2
+from football_cross_comp_model import predict_cross_competition, EXPERIMENT_VERSION as CROSS_COMP_EXPERIMENT_VERSION
 from football_history import record_pregame_snapshot, settle_official_result
 from football_h2h_experiment import evaluate_h2h_candidate, EXPERIMENT_VERSION
 from football_backtest import run_chronological_backtest
@@ -53,6 +54,92 @@ def _has_numeric_full_time(match: dict) -> bool:
         isinstance(full_time.get("home"), int)
         and isinstance(full_time.get("away"), int)
     )
+
+
+
+def _cross_competition_prediction(
+    competition: str,
+    home_team_id: int,
+    away_team_id: int,
+    home_team: str,
+    away_team: str,
+    kickoff_at: str,
+    target_matches: list[dict],
+) -> dict:
+    """Build a quota-bounded, read-only cross-competition form candidate."""
+    try:
+        home_data = _provider_call(get_team_matches, home_team_id, None, "FINISHED", 60)
+        away_data = _provider_call(get_team_matches, away_team_id, None, "FINISHED", 60)
+        histories = [home_data.get("matches", []), away_data.get("matches", [])]
+        kickoff = datetime.fromisoformat(str(kickoff_at).replace("Z", "+00:00"))
+        codes = []
+        for history in histories:
+            recent = []
+            for item in history:
+                if str(item.get("status", "")).upper() != "FINISHED" or not _has_numeric_full_time(item):
+                    continue
+                raw_date = item.get("utcDate") or item.get("date")
+                try:
+                    match_date = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+                except (TypeError, ValueError):
+                    continue
+                if match_date >= kickoff:
+                    continue
+                code = str(((item.get("competition") or {}).get("code")) or "").upper()
+                if code in LEAGUES and code not in recent:
+                    recent.append(code)
+            for code in recent:
+                if code not in codes:
+                    codes.append(code)
+        target_code = competition.strip().upper()
+        codes = [target_code] + [code for code in codes if code != target_code][:2]
+
+        baselines = {}
+        for code in codes:
+            if code == target_code:
+                matches = target_matches
+            else:
+                payload = _provider_call(get_matches, code)
+                matches = payload.get("matches", [])
+            eligible = []
+            for item in matches:
+                if str(item.get("status", "")).upper() != "FINISHED" or not _has_numeric_full_time(item):
+                    continue
+                raw_date = item.get("utcDate") or item.get("date")
+                try:
+                    match_date = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+                except (TypeError, ValueError):
+                    continue
+                if match_date < kickoff:
+                    score = (item.get("score") or {}).get("fullTime") or {}
+                    eligible.append((score["home"], score["away"]))
+            if len(eligible) >= 8:
+                baselines[code] = {
+                    "home": sum(row[0] for row in eligible) / len(eligible),
+                    "away": sum(row[1] for row in eligible) / len(eligible),
+                    "sample_size": len(eligible),
+                }
+        result = predict_cross_competition(
+            home_team_id, away_team_id, home_team, away_team, kickoff_at,
+            histories[0], histories[1], baselines, target_code,
+        )
+        result["provider"] = "football-data.org"
+        result["data_scope"] = "historial reciente de ambos equipos y medias goleadoras por competición, anteriores al inicio"
+        return result
+    except HTTPException as exc:
+        return {
+            "available": False,
+            "reason": "No se pudo completar la consulta auxiliar de forma intercompetición; el pronóstico oficial no fue alterado.",
+            "model_version": CROSS_COMP_EXPERIMENT_VERSION,
+            "provider_error_status": exc.status_code,
+        }
+    except (TypeError, ValueError, KeyError) as exc:
+        logger.warning("Cross-competition candidate unavailable: %s", exc)
+        return {
+            "available": False,
+            "reason": "Los datos recibidos no permiten normalizar de forma segura el historial entre competiciones.",
+            "model_version": CROSS_COMP_EXPERIMENT_VERSION,
+        }
 
 
 def _reconcile_match(selected_match: dict, history_by_id: dict) -> dict:
@@ -235,8 +322,9 @@ def football_games(
                 "available": False,
                 "reason": "Las probabilidades prepartido solo se muestran para encuentros no iniciados.",
             }
+            item["cross_competition_prediction"] = {"available": False, "reason": "El encuentro ya comenzó o no está programado."}
 
-        # Persist the original pre-match estimate once; never overwrite it after kickoff.
+        # Persist only the original official pre-match estimate once; never overwrite it after kickoff.
         if status in {"SCHEDULED", "TIMED"} and item.get("prediction", {}).get("available"):
             record_pregame_snapshot(item, competition, item["prediction"])
 
@@ -447,6 +535,12 @@ def football_experimental_h2h(
         and (item.get("utcDate") and datetime.fromisoformat(str(item["utcDate"]).replace("Z", "+00:00")) < kickoff)
     ]
     base = predict_1x2(home_team.strip(), away_team.strip(), completed)
+    cross_competition_base = None
+    if not base.get("available"):
+        cross_competition_base = _cross_competition_prediction(
+            competition, home_team_id, away_team_id, home_team.strip(), away_team.strip(),
+            kickoff_at, competition_data.get("matches", []),
+        )
     h2h = football_head_to_head(
         competition=competition,
         home_team_id=home_team_id,
@@ -471,11 +565,16 @@ def football_experimental_h2h(
                 "away": meeting.get("away_score"),
             }},
         })
+    candidate_base = (
+        cross_competition_base
+        if cross_competition_base and cross_competition_base.get("available")
+        else base
+    )
     candidate = evaluate_h2h_candidate(
         home_team.strip(),
         away_team.strip(),
         kickoff_at,
-        base,
+        candidate_base,
         normalized_meetings,
     )
     return {
@@ -484,6 +583,7 @@ def football_experimental_h2h(
         "mode": "SHADOW_ONLY",
         "official_model_version": MODEL_VERSION,
         "base_prediction": base,
+        "cross_competition_prediction": cross_competition_base,
         "candidate": candidate,
         "h2h_sample_size": candidate.get("h2h", {}).get("valid_meetings", 0),
         "note": "La comparación es experimental; no cambia las probabilidades oficiales ni guarda ni sobrescribe snapshots.",
