@@ -230,6 +230,12 @@ export default function FootballApp() {
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [backtestError, setBacktestError] = useState("");
   const [includeExternalH2h, setIncludeExternalH2h] = useState(false);
+  const [historyRows, setHistoryRows] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyStatus, setHistoryStatus] = useState<"ALL" | "PENDING" | "SETTLED">("ALL");
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
+
 
   useEffect(() => {
     let active = true;
@@ -267,6 +273,21 @@ export default function FootballApp() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error consultando football-data.org.");
     } finally { setLoading(false); }
+  }
+
+  async function loadHistory() {
+    setHistoryLoading(true); setHistoryError(""); setView("history");
+    try {
+      const params = new URLSearchParams({ competition, limit: "200" });
+      if (historyStatus !== "ALL") params.set("status", historyStatus);
+      const response = await fetch(`${API}/history?${params.toString()}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo consultar el historial guardado.");
+      setHistoryRows(body.snapshots || []);
+      setSelectedSnapshotId(null);
+    } catch (err: unknown) {
+      setHistoryError(err instanceof Error ? err.message : "Error consultando el historial persistente.");
+    } finally { setHistoryLoading(false); }
   }
 
   async function loadBacktest() {
@@ -325,6 +346,7 @@ export default function FootballApp() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <button type="button" onClick={() => loadData("games")} disabled={loading || loadingCompetitions || !selectedDate} style={buttonStyle}>{loading && view === "games" ? "Cargando…" : `Buscar partidos del ${selectedDate}`}</button>
         <button type="button" onClick={() => loadData("standings")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "standings" ? "Cargando…" : "Ver clasificación"}</button>
+        <button type="button" onClick={loadHistory} disabled={historyLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#0f766e" }}>{historyLoading ? "Cargando historial…" : "Historial y resultados"}</button>
         <button type="button" onClick={loadBacktest} disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}><input type="checkbox" checked={includeExternalH2h} onChange={(event) => setIncludeExternalH2h(event.target.checked)} /> Consultar H2H externo (máx. 10 solicitudes)</label>
       </div>
@@ -398,6 +420,44 @@ export default function FootballApp() {
           <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 0 }}>Solo lectura: no modifica snapshots ni las probabilidades oficiales. Para Brier Score y Log Loss, un cambio negativo favorece al candidato; para Accuracy, uno positivo. El diagnóstico distingue cuándo el candidato cambia probabilidades y cuándo usa H2H externo. Las consultas externas son opcionales y están limitadas a 10 por ejecución.</p>
         </section>;
       })()}
+
+      {view === "history" && <section style={cardStyle}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div><h2 style={{ margin: 0 }}>Historial de predicciones guardadas</h2><p style={{ color: "#9ca3af", fontSize: 12, margin: "5px 0 0" }}>Snapshots originales e inmutables del modelo oficial · {selectedLeague.name}</p></div>
+          <button type="button" onClick={loadHistory} disabled={historyLoading} style={buttonStyle}>{historyLoading ? "Actualizando…" : "Actualizar"}</button>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
+          {(["ALL", "PENDING", "SETTLED"] as const).map((status) => <button key={status} type="button" onClick={() => { setHistoryStatus(status); setHistoryRows([]); }} style={{ ...buttonStyle, background: historyStatus === status ? "#0f766e" : "#1f2937" }}>{status === "ALL" ? "Todos" : status === "PENDING" ? "Pendientes" : "Liquidados"}</button>)}
+          <button type="button" onClick={() => { setView("games"); loadData("games"); }} style={{ ...buttonStyle, background: "#334155" }}>Volver a partidos</button>
+        </div>
+        {historyError && <p role="alert" style={{ color: "#fecaca" }}>{historyError}</p>}
+        {!historyLoading && !historyError && historyRows.length === 0 && <p style={{ color: "#fbbf24" }}>No hay snapshots para esta competición y filtro. Recuerda que el historial comienza a guardar predicciones desde que la persistencia está activa; no reconstruye predicciones antiguas que nunca se guardaron.</p>}
+        {historyRows.map((item) => {
+          const selected = selectedSnapshotId === item.id;
+          const payload = item.prediction_payload || {};
+          const probs = { home: item.home_probability, draw: item.draw_probability, away: item.away_probability };
+          const actual = typeof item.actual_home_score === "number" && typeof item.actual_away_score === "number" ? `${item.actual_home_score}–${item.actual_away_score}` : "Resultado pendiente";
+          const predicted = Object.entries(probs).sort((a: any, b: any) => Number(b[1]) - Number(a[1]))[0]?.[0];
+          const actualOutcome = item.actual_outcome;
+          const outcomeLabel = actualOutcome === "HOME" ? "Local" : actualOutcome === "AWAY" ? "Visitante" : actualOutcome === "DRAW" ? "Empate" : "—";
+          return <article key={item.id} style={{ marginTop: 10, padding: 12, border: "1px solid #475569", borderRadius: 9, background: "#0b1220" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}><strong>{item.home_team} vs {item.away_team}</strong><span style={{ color: item.result_status === "SETTLED" ? "#86efac" : "#fbbf24" }}>{item.result_status === "SETTLED" ? "Liquidado" : item.result_status}</span></div>
+            <p style={{ margin: "5px 0", color: "#9ca3af", fontSize: 12 }}>{item.competition_code} · {localDate(item.kickoff_at)} · {item.model_version}</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 7 }}>
+              <div style={{ background: "#172033", padding: 8, borderRadius: 7 }}>Local <strong>{percent(probs.home)}</strong></div>
+              <div style={{ background: "#172033", padding: 8, borderRadius: 7 }}>Empate <strong>{percent(probs.draw)}</strong></div>
+              <div style={{ background: "#172033", padding: 8, borderRadius: 7 }}>Visitante <strong>{percent(probs.away)}</strong></div>
+            </div>
+            <p style={{ margin: "8px 0", fontSize: 13 }}>Proyección más probable: <strong>{predicted === "home" ? "Local" : predicted === "away" ? "Visitante" : "Empate"}</strong> · Marcador real: <strong>{actual}</strong> · Resultado real: <strong>{outcomeLabel}</strong></p>
+            <button type="button" onClick={() => setSelectedSnapshotId(selected ? null : item.id)} style={{ ...buttonStyle, background: "#334155" }}>{selected ? "Ocultar ficha original" : "Ver ficha original y mercados"}</button>
+            {selected && <section style={{ marginTop: 10, padding: 10, background: "#030712", borderRadius: 8 }}>
+              <p style={{ color: "#9ca3af", fontSize: 12 }}>Captura de datos: {localDate(item.data_cutoff_at)} · Liquidación: {item.settled_at ? localDate(item.settled_at) : "Pendiente"} · Fuente del resultado: {item.result_source || "—"}</p>
+              <strong>Goles esperados</strong><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12 }}>{JSON.stringify(item.expected_goals || {}, null, 2)}</pre>
+              <strong>Mercados y proyección originales</strong><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 360, overflow: "auto", fontSize: 11 }}>{JSON.stringify(payload, null, 2)}</pre>
+            </section>}
+          </article>;
+        })}
+      </section>}
 
       {view === "games" && <>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "14px 0" }}>
