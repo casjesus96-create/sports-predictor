@@ -119,6 +119,22 @@ def _cross_competition_prediction(
                     "away": sum(row[1] for row in eligible) / len(eligible),
                     "sample_size": len(eligible),
                 }
+        # Early-stage competitions may not yet have eight completed target
+        # fixtures. Pool verified source-competition scoring environments for
+        # the shadow estimate; the official model remains untouched.
+        if target_code not in baselines and baselines:
+            weighted = [
+                (row["home"], row["away"], max(1, int(row.get("sample_size", 1))))
+                for code, row in baselines.items() if code != target_code
+            ]
+            total_weight = sum(item[2] for item in weighted)
+            if total_weight:
+                baselines[target_code] = {
+                    "home": sum(item[0] * item[2] for item in weighted) / total_weight,
+                    "away": sum(item[1] * item[2] for item in weighted) / total_weight,
+                    "sample_size": total_weight,
+                    "estimated_from_competitions": True,
+                }
         result = predict_cross_competition(
             home_team_id, away_team_id, home_team, away_team, kickoff_at,
             histories[0], histories[1], baselines, target_code,
