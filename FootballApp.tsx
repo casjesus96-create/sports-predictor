@@ -116,7 +116,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
   const awayName = match.awayTeam?.name || "";
   const kickoffAt = match.utcDate || "";
 
-  async function loadHistory() {
+  async function loadHistory(statusFilter: "ALL" | "PENDING" | "SETTLED" = historyStatus) {
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
     setLoading(true); setError("");
     try {
@@ -279,7 +279,7 @@ export default function FootballApp() {
     setHistoryLoading(true); setHistoryError(""); setView("history");
     try {
       const params = new URLSearchParams({ competition, limit: "200" });
-      if (historyStatus !== "ALL") params.set("status", historyStatus);
+      if (statusFilter !== "ALL") params.set("status", statusFilter);
       const response = await fetch(`${API}/history?${params.toString()}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo consultar el historial guardado.");
@@ -427,7 +427,7 @@ export default function FootballApp() {
           <button type="button" onClick={loadHistory} disabled={historyLoading} style={buttonStyle}>{historyLoading ? "Actualizando…" : "Actualizar"}</button>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
-          {(["ALL", "PENDING", "SETTLED"] as const).map((status) => <button key={status} type="button" onClick={() => { setHistoryStatus(status); setHistoryRows([]); }} style={{ ...buttonStyle, background: historyStatus === status ? "#0f766e" : "#1f2937" }}>{status === "ALL" ? "Todos" : status === "PENDING" ? "Pendientes" : "Liquidados"}</button>)}
+          {(["ALL", "PENDING", "SETTLED"] as const).map((status) => <button key={status} type="button" onClick={() => { setHistoryStatus(status); loadHistory(status); }} style={{ ...buttonStyle, background: historyStatus === status ? "#0f766e" : "#1f2937" }}>{status === "ALL" ? "Todos" : status === "PENDING" ? "Pendientes" : "Liquidados"}</button>)}
           <button type="button" onClick={() => { setView("games"); loadData("games"); }} style={{ ...buttonStyle, background: "#334155" }}>Volver a partidos</button>
         </div>
         {historyError && <p role="alert" style={{ color: "#fecaca" }}>{historyError}</p>}
