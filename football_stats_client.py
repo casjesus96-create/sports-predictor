@@ -53,8 +53,10 @@ def _normalize_team(value: str) -> str:
     value = unicodedata.normalize("NFKD", str(value or ""))
     value = "".join(char for char in value if not unicodedata.combining(char))
     value = re.sub(r"[^a-z0-9]+", " ", value.lower())
-    tokens = value.split()\n    while tokens and tokens[-1] in {"fc", "cf", "afc", "sc", "club"}:\n        tokens.pop()\n    return " ".join(tokens)
-
+    tokens = value.split()
+    while tokens and tokens[-1] in {"fc", "cf", "afc", "sc", "club"}:
+        tokens.pop()
+    return " ".join(tokens)
 
 def _cache_get(key: str):
     with _cache_lock:
