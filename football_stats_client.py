@@ -54,7 +54,13 @@ def _normalize_team(value: str) -> str:
     value = "".join(char for char in value if not unicodedata.combining(char))
     value = re.sub(r"[^a-z0-9]+", " ", value.lower())
     tokens = value.split()
-    while tokens and tokens[-1] in {"fc", "cf", "afc", "sc", "club"}:
+    # Providers disagree on whether club prefixes/suffixes are part of the
+    # display name (e.g. "FC Barcelona" vs "Barcelona"). Remove only known
+    # structural tokens at the edges; never fuzzy-match the club name itself.
+    edge_tokens = {"fc", "cf", "afc", "sc", "club"}
+    while tokens and tokens[0] in edge_tokens:
+        tokens.pop(0)
+    while tokens and tokens[-1] in edge_tokens:
         tokens.pop()
     return " ".join(tokens)
 
