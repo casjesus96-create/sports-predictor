@@ -74,3 +74,47 @@ def test_api_key_is_required(monkeypatch):
     with pytest.raises(client.APIFootballError) as exc:
         client._request("fixtures", {"date": "2026-10-20"})
     assert exc.value.status_code == 503
+
+def test_team_normalization_handles_provider_club_prefixes():
+    assert client._normalize_team("FC Barcelona") == "barcelona"
+    assert client._normalize_team("Barcelona") == "barcelona"
+    assert client._normalize_team("Aston Villa") == "aston villa"
+
+
+def test_statistics_match_barcelona_provider_name_variant(monkeypatch):
+    calls = []
+
+    def fake_request(endpoint, params):
+        calls.append((endpoint, params))
+        if endpoint == "fixtures":
+            return {"response": [{
+                "fixture": {
+                    "id": 74165984,
+                    "date": "2026-11-03T20:00:00+00:00",
+                    "status": {"short": "FT"},
+                },
+                "teams": {
+                    "home": {"name": "Barcelona"},
+                    "away": {"name": "Aston Villa"},
+                },
+            }]}
+        return {"response": [
+            {"team": {"name": "Barcelona"}, "statistics": [
+                {"type": "Corner Kicks", "value": 6},
+                {"type": "Total Shots", "value": 14},
+            ]},
+            {"team": {"name": "Aston Villa"}, "statistics": [
+                {"type": "Corner Kicks", "value": 2},
+                {"type": "Total Shots", "value": 5},
+            ]},
+        ]}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    result = client.get_completed_match_statistics(
+        74165984, "FC Barcelona", "Aston Villa", "2026-11-03T20:00:00Z"
+    )
+
+    assert result["provider_fixture_id"] == 74165984
+    assert result["home_team"]["statistics"]["corners"] == 6
+    assert result["away_team"]["statistics"]["corners"] == 2
+    assert calls[0] == ("fixtures", {"date": "2026-11-03"})
