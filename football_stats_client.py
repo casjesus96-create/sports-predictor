@@ -20,8 +20,13 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://v3.football.api-sports.io"
 TIMEOUT_SECONDS = 15
 CACHE_TTL_SECONDS = 6 * 60 * 60
+SUSPENSION_COOLDOWN_SECONDS = 30 * 60
+RATE_LIMIT_COOLDOWN_SECONDS = 60
+AUTH_ERROR_COOLDOWN_SECONDS = 5 * 60
 _cache: dict[str, tuple[float, dict]] = {}
 _cache_lock = Lock()
+_provider_blocked_until = 0.0
+_provider_block_message = None
 
 STAT_LABELS = {
     "corner kicks": "corners",
@@ -82,11 +87,31 @@ def _cache_set(key: str, value: dict):
 
 
 def clear_cache():
+    global _provider_blocked_until, _provider_block_message
     with _cache_lock:
         _cache.clear()
+        _provider_blocked_until = 0.0
+        _provider_block_message = None
+
+
+def _block_provider(message: str, seconds: int):
+    global _provider_blocked_until, _provider_block_message
+    with _cache_lock:
+        _provider_blocked_until = monotonic() + seconds
+        _provider_block_message = message
+
+
+def _raise_if_provider_blocked():
+    with _cache_lock:
+        if _provider_blocked_until > monotonic():
+            raise APIFootballError(
+                _provider_block_message or "API-Football está temporalmente bloqueado.",
+                503,
+            )
 
 
 def _request(endpoint: str, params: dict) -> dict:
+    _raise_if_provider_blocked()
     api_key = os.getenv("API_FOOTBALL_KEY", "").strip()
     if not api_key:
         raise APIFootballError(
@@ -102,9 +127,13 @@ def _request(endpoint: str, params: dict) -> dict:
             timeout=TIMEOUT_SECONDS,
         )
         if response.status_code == 429:
-            raise APIFootballError("API-Football alcanzó el límite de consultas.", 429)
+            message = "API-Football alcanzó el límite de consultas. La integración pausará nuevas solicitudes durante un minuto."
+            _block_provider(message, RATE_LIMIT_COOLDOWN_SECONDS)
+            raise APIFootballError(message, 429)
         if response.status_code in (401, 403):
-            raise APIFootballError("API-Football rechazó la clave o el plan configurado.", 503)
+            message = "API-Football rechazó la clave o el acceso de la cuenta. Revisa el Dashboard del proveedor."
+            _block_provider(message, AUTH_ERROR_COOLDOWN_SECONDS)
+            raise APIFootballError(message, 503)
         response.raise_for_status()
         payload = response.json()
     except APIFootballError:
@@ -118,6 +147,15 @@ def _request(endpoint: str, params: dict) -> dict:
     errors = payload.get("errors")
     if errors:
         logger.warning("API-Football returned provider errors: %s", errors)
+        error_text = str(errors).lower()
+        if "suspend" in error_text and ("account" in error_text or "access" in error_text):
+            message = (
+                "La cuenta de API-Football está suspendida. "
+                "Revisa el Dashboard del proveedor o contacta con su soporte. "
+                "Las consultas se pausarán temporalmente para proteger la cuota."
+            )
+            _block_provider(message, SUSPENSION_COOLDOWN_SECONDS)
+            raise APIFootballError(message, 503)
         raise APIFootballError("API-Football no pudo completar la consulta.", 502)
     return payload
 

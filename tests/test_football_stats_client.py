@@ -118,3 +118,32 @@ def test_statistics_match_barcelona_provider_name_variant(monkeypatch):
     assert result["home_team"]["statistics"]["corners"] == 6
     assert result["away_team"]["statistics"]["corners"] == 2
     assert calls[0] == ("fixtures", {"date": "2026-11-03"})
+
+
+
+def test_suspended_account_is_reported_and_temporarily_blocks_retries(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("API_FOOTBALL_KEY", "test-key")
+    calls = []
+
+    def fake_get(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {"errors": {"access": "Your account is suspended"}},
+            raise_for_status=lambda: None,
+        )
+
+    monkeypatch.setattr(client.requests, "get", fake_get)
+
+    with pytest.raises(client.APIFootballError) as first:
+        client._request("fixtures", {"date": "2026-11-03"})
+    assert first.value.status_code == 503
+    assert "suspendida" in str(first.value).lower()
+
+    with pytest.raises(client.APIFootballError) as second:
+        client._request("fixtures", {"date": "2026-11-04"})
+    assert second.value.status_code == 503
+    assert "suspendida" in str(second.value).lower()
+    assert len(calls) == 1
