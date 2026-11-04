@@ -330,10 +330,18 @@ def football_games(
         if status in {"SCHEDULED", "TIMED"} and home and away:
             try:
                 item["prediction"] = predict_1x2(home, away, completed)
-                # Candidate separated from the official prediction and its snapshots.
-                item["advanced_shadow_prediction"] = predict_advanced_shadow(
-                    home, away, completed, str(item.get("utcDate") or "")
-                )
+                # Isolate shadow failures: they must never invalidate the official forecast.
+                try:
+                    item["advanced_shadow_prediction"] = predict_advanced_shadow(
+                        home, away, completed, str(item.get("utcDate") or "")
+                    )
+                except (TypeError, ValueError) as shadow_exc:
+                    logger.warning("Advanced football shadow unavailable for match %s: %s", item.get("id"), shadow_exc)
+                    item["advanced_shadow_prediction"] = {
+                        "available": False,
+                        "reason": "El candidato avanzado no pudo evaluarse; el pronóstico oficial permanece intacto.",
+                        "model_version": "FOOTBALL-GOALS-SHADOW-0.1.0",
+                    }
             except (TypeError, ValueError):
                 item["prediction"] = {
                     "available": False,
