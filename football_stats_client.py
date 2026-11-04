@@ -53,7 +53,7 @@ def _normalize_team(value: str) -> str:
     value = unicodedata.normalize("NFKD", str(value or ""))
     value = "".join(char for char in value if not unicodedata.combining(char))
     value = re.sub(r"[^a-z0-9]+", " ", value.lower())
-    return " ".join(value.split())
+    tokens = value.split()\n    while tokens and tokens[-1] in {"fc", "cf", "afc", "sc", "club"}:\n        tokens.pop()\n    return " ".join(tokens)
 
 
 def _cache_get(key: str):
@@ -150,7 +150,7 @@ def get_completed_match_statistics(
     if not home_key or not away_key:
         raise APIFootballError("No se pudieron identificar ambos equipos.", 400)
 
-    date_key = kickoff.date().isoformat()
+    date_key = kickoff.astimezone(timezone.utc).date().isoformat()
     fixture_cache_key = f"fixtures:{date_key}"
     fixtures_payload = _cache_get(fixture_cache_key)
     if fixtures_payload is None:
