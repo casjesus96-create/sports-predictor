@@ -13,6 +13,7 @@ from typing import Any
 
 from football_h2h_experiment import evaluate_h2h_candidate
 from football_model import MODEL_VERSION, predict_1x2
+from football_goals_shadow import predict_advanced_shadow
 
 OUTCOMES = ("home", "draw", "away")
 EPSILON = 1e-15
@@ -150,6 +151,7 @@ def run_chronological_backtest(
 
     external_h2h_by_match_id = external_h2h_by_match_id or {}
     scored_rows: list[dict[str, Any]] = []
+    advanced_rows: list[dict[str, Any]] = []
     skipped_unavailable = 0
     for kickoff, target, score in normalized:
         history = [
@@ -176,6 +178,8 @@ def run_chronological_backtest(
         if not base_probs or not candidate.get("available") or not candidate_probs:
             skipped_unavailable += 1
             continue
+        advanced = predict_advanced_shadow(home_name, away_name, history, kickoff.isoformat())
+        advanced_probs = _probabilities(advanced, "probabilities") if advanced.get("available") else None
         home_score, away_score = score
         actual = "home" if home_score > away_score else "away" if home_score < away_score else "draw"
         scored_rows.append({
@@ -191,9 +195,18 @@ def run_chronological_backtest(
             "h2h_adjusted": any(abs(candidate_probs[key] - base_probs[key]) > 1e-9 for key in OUTCOMES),
             "h2h_status": candidate.get("status", "UNKNOWN"),
         })
+        if advanced_probs:
+            advanced_rows.append({
+                "match_id": target.get("id"), "kickoff_at": kickoff.isoformat(),
+                "home_team": home_name, "away_team": away_name,
+                "actual_outcome": actual, "base": base_probs,
+                "advanced_shadow": advanced_probs,
+            })
 
     base_metrics = _metrics(scored_rows, "base")
     candidate_metrics = _metrics(scored_rows, "candidate")
+    advanced_metrics = _metrics(advanced_rows, "advanced_shadow")
+    advanced_base_metrics = _metrics(advanced_rows, "base")
     h2h_adjusted = sum(1 for row in scored_rows if row["h2h_adjusted"])
     h2h_insufficient = sum(1 for row in scored_rows if row["h2h_status"] == "INSUFFICIENT_H2H")
     external_rows = [row for row in scored_rows if row["h2h_source"] == "provider_external_h2h"]
@@ -219,6 +232,7 @@ def run_chronological_backtest(
         "evaluation_type": "chronological_walk_forward",
         "official_model_version": MODEL_VERSION,
         "candidate_model_version": "FOOTBALL-H2H-SHADOW-0.1.0",
+        "advanced_goals_shadow_version": "FOOTBALL-GOALS-SHADOW-0.1.0",
         "read_only": True,
         "training_rule": "Solo partidos FINISHED con kickoff estrictamente anterior al partido evaluado; misma hora de inicio queda excluida.",
         "scoring_rule": "Ambas variantes se comparan sobre exactamente la misma muestra elegible.",
@@ -247,6 +261,13 @@ def run_chronological_backtest(
         "metrics": {
             "base": base_metrics,
             "h2h_candidate": candidate_metrics,
+            "advanced_goals_shadow": advanced_metrics,
+            "advanced_goals_shadow_sample_size": len(advanced_rows),
+            "advanced_goals_shadow_delta_vs_base": {
+                "accuracy": round(advanced_metrics["accuracy"] - advanced_base_metrics["accuracy"], 6) if advanced_rows else None,
+                "brier_score": round(advanced_metrics["brier_score"] - advanced_base_metrics["brier_score"], 6) if advanced_rows else None,
+                "log_loss": round(advanced_metrics["log_loss"] - advanced_base_metrics["log_loss"], 6) if advanced_rows else None,
+            },
             "delta_candidate_minus_base": {
                 "accuracy": round(candidate_metrics["accuracy"] - base_metrics["accuracy"], 6)
                 if scored_rows else None,
@@ -258,10 +279,12 @@ def run_chronological_backtest(
             },
         },
         "per_match": scored_rows,
+        "advanced_goals_shadow_per_match": advanced_rows,
         "limitations": [
             "Backtest sobre el conjunto de partidos suministrado; no descarga datos ni escribe en Supabase.",
             "Por defecto, la variante H2H usa solo enfrentamientos presentes en el mismo conjunto de entrada y anteriores al kickoff; si se suministra H2H externo por partido, se usa únicamente para esos objetivos y siempre con filtro cronológico.",
             "Si el proveedor no entrega temporadas históricas completas, los resultados no representan toda la historia de la competición.",
             "No constituye evidencia de rentabilidad ni autoriza activar el candidato como modelo oficial.",
+            "El candidato avanzado se evalúa en su propia muestra elegible, que puede ser menor por los mínimos de historial local/visitante.",
         ],
     }
