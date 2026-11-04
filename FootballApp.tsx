@@ -103,6 +103,63 @@ const buttonStyle: React.CSSProperties = { minHeight: 42, padding: "9px 14px", b
 const cardStyle: React.CSSProperties = { padding: 14, border: "1px solid #374151", borderRadius: 12, background: "#111827", marginBottom: 12 };
 
 
+function CompletedMatchStatistics({ match }: { match: Match }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const finished = ["FINISHED", "AWARDED"].includes(String(match.status || "").toUpperCase());
+  const home = match.homeTeam?.name || "Local";
+  const away = match.awayTeam?.name || "Visitante";
+
+  async function loadStatistics() {
+    if (!finished) return;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`${API}/match-statistics/${match.id}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudieron consultar las estadísticas.");
+      setData(body);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error consultando estadísticas del encuentro.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const labels: Array<[string, string]> = [
+    ["corners", "Corners"], ["yellow_cards", "Tarjetas amarillas"],
+    ["red_cards", "Tarjetas rojas"], ["shots_total", "Tiros totales"],
+    ["shots_on_target", "Tiros a puerta"], ["shots_off_target", "Tiros fuera"],
+    ["shots_blocked", "Tiros bloqueados"], ["fouls", "Faltas"],
+    ["possession", "Posesión"], ["passes_total", "Pases"],
+    ["passes_accurate", "Pases acertados"], ["offsides", "Fuera de juego"],
+    ["goalkeeper_saves", "Atajadas"],
+  ];
+
+  const homeStats = data?.home_team?.statistics || {};
+  const awayStats = data?.away_team?.statistics || {};
+  const hasStats = data && (Object.keys(homeStats).length || Object.keys(awayStats).length);
+
+  return <section style={{ ...cardStyle, marginTop: 10, background: "#0b1724" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div><strong>Estadísticas del encuentro</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>Fuente: API-Football · Solo partidos finalizados</div></div>
+      <button type="button" onClick={loadStatistics} disabled={!finished || loading} style={{ ...buttonStyle, background: finished ? "#0f766e" : "#374151" }}>{loading ? "Consultando…" : data ? "Actualizar" : "Consultar estadísticas"}</button>
+    </div>
+    {!finished && <p style={{ color: "#fbbf24", fontSize: 12 }}>Disponible cuando el resultado final esté confirmado.</p>}
+    {error && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{error}</p>}
+    {hasStats && <>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8, marginTop: 10 }}>
+        {[{ name: home, stats: homeStats }, { name: away, stats: awayStats }].map((team) => <div key={team.name} style={{ background: "#111827", borderRadius: 8, padding: 9 }}>
+          <strong style={{ fontSize: 12 }}>{team.name}</strong>
+          {labels.map(([key, label]) => team.stats[key] !== undefined && team.stats[key] !== null ? <div key={key} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 11, paddingTop: 6 }}><span style={{ color: "#9ca3af" }}>{label}</span><b>{team.stats[key]}{key === "possession" || key === "pass_accuracy" ? "%" : ""}</b></div> : null)}
+        </div>)}
+      </div>
+      <p style={{ color: "#9ca3af", fontSize: 10, marginBottom: 0 }}>ID de partido API-Football: {data.provider_fixture_id} · Datos observados, no probabilidades. Consultado: {localDate(data.retrieved_at)}</p>
+    </>}
+  </section>;
+}
+
 function HeadToHeadPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
   const [experiment, setExperiment] = useState<any>(null);
@@ -574,6 +631,7 @@ export default function FootballApp() {
                 <div style={{ fontWeight: 700 }}>{away}</div><small style={{ color: "#9ca3af" }}>{match.awayTeam?.tla || ""}</small>
               </div>
             </div>
+            <CompletedMatchStatistics match={match} />
             <HeadToHeadPanel competition={competition} match={match} />
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
               <strong>Probabilidades 1X2</strong>
