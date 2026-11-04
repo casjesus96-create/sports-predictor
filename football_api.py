@@ -781,3 +781,43 @@ def football_standings(
         "standings": data.get("standings", []),
         "season": data.get("season"),
     }
+
+
+
+@router.get("/match-statistics/{match_id}")
+def football_match_statistics(match_id: int):
+    """Read verified final-match statistics from API-Football."""
+    import os
+    from football_stats_client import APIFootballError, get_completed_match_statistics
+
+    if not os.getenv("API_FOOTBALL_KEY", "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="API-Football no está configurado. Añade API_FOOTBALL_KEY en Render.",
+        )
+    if match_id <= 0:
+        raise HTTPException(status_code=400, detail="Identificador de partido inválido.")
+
+    primary = _provider_call(get_match, match_id)
+    match = primary.get("match", primary)
+    status = str(match.get("status", "")).upper()
+    if status not in {"FINISHED", "AWARDED"} or not _has_numeric_full_time(match):
+        raise HTTPException(
+            status_code=409,
+            detail="Las estadísticas solo se consultan para partidos finalizados con marcador oficial.",
+        )
+
+    home = (match.get("homeTeam") or {}).get("name")
+    away = (match.get("awayTeam") or {}).get("name")
+    kickoff_at = match.get("utcDate")
+    if not home or not away or not kickoff_at:
+        raise HTTPException(status_code=422, detail="El proveedor principal no devolvió equipos y fecha completos.")
+
+    try:
+        result = get_completed_match_statistics(match_id, home, away, kickoff_at)
+    except APIFootballError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    result["primary_provider"] = "football-data.org"
+    result["primary_match_status"] = status
+    result["official_score"] = (match.get("score") or {}).get("fullTime")
+    return result
