@@ -17,6 +17,7 @@ from football_data_client import (
     get_standings,
 )
 from football_model import MODEL_VERSION, predict_1x2
+from football_goals_shadow import predict_advanced_shadow
 from football_cross_comp_model import predict_cross_competition, EXPERIMENT_VERSION as CROSS_COMP_EXPERIMENT_VERSION
 from football_history import record_pregame_snapshot, settle_official_result, record_experimental_snapshot, settle_experimental_results
 from football_h2h_experiment import evaluate_h2h_candidate, EXPERIMENT_VERSION
@@ -329,6 +330,10 @@ def football_games(
         if status in {"SCHEDULED", "TIMED"} and home and away:
             try:
                 item["prediction"] = predict_1x2(home, away, completed)
+                # Candidate separated from the official prediction and its snapshots.
+                item["advanced_shadow_prediction"] = predict_advanced_shadow(
+                    home, away, completed, str(item.get("utcDate") or "")
+                )
             except (TypeError, ValueError):
                 item["prediction"] = {
                     "available": False,
