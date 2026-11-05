@@ -684,6 +684,8 @@ def _summarize_team_form(matches: list[dict[str, Any]]) -> dict[str, Any]:
         over_1_5 = sum(item["total_goals"] >= 2 for item in selected)
         over_2_5 = sum(item["total_goals"] >= 3 for item in selected)
         over_3_5 = sum(item["total_goals"] >= 4 for item in selected)
+        home_matches = [item for item in selected if item["venue"] == "home"]
+        away_matches = [item for item in selected if item["venue"] == "away"]
         # The database rows arrive newest-first; show form oldest-to-newest.
         sequence = [item["result"] for item in reversed(selected)]
         windows[str(size)] = {
@@ -705,6 +707,20 @@ def _summarize_team_form(matches: list[dict[str, Any]]) -> dict[str, Any]:
             "under_2_5_percentage": _percentage(count - over_2_5, count),
             "under_3_5": count - over_3_5,
             "under_3_5_percentage": _percentage(count - over_3_5, count),
+            "goals_for_distribution": _goal_bucket_counts([item["goals_for"] for item in selected], count),
+            "goals_against_distribution": _goal_bucket_counts([item["goals_against"] for item in selected], count),
+            "venue_market_patterns": {
+                "at_home": {
+                    "matches": len(home_matches),
+                    "over_2_5": sum(item["total_goals"] >= 3 for item in home_matches),
+                    "both_teams_scored": sum(item["goals_for"] > 0 and item["goals_against"] > 0 for item in home_matches),
+                },
+                "away": {
+                    "matches": len(away_matches),
+                    "over_2_5": sum(item["total_goals"] >= 3 for item in away_matches),
+                    "both_teams_scored": sum(item["goals_for"] > 0 and item["goals_against"] > 0 for item in away_matches),
+                },
+            },
             "venue_split": {
                 "at_home": _team_form_venue_summary([item for item in selected if item["venue"] == "home"]),
                 "away": _team_form_venue_summary([item for item in selected if item["venue"] == "away"]),
