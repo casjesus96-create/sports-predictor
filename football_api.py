@@ -29,6 +29,9 @@ from highlightly_football_client import (
     get_team_statistics as get_highlightly_team_statistics,
     get_head_to_head as get_highlightly_head_to_head,
     get_match_statistics as get_highlightly_match_statistics,
+    get_leagues as get_highlightly_leagues,
+    get_league_matches as get_highlightly_league_matches,
+    get_fixture as get_highlightly_fixture,
 )
 from football_highlightly_shadow import predict_highlightly_shadow
 
@@ -805,6 +808,86 @@ def football_standings(
     }
 
 
+
+
+def _highlightly_http_error(exc: HighlightlyError) -> HTTPException:
+    status = exc.status_code if exc.status_code in {400, 404, 409, 422, 429, 503} else 502
+    return HTTPException(status_code=status, detail=str(exc))
+
+
+@router.get("/highlightly/competitions")
+def highlightly_competitions():
+    """Return Highlightly's independent competition catalog and native identifiers."""
+    try:
+        rows = get_highlightly_leagues()
+        return {"success": True, "provider": "Highlightly", "catalog_scope": "provider_native",
+                "count": len(rows), "competitions": rows, "generated_at": datetime.now(UTC).isoformat()}
+    except HighlightlyError as exc:
+        raise _highlightly_http_error(exc) from exc
+
+
+@router.get("/highlightly/games")
+def highlightly_games(
+    league_id: int = Query(..., alias="leagueId", gt=0),
+    match_date: date = Query(..., alias="date"),
+):
+    """List fixtures using only Highlightly league/team/match IDs and names."""
+    try:
+        rows = get_highlightly_league_matches(league_id, match_date.isoformat())
+        return {"success": True, "provider": "Highlightly", "catalog_scope": "provider_native",
+                "league_id": league_id, "date": match_date.isoformat(), "count": len(rows), "matches": rows}
+    except HighlightlyError as exc:
+        raise _highlightly_http_error(exc) from exc
+
+
+@router.get("/highlightly/matches/{match_id}/analysis")
+def highlightly_native_match_analysis(match_id: int):
+    """Analyze a Highlightly fixture directly, without looking it up in another provider."""
+    if match_id <= 0:
+        raise HTTPException(status_code=400, detail="Identificador de partido inválido.")
+    try:
+        fixture = get_highlightly_fixture(match_id)
+        home, away = fixture.get("homeTeam") or {}, fixture.get("awayTeam") or {}
+        kickoff_at = str(fixture.get("date") or "")
+        if not home.get("id") or not away.get("id") or not kickoff_at:
+            raise HTTPException(status_code=422, detail="Highlightly no devolvió los identificadores de equipos y fecha.")
+        try:
+            kickoff = datetime.fromisoformat(kickoff_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Fecha inválida en Highlightly.") from exc
+        if kickoff.tzinfo is None:
+            raise HTTPException(status_code=422, detail="La fecha de Highlightly no incluye zona horaria.")
+        result = {"success": True, "provider": "Highlightly", "provider_native": True,
+                  "highlightly_match_id": match_id, "fixture_match": fixture, "statistics": [],
+                  "experimental_prediction": None, "data_status": "MATCHED"}
+        state = str((fixture.get("state") or {}).get("description") or "").lower()
+        is_pregame = kickoff > datetime.now(UTC) and state not in {
+            "finished", "ft", "ended", "live", "in play", "in progress", "halftime"}
+        if is_pregame:
+            from_date = f"{max(1990, kickoff.year - 1)}-01-01"
+            home_recent = get_highlightly_last_five(int(home["id"]))
+            away_recent = get_highlightly_last_five(int(away["id"]))
+            home_stats = get_highlightly_team_statistics(int(home["id"]), from_date)
+            away_stats = get_highlightly_team_statistics(int(away["id"]), from_date)
+            h2h = get_highlightly_head_to_head(int(home["id"]), int(away["id"]))
+            result["experimental_prediction"] = predict_highlightly_shadow(
+                fixture, home_recent, away_recent, home_stats, away_stats, h2h, kickoff_at)
+            result["recent_form"] = {"home": home_recent, "away": away_recent}
+            result["team_statistics"] = {"home": home_stats, "away": away_stats}
+            result["head_to_head"] = h2h
+            result["data_status"] = "PREMATCH_ANALYSIS"
+        else:
+            try:
+                result["statistics"] = get_highlightly_match_statistics(match_id)
+                result["data_status"] = "MATCH_STATISTICS_AVAILABLE"
+            except HighlightlyError as stats_exc:
+                if stats_exc.status_code != 404:
+                    raise
+                result["statistics_note"] = "Highlightly todavía no publica estadísticas para este encuentro."
+                result["data_status"] = "MATCHED_STATS_PENDING"
+        return result
+    except HighlightlyError as exc:
+        raise _highlightly_http_error(exc) from exc
 
 
 
