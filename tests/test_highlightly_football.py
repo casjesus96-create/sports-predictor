@@ -96,7 +96,7 @@ def test_fixture_resolution_reports_date_feed_name_mismatch(monkeypatch):
     from highlightly_football_client import HighlightlyError, find_fixture
 
     monkeypatch.setattr(client, "_get", lambda path, params=None: {
-        "data": [{"id": 1, "date": "2026-11-07T12:30:00Z",
+        "data": [{"id": 1, "date": "2026-11-08T12:30:00Z",
                   "homeTeam": {"name": "Leeds"}, "awayTeam": {"name": "Tottenham"}}]
     })
     with pytest.raises(HighlightlyError) as exc:
