@@ -302,3 +302,27 @@ def test_highlightly_fixture_detail_uses_provider_native_match_id(monkeypatch):
     row = client.get_fixture(991)
     assert row["id"] == 991
     assert row["league"]["id"] == 44
+
+
+
+def test_highlightly_native_analysis_uses_highlightly_id_without_primary_provider(monkeypatch):
+    import football_api
+
+    fixture_row = {
+        "id": 9001,
+        "date": "2099-11-07T15:00:00Z",
+        "state": {"description": "Not started"},
+        "homeTeam": {"id": 101, "name": "Provider Home"},
+        "awayTeam": {"id": 202, "name": "Provider Away"},
+        "league": {"id": 303, "name": "Provider League"},
+    }
+    monkeypatch.setattr(football_api, "get_highlightly_fixture", lambda match_id: fixture_row)
+    monkeypatch.setattr(football_api, "get_highlightly_last_five", lambda team_id: [])
+    monkeypatch.setattr(football_api, "get_highlightly_team_statistics", lambda team_id, from_date: [])
+    monkeypatch.setattr(football_api, "get_highlightly_head_to_head", lambda home_id, away_id: [])
+    monkeypatch.setattr(football_api, "predict_highlightly_shadow", lambda *args: {"available": False, "reason": "test"})
+
+    result = football_api.highlightly_native_match_analysis(9001)
+    assert result["provider_native"] is True
+    assert result["highlightly_match_id"] == 9001
+    assert result["fixture_match"]["homeTeam"]["name"] == "Provider Home"
