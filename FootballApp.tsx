@@ -139,7 +139,7 @@ function HighlightlyAnalysisPanel({ match }: { match: Match }) {
       {prediction?.available ? <>
         <div style={{ color: "#fbbf24", fontSize: 12, fontWeight: 700 }}>EXPERIMENTAL · SIN CALIBRACIÓN</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 7, marginTop: 8 }}>
-          {[["Local", prediction.probabilities?.home], ["Empate", prediction.probabilities?.draw], ["Visitante", prediction.probabilities?.away]].map(([label, value]) => <div key={String(label)} style={{ background: "#172033", borderRadius: 7, padding: 8, textAlign: "center" }}><div style={{ color: "#94a3b8", fontSize: 11 }}>{label}</div><strong>{percent(Number(value))}</strong></div>)}
+          {[["Local", prediction.probabilities?.home], ["Empate", prediction.probabilities?.draw], ["Visitante", prediction.probabilities?.away]].map(([label, value]) => <div key={String(label)} style={{ background: "#172033", borderRadius: 7, padding: 8, textAlign: "center" }}><div style={{ color: "#94a3b8", fontSize: 11 }}>{label}</div><strong>{percent(typeof value === "number" && Number.isFinite(value) ? value : undefined)}</strong></div>)}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 7, marginTop: 7 }}>
           {[["Goles local", prediction.expected_goals?.home], ["Goles visitante", prediction.expected_goals?.away], ["Total", prediction.expected_goals?.total]].map(([label, value]) => <div key={String(label)} style={{ background: "#172033", borderRadius: 7, padding: 8, textAlign: "center" }}><div style={{ color: "#94a3b8", fontSize: 11 }}>{label}</div><strong>{typeof value === "number" ? value.toFixed(2) : "—"}</strong></div>)}
