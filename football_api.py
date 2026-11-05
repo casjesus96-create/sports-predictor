@@ -401,6 +401,7 @@ def football_head_to_head(
     home_team_id: int = Query(..., gt=0),
     away_team_id: int = Query(..., gt=0),
     match_id: int | None = Query(None, gt=0),
+    kickoff_at: str | None = Query(None, min_length=10, max_length=40),
     limit: int = Query(10, ge=1, le=50),
 ):
     """Return valid direct meetings, preferring the provider's dedicated H2H endpoint."""
@@ -409,6 +410,14 @@ def football_head_to_head(
     code = competition.strip().upper()
     if code not in LEAGUES:
         raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.")
+    kickoff = None
+    if kickoff_at:
+        try:
+            kickoff = datetime.fromisoformat(kickoff_at.strip().replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="kickoff_at no es una fecha ISO 8601 válida.") from exc
+        if kickoff.tzinfo is None:
+            raise HTTPException(status_code=400, detail="kickoff_at debe incluir zona horaria.")
 
     source = "football-data.org"
     raw_matches = []
@@ -422,6 +431,14 @@ def football_head_to_head(
         for item in items:
             if str(item.get("status", "")).upper() not in {"FINISHED", "AWARDED"}:
                 continue
+            raw_date = item.get("utcDate") or item.get("date")
+            if kickoff is not None:
+                try:
+                    meeting_date = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+                except (TypeError, ValueError):
+                    continue
+                if meeting_date.tzinfo is None or meeting_date >= kickoff:
+                    continue
             home = item.get("homeTeam") or {}
             away = item.get("awayTeam") or {}
             if {home.get("id"), away.get("id")} != {home_team_id, away_team_id}:
@@ -448,11 +465,14 @@ def football_head_to_head(
                 match_id, rate_limited, exc.detail,
             )
 
-    # Never issue two additional team-history requests after a 429. H2H is
-    # auxiliary context and must not amplify provider quota exhaustion.
+    # If the fixture-specific endpoint has no usable rows, intersect each team's
+    # accessible match history WITHOUT a competition filter. This is the key
+    # distinction: restricting both feeds to PL silently excludes FA Cup and
+    # other cross-competition meetings between these clubs.
+    # Never issue these two auxiliary requests after a 429.
     if not raw_matches and not rate_limited:
-        home_data = _provider_call(get_team_matches, home_team_id, code, "FINISHED", 500)
-        away_data = _provider_call(get_team_matches, away_team_id, code, "FINISHED", 500)
+        home_data = _provider_call(get_team_matches, home_team_id, None, "FINISHED", 500)
+        away_data = _provider_call(get_team_matches, away_team_id, None, "FINISHED", 500)
         away_ids = {
             item.get("id") for item in away_data.get("matches", [])
             if item.get("id") is not None
@@ -463,8 +483,10 @@ def football_head_to_head(
         ])
         source = "football-data.org"
         history_scope = (
-            "Historial accesible dentro de la competición seleccionada como alternativa; "
-            "no equivale al historial completo entre ambos clubes."
+            "Historial intercompetición: partidos finalizados que football-data.org "
+            "expone en los historiales accesibles de ambos equipos, sin limitarlo a "
+            f"{code}. La profundidad depende del plan y de la cobertura del proveedor; "
+            "no garantiza el historial completo."
         )
 
     meetings = []
@@ -529,6 +551,11 @@ def football_head_to_head(
             if rate_limited else history_scope
         ),
         "availability": "rate_limited" if rate_limited else "available",
+        "history_strategy": "provider_head_to_head" if source == "football-data.org" and not history_scope.startswith("Historial intercompetición:") else "cross_competition_team_histories",
+        "competitions_in_sample": sorted({
+            str((row.get("competition_code") or row.get("competition") or "")).strip()
+            for row in meetings if (row.get("competition_code") or row.get("competition"))
+        }),
         "teams": {"home": {"id": home_team_id}, "away": {"id": away_team_id}},
         "sample_size": count,
         "summary": {
