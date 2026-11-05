@@ -286,6 +286,14 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
   const homeName = match.homeTeam?.name || "";
   const awayName = match.awayTeam?.name || "";
   const kickoffAt = match.utcDate || "";
+  const [aliasName, setAliasName] = useState(homeName);
+  const [candidateSearch, setCandidateSearch] = useState(homeName);
+  const [aliasCandidates, setAliasCandidates] = useState<any[]>([]);
+  const [selectedAliasKey, setSelectedAliasKey] = useState("");
+  const [aliasLoading, setAliasLoading] = useState(false);
+  const [aliasSaving, setAliasSaving] = useState(false);
+  const [aliasError, setAliasError] = useState("");
+  const [aliasMessage, setAliasMessage] = useState("");
 
   async function loadHistory() {
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
@@ -299,6 +307,46 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error consultando enfrentamientos históricos.");
     } finally { setLoading(false); }
+  }
+
+  async function searchArchiveTeams() {
+    setAliasLoading(true); setAliasError(""); setAliasMessage("");
+    setAliasCandidates([]); setSelectedAliasKey("");
+    try {
+      const params = new URLSearchParams({ competition, query: candidateSearch.trim() });
+      const response = await fetch(`${API}/archive/teams/lookup?${params.toString()}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se encontraron equipos en el archivo.");
+      setAliasCandidates(Array.isArray(body.candidates) ? body.candidates : []);
+      if (!body.candidates?.length) setAliasError("No hay coincidencias en el histórico de esta competición. No se aplicó ningún alias.");
+    } catch (err: unknown) {
+      setAliasError(err instanceof Error ? err.message : "Error buscando el equipo.");
+    } finally { setAliasLoading(false); }
+  }
+
+  async function confirmArchiveAlias() {
+    if (!selectedAliasKey || !aliasName.trim() || aliasSaving) return;
+    setAliasSaving(true); setAliasError(""); setAliasMessage("");
+    try {
+      const response = await fetch(`${API}/archive/teams/aliases`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          competition_code: competition,
+          alias_name: aliasName.trim(),
+          canonical_team_key: selectedAliasKey,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo confirmar la identidad.");
+      const selected = aliasCandidates.find(item => item.canonical_team_key === selectedAliasKey);
+      setAliasMessage(`Alias confirmado: ${aliasName.trim()} → ${selected?.display_name || selectedAliasKey}. Se guardó para esta competición.`);
+      setAliasCandidates([]);
+      setSelectedAliasKey("");
+      await loadHistory();
+    } catch (err: unknown) {
+      setAliasError(err instanceof Error ? err.message : "No se pudo guardar la asociación.");
+    } finally { setAliasSaving(false); }
   }
 
   async function loadExperiment() {
@@ -396,6 +444,25 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
         </div>
       </> : <p>Todavía no hay enfrentamientos de esta pareja en el archivo local para esta competición. Esto no significa que los clubes nunca se hayan enfrentado; puede faltar importar temporadas o normalizar algún nombre de equipo.</p>}
     </>}
+    <section style={{ marginTop: 10, padding: 10, border: "1px solid #475569", borderRadius: 8, background: "#111827" }}>
+      <strong>¿No reconoció el nombre de un equipo?</strong>
+      <p style={{ color: "#9ca3af", fontSize: 12, margin: "5px 0 8px" }}>Escribe el nombre tal como aparece en el proveedor y busca por separado el club correcto en nuestro archivo. Tú confirmas la coincidencia; no se aplica fuzzy matching automático.</p>
+      <label style={{ display: "block", color: "#cbd5e1", fontSize: 12, marginBottom: 4 }}>Nombre recibido del proveedor (alias)</label>
+      <input aria-label="Nombre alternativo del equipo" value={aliasName} onChange={event => { setAliasName(event.target.value); setAliasError(""); setAliasMessage(""); }} placeholder="Ej. nombre recibido del proveedor" style={{ width: "100%", boxSizing: "border-box", minHeight: 40, padding: 9, borderRadius: 7, border: "1px solid #475569", background: "#0b1220", color: "#fff" }} />
+      <label style={{ display: "block", color: "#cbd5e1", fontSize: 12, margin: "8px 0 4px" }}>Buscar el club correcto en nuestro histórico</label>
+      <input aria-label="Buscar equipo canónico en el histórico" value={candidateSearch} onChange={event => { setCandidateSearch(event.target.value); setAliasCandidates([]); setSelectedAliasKey(""); setAliasError(""); }} placeholder="Ej. Hull" style={{ width: "100%", boxSizing: "border-box", minHeight: 40, padding: 9, borderRadius: 7, border: "1px solid #475569", background: "#0b1220", color: "#fff" }} />
+      <button type="button" onClick={searchArchiveTeams} disabled={aliasLoading || candidateSearch.trim().length < 2} style={{ ...buttonStyle, marginTop: 8, background: "#334155" }}>{aliasLoading ? "Buscando en el archivo…" : "Buscar equipo en nuestro histórico"}</button>
+      {aliasCandidates.length > 0 && <div style={{ marginTop: 9 }}>
+        <label style={{ display: "block", color: "#cbd5e1", fontSize: 12, marginBottom: 5 }}>Selecciona el equipo canónico correcto:</label>
+        {aliasCandidates.map(item => <label key={item.canonical_team_key} style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, marginTop: 5, border: "1px solid #334155", borderRadius: 7, cursor: "pointer" }}>
+          <input type="radio" name={`archive-team-${match.id}`} checked={selectedAliasKey === item.canonical_team_key} onChange={() => setSelectedAliasKey(item.canonical_team_key)} />
+          <span><strong>{item.display_name}</strong> <small style={{ color: "#94a3b8" }}>({item.canonical_team_key})</small></span>
+        </label>)}
+        <button type="button" onClick={confirmArchiveAlias} disabled={!selectedAliasKey || aliasSaving} style={{ ...buttonStyle, marginTop: 8, background: "#166534" }}>{aliasSaving ? "Guardando asociación…" : "Confirmar y guardar alias"}</button>
+      </div>}
+      {aliasError && <p role="alert" style={{ color: "#fca5a5", fontSize: 12 }}>{aliasError}</p>}
+      {aliasMessage && <p role="status" style={{ color: "#86efac", fontSize: 12 }}>{aliasMessage}</p>}
+    </section>
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #334155" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
         <div><strong>Proyección intercompetición + H2H experimental</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>Forma reciente entre torneos normalizada · bajo demanda · no modifica el modelo oficial</div></div>

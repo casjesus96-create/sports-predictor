@@ -17,6 +17,7 @@ from typing import Any
 
 import requests
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from repository import get_supabase_client
 
@@ -192,6 +193,22 @@ def sync_football_archive(
                         client.table("football_match_archive").upsert(
                             batch, on_conflict="source_key"
                         ).execute()
+                        teams = {}
+                        for row in batch:
+                            for side in ("home", "away"):
+                                key = row.get(f"{side}_team_key")
+                                name = row.get(f"{side}_team")
+                                if key and name:
+                                    teams[(competition, key)] = {
+                                        "competition_code": competition,
+                                        "canonical_team_key": key,
+                                        "display_name": name,
+                                    }
+                        if teams:
+                            client.table("football_archive_teams").upsert(
+                                list(teams.values()),
+                                on_conflict="competition_code,canonical_team_key",
+                            ).execute()
                         totals["inserted_or_updated"] += len(batch)
                 logger.info("Football archive %s %s: %s matches", competition, season, len(rows))
             except requests.HTTPError as exc:
@@ -227,6 +244,160 @@ def _client_or_503():
     except Exception as exc:
         logger.exception("Football archive storage is unavailable")
         raise HTTPException(status_code=503, detail="El histórico propio no está disponible temporalmente.") from exc
+
+
+
+class TeamAliasRequest(BaseModel):
+    competition_code: str = Field(min_length=2, max_length=8)
+    alias_name: str = Field(min_length=2, max_length=100)
+    canonical_team_key: str = Field(min_length=2, max_length=100)
+
+
+def _safe_team_search(value: str) -> str:
+    raw = unicodedata.normalize("NFKD", str(value or ""))
+    raw = "".join(char for char in raw if not unicodedata.combining(char))
+    raw = re.sub(r"[^a-zA-Z0-9 ]+", " ", raw)
+    return " ".join(raw.split())[:80]
+
+
+def _resolve_team_identity(client, competition: str, original_name: str) -> tuple[str, str]:
+    """Use verified competition aliases, then deterministic normalization; never fuzzy-match."""
+    normalized = normalize_team_key(original_name)
+    try:
+        result = client.table("football_team_aliases").select(
+            "canonical_team_key"
+        ).eq("competition_code", competition).eq(
+            "alias_key", normalized
+        ).limit(2).execute()
+        aliases = result.data or []
+        if len(aliases) == 1:
+            return str(aliases[0]["canonical_team_key"]), "verified_alias"
+        if len(aliases) > 1:
+            return normalized, "ambiguous_alias"
+    except Exception:
+        logger.warning("Football team alias registry unavailable; using deterministic normalization")
+
+    try:
+        known = client.table("football_archive_teams").select(
+            "canonical_team_key"
+        ).eq("competition_code", competition).eq(
+            "canonical_team_key", normalized
+        ).limit(1).execute()
+        if known.data:
+            return normalized, "exact"
+        unresolved = client.table("football_unresolved_team_names").select(
+            "id,seen_count"
+        ).eq("provider", "football-data.org").eq(
+            "competition_code", competition
+        ).eq("normalized_key", normalized).limit(1).execute()
+        existing = unresolved.data or []
+        if existing:
+            item = existing[0]
+            client.table("football_unresolved_team_names").update({
+                "original_name": str(original_name)[:100],
+                "last_seen_at": datetime.now(timezone.utc).isoformat(),
+                "seen_count": int(item.get("seen_count") or 0) + 1,
+            }).eq("id", item["id"]).execute()
+        else:
+            client.table("football_unresolved_team_names").insert({
+                "provider": "football-data.org",
+                "competition_code": competition,
+                "original_name": str(original_name)[:100],
+                "normalized_key": normalized,
+            }).execute()
+    except Exception:
+        logger.warning("Could not consult/log football team identity for %s", original_name)
+    return normalized, "unverified"
+
+
+@router.get("/teams/lookup")
+def archive_team_lookup(
+    competition: str = Query(...),
+    query: str = Query(..., min_length=2, max_length=100),
+):
+    """Search the owned archive for a user-confirmable canonical team."""
+    code = competition.strip().upper()
+    if code not in COMPETITIONS:
+        raise HTTPException(status_code=400, detail="Competición no admitida.")
+    search_text = _safe_team_search(query)
+    if len(search_text) < 2:
+        raise HTTPException(status_code=400, detail="Escribe al menos dos caracteres válidos.")
+    normalized = normalize_team_key(search_text)
+    client = _client_or_503()
+    try:
+        filters = (
+            f"display_name.ilike.%{search_text}%,"
+            f"canonical_team_key.eq.{normalized},"
+            f"canonical_team_key.ilike.%{normalized}%"
+        )
+        result = client.table("football_archive_teams").select(
+            "canonical_team_key,display_name,competition_code"
+        ).eq("competition_code", code).or_(
+            filters
+        ).order("display_name").limit(50).execute()
+        rows = result.data or []
+    except Exception as exc:
+        logger.exception("Could not search football archive teams")
+        raise HTTPException(status_code=503, detail="No se pudieron buscar equipos en el archivo.") from exc
+    unique = {}
+    for row in rows:
+        key = str(row.get("canonical_team_key") or "")
+        if key:
+            unique[key] = {
+                "canonical_team_key": key,
+                "display_name": row.get("display_name") or key,
+                "competition_code": code,
+            }
+    return {
+        "success": True, "competition": code, "query": query,
+        "candidates": list(unique.values()), "count": len(unique),
+        "provider_calls": 0, "writes": 0,
+    }
+
+
+@router.post("/teams/aliases")
+def archive_confirm_team_alias(payload: TeamAliasRequest):
+    """Persist an alias only after explicit user selection of a real archive team."""
+    code = payload.competition_code.strip().upper()
+    if code not in COMPETITIONS:
+        raise HTTPException(status_code=400, detail="Competición no admitida.")
+    alias_key = normalize_team_key(payload.alias_name)
+    target_key = str(payload.canonical_team_key).strip()
+    if not alias_key or not target_key or alias_key == target_key:
+        raise HTTPException(status_code=400, detail="El alias debe ser distinto de la clave canónica.")
+    client = _client_or_503()
+    try:
+        target = client.table("football_archive_teams").select(
+            "canonical_team_key"
+        ).eq("competition_code", code).eq(
+            "canonical_team_key", target_key
+        ).limit(1).execute()
+        if not target.data:
+            raise HTTPException(status_code=404, detail="El equipo elegido no existe en el histórico de esta competición.")
+        existing = client.table("football_team_aliases").select(
+            "canonical_team_key"
+        ).eq("competition_code", code).eq("alias_key", alias_key).limit(2).execute()
+        rows = existing.data or []
+        if rows:
+            if len(rows) == 1 and rows[0].get("canonical_team_key") == target_key:
+                return {"success": True, "created": False, "alias": payload.alias_name, "canonical_team_key": target_key}
+            raise HTTPException(status_code=409, detail="Este nombre ya está asociado a otro equipo. No se modificó la asociación existente.")
+        client.table("football_team_aliases").insert({
+            "competition_code": code, "alias_key": alias_key,
+            "alias_name": payload.alias_name.strip(),
+            "canonical_team_key": target_key,
+            "created_by": "manual_user_confirmation",
+        }).execute()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Could not persist confirmed football team alias")
+        raise HTTPException(status_code=503, detail="No se pudo guardar el alias confirmado.") from exc
+    return {
+        "success": True, "created": True, "alias": payload.alias_name.strip(),
+        "alias_key": alias_key, "canonical_team_key": target_key,
+        "competition_code": code, "scope": "competition",
+    }
 
 
 def _row_result(row: dict[str, Any], home_key: str) -> dict[str, Any]:
@@ -310,7 +481,9 @@ def archive_head_to_head(
     code = competition.strip().upper()
     if code not in COMPETITIONS:
         raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
-    home_key, away_key = normalize_team_key(home_team), normalize_team_key(away_team)
+    client = _client_or_503()
+    home_key, home_resolution = _resolve_team_identity(client, code, home_team)
+    away_key, away_resolution = _resolve_team_identity(client, code, away_team)
     if not home_key or not away_key or home_key == away_key:
         raise HTTPException(status_code=400, detail="Los equipos deben ser distintos y tener nombres válidos.")
     cutoff = None
@@ -320,7 +493,6 @@ def archive_head_to_head(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="kickoff_at no es una fecha ISO 8601 válida.") from exc
 
-    client = _client_or_503()
     try:
         # Query the exact unordered pair in one database request. This avoids
         # scanning the first 1,000 matches for one club and then filtering in Python,
@@ -369,7 +541,10 @@ def archive_head_to_head(
         "availability": "available" if count else "no_data",
         "history_strategy": "owned_local_archive",
         "competitions_in_sample": sorted({row["competition"] for row in clean_meetings}),
-        "teams": {"home": {"name": home_team, "key": home_key}, "away": {"name": away_team, "key": away_key}},
+        "teams": {
+            "home": {"name": home_team, "key": home_key, "resolution": home_resolution},
+            "away": {"name": away_team, "key": away_key, "resolution": away_resolution},
+        },
         "sample_size": count,
         "summary": summary,
         "meetings": clean_meetings,
