@@ -681,7 +681,9 @@ def _summarize_team_form(matches: list[dict[str, Any]]) -> dict[str, Any]:
         count = len(selected)
         record = _team_form_venue_summary(selected)
         both_scored = sum(item["goals_for"] > 0 and item["goals_against"] > 0 for item in selected)
+        over_1_5 = sum(item["total_goals"] >= 2 for item in selected)
         over_2_5 = sum(item["total_goals"] >= 3 for item in selected)
+        over_3_5 = sum(item["total_goals"] >= 4 for item in selected)
         # The database rows arrive newest-first; show form oldest-to-newest.
         sequence = [item["result"] for item in reversed(selected)]
         windows[str(size)] = {
@@ -691,8 +693,18 @@ def _summarize_team_form(matches: list[dict[str, Any]]) -> dict[str, Any]:
             "form_sequence": sequence,
             "both_teams_scored": both_scored,
             "both_teams_scored_percentage": _percentage(both_scored, count),
+            "over_1_5": over_1_5,
+            "over_1_5_percentage": _percentage(over_1_5, count),
             "over_2_5": over_2_5,
             "over_2_5_percentage": _percentage(over_2_5, count),
+            "over_3_5": over_3_5,
+            "over_3_5_percentage": _percentage(over_3_5, count),
+            "under_1_5": count - over_1_5,
+            "under_1_5_percentage": _percentage(count - over_1_5, count),
+            "under_2_5": count - over_2_5,
+            "under_2_5_percentage": _percentage(count - over_2_5, count),
+            "under_3_5": count - over_3_5,
+            "under_3_5_percentage": _percentage(count - over_3_5, count),
             "venue_split": {
                 "at_home": _team_form_venue_summary([item for item in selected if item["venue"] == "home"]),
                 "away": _team_form_venue_summary([item for item in selected if item["venue"] == "away"]),
@@ -842,7 +854,7 @@ def archive_market_patterns(
             "sample_start": min(dates) if dates else None,
             "sample_end": max(dates) if dates else None,
             "sample_limit": 1000,
-            "sample_complete": len(league_rows) == 1000,
+            "limit_reached": len(league_rows) == 1000,
         },
         "teams": teams,
         "provider_calls": 0,
