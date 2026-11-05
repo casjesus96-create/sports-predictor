@@ -400,3 +400,56 @@ def test_team_form_market_windows_cover_three_goal_lines():
     assert (result["over_1_5"], result["over_2_5"], result["over_3_5"]) == (2, 1, 1)
     assert result["under_2_5"] == 2
     assert result["sample_complete"] is False
+
+
+def test_market_patterns_endpoint_applies_competition_and_cutoff_before_limits(monkeypatch):
+    import football_archive
+
+    captured = {"eq": [], "lt": [], "limits": [], "tables": []}
+    rows = [{
+        "source_key": "arsenal-chelsea-1",
+        "match_date": "2026-10-01",
+        "competition_name": "Premier League",
+        "home_team": "Arsenal",
+        "home_team_key": "arsenal",
+        "away_team": "Chelsea",
+        "away_team_key": "chelsea",
+        "home_score": 2,
+        "away_score": 1,
+    }]
+
+    class Query:
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, column, value): captured["eq"].append((column, value)); return self
+        def lt(self, column, value): captured["lt"].append((column, value)); return self
+        def or_(self, value): return self
+        def order(self, *_args, **_kwargs): return self
+        def limit(self, value): captured["limits"].append(value); return self
+        def execute(self): return type("Result", (), {"data": rows})()
+
+    class Client:
+        def table(self, name):
+            captured["tables"].append(name)
+            return Query()
+
+    monkeypatch.setattr(football_archive, "_client_or_503", lambda: Client())
+    monkeypatch.setattr(
+        football_archive, "_resolve_team_identity",
+        lambda _client, _code, name: (name.lower(), "exact"),
+    )
+
+    result = football_archive.archive_market_patterns(
+        competition="PL",
+        home_team="Arsenal",
+        away_team="Chelsea",
+        kickoff_at="2026-11-07T08:30:00Z",
+    )
+
+    assert result["provider_calls"] == 0
+    assert result["model_changed"] is False
+    assert result["competition_sample"]["sample_size"] == 1
+    assert result["competition_sample"]["markets"]["2_5"]["over"]["count"] == 1
+    assert captured["tables"] == ["football_match_archive"] * 3
+    assert captured["eq"].count(("competition_code", "PL")) == 3
+    assert captured["lt"] == [("match_date", "2026-11-07")] * 3
+    assert captured["limits"] == [1000, 15, 15]
