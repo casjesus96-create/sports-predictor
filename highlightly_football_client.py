@@ -141,11 +141,49 @@ def _resolve_league_id(league_name: str, country_name: str | None = None) -> int
             continue
         exact.append(row)
 
+    # Highlightly may index a competition under a shorter/localized name
+    # (for example "Serie A") even when the primary provider calls it
+    # "Campeonato Brasileiro Série A". If the exact-name query returned no
+    # match, inspect the country catalog and resolve only a known alias.
+    if not exact and country_code:
+        aliases_by_source_name = {
+            "campeonato brasileiro serie a": {
+                "campeonato brasileiro serie a",
+                "brasileirao serie a",
+                "brasileiro serie a",
+                "serie a",
+            },
+        }
+        aliases = aliases_by_source_name.get(expected_name, {expected_name})
+        catalog_rows = []
+        offset = 0
+        while offset < 1000:
+            catalog_payload = _get(
+                "/leagues",
+                {"countryCode": country_code, "limit": 100, "offset": offset},
+            )
+            page = catalog_payload.get("data", []) if isinstance(catalog_payload, dict) else catalog_payload
+            if not isinstance(page, list) or not page:
+                break
+            catalog_rows.extend(row for row in page if isinstance(row, dict))
+            pagination = catalog_payload.get("pagination", {}) if isinstance(catalog_payload, dict) else {}
+            total_count = pagination.get("totalCount")
+            offset += len(page)
+            if not isinstance(total_count, int) or offset >= total_count or len(page) < 100:
+                break
+        exact = [
+            row for row in catalog_rows
+            if isinstance(row.get("id"), int)
+            and normalize_name(row.get("name", "")) in aliases
+            and str((row.get("country") or {}).get("code", "")).strip().upper() == country_code
+        ]
+        rows = catalog_rows
+
     if len(exact) != 1:
         candidates = [
             f"{row.get('name', '?')} ({(row.get('country') or {}).get('name', 'país no indicado')})"
             for row in rows if isinstance(row, dict)
-        ][:6]
+        ][:8]
         detail = f" Opciones devueltas: {'; '.join(candidates)}." if candidates else ""
         country_detail = f" País solicitado: '{country_name}'." if country_name else ""
         raise HighlightlyError(
