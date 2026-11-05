@@ -65,3 +65,41 @@ def test_fixture_resolution_rejects_missing_exact_match(monkeypatch):
     with pytest.raises(HighlightlyError) as exc:
         find_fixture("2026-11-04", "Barcelona", "Aston Villa")
     assert exc.value.status_code == 404
+
+
+def test_fixture_resolution_queries_date_feed_and_matches_provider_names(monkeypatch):
+    import highlightly_football_client as client
+    from highlightly_football_client import find_fixture
+
+    calls = []
+    payload = {"data": [
+        {"id": 72221384, "date": "2026-11-07T12:30:00Z",
+         "homeTeam": {"name": "Leeds United"}, "awayTeam": {"name": "Tottenham Hotspur"}},
+        {"id": 72221385, "date": "2026-11-07T15:00:00Z",
+         "homeTeam": {"name": "Arsenal"}, "awayTeam": {"name": "Hull City"}},
+    ]}
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        return payload
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    result = find_fixture("2026-11-07", "Leeds United FC", "Tottenham Hotspur FC")
+
+    assert result["id"] == 72221384
+    assert calls == [("/matches", {"date": "2026-11-07", "limit": 100, "offset": 0})]
+
+
+def test_fixture_resolution_reports_date_feed_name_mismatch(monkeypatch):
+    import pytest
+    import highlightly_football_client as client
+    from highlightly_football_client import HighlightlyError, find_fixture
+
+    monkeypatch.setattr(client, "_get", lambda path, params=None: {
+        "data": [{"id": 1, "date": "2026-11-07T12:30:00Z",
+                  "homeTeam": {"name": "Leeds"}, "awayTeam": {"name": "Tottenham"}}]
+    })
+    with pytest.raises(HighlightlyError) as exc:
+        find_fixture("2026-11-07", "Leeds United FC", "Tottenham Hotspur FC")
+    assert exc.value.status_code == 404
+    assert "Leeds vs Tottenham" in str(exc.value)
