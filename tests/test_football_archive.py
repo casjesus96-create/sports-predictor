@@ -260,3 +260,101 @@ def test_h2h_summary_handles_empty_history_without_fake_percentages():
     assert result["home_team_clean_sheets_percentage"] is None
     assert result["home_team_failed_to_score_percentage"] is None
     assert result["venue_split"]["home_team"]["at_home"]["matches"] == 0
+
+
+
+def test_team_form_summary_uses_latest_windows_and_does_not_pad_samples():
+    from football_archive import _summarize_team_form
+
+    matches = [
+        {"result":"W","points":3,"goals_for":2,"goals_against":0,"total_goals":2,"venue":"home"},
+        {"result":"D","points":1,"goals_for":1,"goals_against":1,"total_goals":2,"venue":"away"},
+        {"result":"L","points":0,"goals_for":0,"goals_against":2,"total_goals":2,"venue":"home"},
+        {"result":"W","points":3,"goals_for":3,"goals_against":1,"total_goals":4,"venue":"away"},
+        {"result":"W","points":3,"goals_for":1,"goals_against":0,"total_goals":1,"venue":"home"},
+        {"result":"D","points":1,"goals_for":2,"goals_against":2,"total_goals":4,"venue":"away"},
+    ]
+    result = _summarize_team_form(matches)
+
+    assert result["5"]["matches"] == 5
+    assert result["5"]["sample_complete"] is True
+    assert result["5"]["wins"] == 3
+    assert result["5"]["draws"] == 1
+    assert result["5"]["losses"] == 1
+    assert result["5"]["points"] == 10
+    assert result["5"]["form_sequence"] == ["W", "D", "L", "W", "W"]
+    assert result["5"]["clean_sheets"] == 2
+    assert result["5"]["failed_to_score"] == 1
+    assert result["5"]["venue_split"]["at_home"]["matches"] == 3
+    assert result["10"]["matches"] == 6
+    assert result["10"]["sample_complete"] is False
+    assert result["10"]["requested_matches"] == 10
+    assert result["15"]["matches"] == 6
+    assert result["15"]["sample_complete"] is False
+    assert result["15"]["win_percentage"] == 50.0
+
+
+def test_team_form_match_orients_home_and_away_correctly():
+    from football_archive import _team_form_match
+
+    row = {
+        "source_key": "match-1",
+        "match_date": "2026-10-01",
+        "competition_name": "Premier League",
+        "home_team": "Arsenal",
+        "home_team_key": "arsenal",
+        "away_team": "Chelsea",
+        "away_team_key": "chelsea",
+        "home_score": 1,
+        "away_score": 2,
+    }
+    arsenal = _team_form_match(row, "arsenal")
+    chelsea = _team_form_match(row, "chelsea")
+    assert (arsenal["result"], arsenal["goals_for"], arsenal["goals_against"], arsenal["venue"]) == ("L", 1, 2, "home")
+    assert (chelsea["result"], chelsea["goals_for"], chelsea["goals_against"], chelsea["venue"]) == ("W", 2, 1, "away")
+
+
+def test_team_form_endpoint_filters_competition_and_kickoff_before_limit(monkeypatch):
+    import football_archive
+
+    captured = {"tables": [], "eq": [], "lt": [], "or": []}
+    rows = [{
+        "source_key": "arsenal-1", "match_date": "2026-10-01",
+        "competition_name": "Premier League", "home_team": "Arsenal",
+        "home_team_key": "arsenal", "away_team": "Chelsea",
+        "away_team_key": "chelsea", "home_score": 2, "away_score": 0,
+    }]
+
+    class Query:
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, column, value): captured["eq"].append((column, value)); return self
+        def or_(self, value): captured["or"].append(value); return self
+        def lt(self, column, value): captured["lt"].append((column, value)); return self
+        def order(self, *_args, **_kwargs): return self
+        def limit(self, value): captured.setdefault("limits", []).append(value); return self
+        def execute(self): return type("Result", (), {"data": rows})()
+
+    class Client:
+        def table(self, name):
+            captured["tables"].append(name)
+            return Query()
+
+    monkeypatch.setattr(football_archive, "_client_or_503", lambda: Client())
+    monkeypatch.setattr(football_archive, "_resolve_team_identity", lambda _client, _code, name: (name.lower(), "exact"))
+
+    result = football_archive.archive_team_recent_form(
+        competition="PL",
+        home_team="Arsenal",
+        away_team="Chelsea",
+        kickoff_at="2026-11-07T08:30:00Z",
+    )
+
+    assert result["provider_calls"] == 0
+    assert result["model_changed"] is False
+    assert result["teams"]["home"]["windows"]["5"]["matches"] == 1
+    assert result["teams"]["home"]["windows"]["5"]["sample_complete"] is False
+    assert captured["tables"] == ["football_match_archive", "football_match_archive"]
+    assert captured["lt"] == [("match_date", "2026-11-07"), ("match_date", "2026-11-07")]
+    assert captured["limits"] == [15, 15]
+    assert all(("competition_code", "PL") in [] for _ in [])  # query contract checked below
+    assert captured["eq"].count(("competition_code", "PL")) == 2
