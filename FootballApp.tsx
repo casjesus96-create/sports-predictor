@@ -427,16 +427,50 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
       {data.sample_size > 0 ? <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
           {[
-            ["Victorias local seleccionado", data.summary.home_team_wins],
-            ["Empates", data.summary.draws],
-            ["Victorias visitante seleccionado", data.summary.away_team_wins],
-            ["Promedio goles local", data.summary.average_home_team_goals],
-            ["Promedio goles visitante", data.summary.average_away_team_goals],
+            ["Victorias equipo local", `${data.summary.home_team_wins} · ${data.summary.home_team_wins_percentage ?? "—"}%`],
+            ["Empates", `${data.summary.draws} · ${data.summary.draws_percentage ?? "—"}%`],
+            ["Victorias equipo visitante", `${data.summary.away_team_wins} · ${data.summary.away_team_wins_percentage ?? "—"}%`],
+            ["Promedio goles equipo local", data.summary.average_home_team_goals],
+            ["Promedio goles equipo visitante", data.summary.average_away_team_goals],
             ["Promedio goles totales", data.summary.average_total_goals],
-            ["Ambos marcaron", `${data.summary.both_teams_scored_count}/${data.sample_size}`],
-            ["Más de 2.5 goles", `${data.summary.over_2_5_count}/${data.sample_size}`],
+            ["Ambos marcaron", `${data.summary.both_teams_scored_count}/${data.sample_size} · ${data.summary.both_teams_scored_percentage ?? "—"}%`],
+            ["Más de 2.5 goles", `${data.summary.over_2_5_count}/${data.sample_size} · ${data.summary.over_2_5_percentage ?? "—"}%`],
           ].map(([label, value]) => <div key={String(label)} style={{ background: "#111827", padding: 9, borderRadius: 7 }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{label}</div><strong>{value ?? "—"}</strong></div>)}
         </div>
+        <section style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "#111827" }}>
+          <strong>Frecuencias históricas de goles y mercados</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 8 }}>
+            {[
+              ["Más de 1.5 goles", data.summary.over_1_5_count, data.summary.over_1_5_percentage],
+              ["Más de 2.5 goles", data.summary.over_2_5_count, data.summary.over_2_5_percentage],
+              ["Más de 3.5 goles", data.summary.over_3_5_count, data.summary.over_3_5_percentage],
+              ["Ambos equipos marcan", data.summary.both_teams_scored_count, data.summary.both_teams_scored_percentage],
+              ["Menos de 1.5 goles", data.summary.under_1_5_count, data.summary.under_1_5_percentage],
+              ["Menos de 2.5 goles", data.summary.under_2_5_count, data.summary.under_2_5_percentage],
+              ["Menos de 3.5 goles", data.summary.under_3_5_count, data.summary.under_3_5_percentage],
+              ["Porterías a cero · local/visitante", `${data.summary.home_team_clean_sheets}/${data.summary.away_team_clean_sheets}`, null],
+            ].map(([label, count, rate]) => <div key={String(label)} style={{ background: "#0b1220", padding: 8, borderRadius: 7 }}>
+              <div style={{ color: "#9ca3af", fontSize: 11 }}>{label}</div>
+              <strong>{count ?? "—"}{rate != null ? ` · ${rate}%` : ""}</strong>
+              <div style={{ color: "#64748b", fontSize: 10 }}>de {data.sample_size} partidos</div>
+            </div>)}
+          </div>
+        </section>
+        <section style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "#111827" }}>
+          <strong>Separación por localía en los enfrentamientos directos</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
+            {[
+              [homeName + " jugando en casa", data.summary.venue_split?.home_team?.at_home],
+              [homeName + " jugando fuera", data.summary.venue_split?.home_team?.away],
+              [awayName + " jugando en casa", data.summary.venue_split?.away_team?.at_home],
+              [awayName + " jugando fuera", data.summary.venue_split?.away_team?.away],
+            ].map(([label, record]: any) => <div key={String(label)} style={{ background: "#0b1220", padding: 8, borderRadius: 7 }}>
+              <div style={{ color: "#9ca3af", fontSize: 11 }}>{label}</div>
+              <strong>{record?.wins ?? 0} G · {record?.draws ?? 0} E · {record?.losses ?? 0} P</strong>
+              <div style={{ color: "#94a3b8", fontSize: 10 }}>{record?.matches ?? 0} partidos · GF {record?.goals_for ?? 0} · GC {record?.goals_against ?? 0}</div>
+            </div>)}
+          </div>
+        </section>
         <div style={{ overflowX: "auto", marginTop: 10 }}>
           <table style={tableStyle}><thead><tr>{["Fecha", "Local histórico", "Marcador", "Visitante histórico", "Total"].map((h) => <th key={h} style={cellStyle}>{h}</th>)}</tr></thead>
             <tbody>{data.meetings.map((item: any) => <tr key={item.id}><td style={cellStyle}>{item.date ? new Date(item.date).toLocaleDateString("es-ES") : "—"}</td><td style={cellStyle}>{item.home_team || "—"}</td><td style={cellStyle}><strong>{item.home_score}–{item.away_score}</strong></td><td style={cellStyle}>{item.away_team || "—"}</td><td style={cellStyle}>{item.total_goals}</td></tr>)}</tbody>

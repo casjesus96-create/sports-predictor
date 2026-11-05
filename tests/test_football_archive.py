@@ -204,3 +204,35 @@ def test_resolver_uses_exact_archive_key_when_no_alias_exists():
     key, resolution = football_archive._resolve_team_identity(Client(), "PL", "Arsenal FC")
     assert key == "arsenal"
     assert resolution == "exact"
+
+
+
+def test_h2h_summary_calculates_goal_markets_and_venue_splits():
+    from football_archive import _summarize_head_to_head
+
+    meetings = [
+        {"_selected_home_result":"home","_selected_home_goals":2,"_selected_away_goals":1,"_selected_home_venue":"home","_selected_away_venue":"away","home_score":2,"away_score":1,"total_goals":3},
+        {"_selected_home_result":"away","_selected_home_goals":0,"_selected_away_goals":2,"_selected_home_venue":"away","_selected_away_venue":"home","home_score":2,"away_score":0,"total_goals":2},
+        {"_selected_home_result":"draw","_selected_home_goals":1,"_selected_away_goals":1,"_selected_home_venue":"home","_selected_away_venue":"away","home_score":1,"away_score":1,"total_goals":2},
+        {"_selected_home_result":"home","_selected_home_goals":3,"_selected_away_goals":2,"_selected_home_venue":"away","_selected_away_venue":"home","home_score":2,"away_score":3,"total_goals":5},
+    ]
+    result = _summarize_head_to_head(meetings)
+    assert (result["home_team_wins"], result["draws"], result["away_team_wins"]) == (2,1,1)
+    assert result["both_teams_scored_count"] == 3
+    assert result["both_teams_scored_percentage"] == 75.0
+    assert (result["over_1_5_count"], result["over_2_5_count"], result["over_3_5_count"]) == (4,2,1)
+    assert (result["under_1_5_count"], result["under_2_5_count"], result["under_3_5_count"]) == (0,2,3)
+    assert result["venue_split"]["home_team"]["at_home"]["matches"] == 2
+    assert result["venue_split"]["home_team"]["at_home"]["wins"] == 1
+    assert result["venue_split"]["home_team"]["away"]["matches"] == 2
+    assert result["venue_split"]["away_team"]["at_home"]["matches"] == 2
+
+
+def test_h2h_summary_handles_empty_history_without_fake_percentages():
+    from football_archive import _summarize_head_to_head
+    result = _summarize_head_to_head([])
+    assert result["average_total_goals"] is None
+    assert result["over_2_5_count"] == 0
+    assert result["over_2_5_percentage"] is None
+    assert result["both_teams_scored_percentage"] is None
+    assert result["venue_split"]["home_team"]["at_home"]["matches"] == 0
