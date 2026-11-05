@@ -208,7 +208,7 @@ def test_fixture_resolution_maps_spain_primera_division_to_la_liga(monkeypatch):
             ]}
         return {"data": [
             {"id": 88001, "date": "2026-11-07T09:00:00Z",
-             "homeTeam": {"name": "Malaga"}, "awayTeam": {"name": "Racing Santander"},
+             "homeTeam": {"name": "Malaga"}, "awayTeam": {"name": "Real Racing Club de Santander"},
              "league": {"id": 140, "name": "La Liga"}}
         ]}
 
