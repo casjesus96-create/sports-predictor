@@ -449,7 +449,46 @@ def test_market_patterns_endpoint_applies_competition_and_cutoff_before_limits(m
     assert result["model_changed"] is False
     assert result["competition_sample"]["sample_size"] == 1
     assert result["competition_sample"]["markets"]["2_5"]["over"]["count"] == 1
+    assert result["competition_venue_advantage"]["home_teams"]["matches"] == 1
+    assert result["competition_venue_advantage"]["home_win_rate"] == 100.0
+    assert result["competition_venue_advantage"]["away_win_rate"] == 0.0
+    assert result["competition_venue_advantage"]["home_win_rate_minus_away_win_rate"] == 100.0
     assert captured["tables"] == ["football_match_archive"] * 3
     assert captured["eq"].count(("competition_code", "PL")) == 3
     assert captured["lt"] == [("match_date", "2026-11-07")] * 3
-    assert captured["limits"] == [1000, 15, 15]
+    assert captured["limits"] == [1000, 100, 100]
+
+
+def test_venue_sample_summarizes_home_advantage_and_goal_markets():
+    from football_archive import _summarize_venue_sample, _summarize_venue_windows
+
+    home_matches = [
+        {"result": "W", "points": 3, "goals_for": 2, "goals_against": 0, "total_goals": 2, "venue": "home", "date": "2026-10-01"},
+        {"result": "D", "points": 1, "goals_for": 1, "goals_against": 1, "total_goals": 2, "venue": "home", "date": "2026-09-20"},
+        {"result": "L", "points": 0, "goals_for": 0, "goals_against": 3, "total_goals": 3, "venue": "home", "date": "2026-09-10"},
+        {"result": "W", "points": 3, "goals_for": 3, "goals_against": 1, "total_goals": 4, "venue": "home", "date": "2026-08-30"},
+        {"result": "W", "points": 3, "goals_for": 1, "goals_against": 0, "total_goals": 1, "venue": "home", "date": "2026-08-20"},
+    ]
+    result = _summarize_venue_sample(home_matches)
+    assert result["matches"] == 5
+    assert (result["wins"], result["draws"], result["losses"]) == (3, 1, 1)
+    assert result["win_percentage"] == 60.0
+    assert result["over_2_5"] == 2
+    assert result["both_teams_scored"] == 2
+    assert result["average_goals_for"] == 1.4
+    assert result["average_goals_against"] == 1.0
+    windows = _summarize_venue_windows(home_matches, "home")
+    assert windows["5"]["sample_complete"] is True
+    assert windows["10"]["sample_complete"] is False
+    assert windows["5"]["sample_start"] == "2026-08-20"
+    assert windows["5"]["sample_end"] == "2026-10-01"
+
+
+def test_venue_sample_empty_keeps_rates_and_averages_null():
+    from football_archive import _summarize_venue_sample
+
+    result = _summarize_venue_sample([])
+    assert result["matches"] == 0
+    assert result["win_percentage"] is None
+    assert result["over_2_5_percentage"] is None
+    assert result["average_total_goals"] is None

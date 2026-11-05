@@ -673,6 +673,27 @@ def _team_form_venue_summary(matches: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+
+
+def _summarize_venue_sample(matches: list[dict[str, Any]]) -> dict[str, Any]:
+    """Descriptive team-perspective outcomes and goal markets for one venue sample."""
+    count = len(matches)
+    summary = _team_form_venue_summary(matches)
+    over_counts = {"1_5": sum(item["total_goals"] >= 2 for item in matches), "2_5": sum(item["total_goals"] >= 3 for item in matches), "3_5": sum(item["total_goals"] >= 4 for item in matches)}
+    btts = sum(item["goals_for"] > 0 and item["goals_against"] > 0 for item in matches)
+    result = {**summary, "both_teams_scored": btts, "both_teams_scored_percentage": _percentage(btts, count), "average_total_goals": round(sum(item["total_goals"] for item in matches) / count, 3) if count else None, "sample_start": min((item.get("date") for item in matches if item.get("date")), default=None), "sample_end": max((item.get("date") for item in matches if item.get("date")), default=None)}
+    for line, over_count in over_counts.items():
+        result[f"over_{line}"] = over_count
+        result[f"over_{line}_percentage"] = _percentage(over_count, count)
+        result[f"under_{line}"] = count - over_count
+        result[f"under_{line}_percentage"] = _percentage(count - over_count, count)
+    return result
+
+
+def _summarize_venue_windows(matches: list[dict[str, Any]], venue: str) -> dict[str, Any]:
+    selected = [item for item in matches if item.get("venue") == venue]
+    return {str(size): {"requested_matches": size, "sample_complete": len(selected[:size]) == size, **_summarize_venue_sample(selected[:size])} for size in (5, 10, 15)}
+
 def _summarize_team_form(matches: list[dict[str, Any]]) -> dict[str, Any]:
     """Return descriptive 5/10/15-match windows; never pad incomplete samples."""
     windows: dict[str, Any] = {}
@@ -831,7 +852,7 @@ def archive_market_patterns(
                 "competition_code", code
             ).or_(
                 f"home_team_key.eq.{identity['key']},away_team_key.eq.{identity['key']}"
-            ).lt("match_date", cutoff).order("match_date", desc=True).limit(15)
+            ).lt("match_date", cutoff).order("match_date", desc=True).limit(100)
             rows = query.execute().data or []
             oriented = [
                 _team_form_match(row, identity["key"])
@@ -839,11 +860,14 @@ def archive_market_patterns(
                 if identity["key"] in {row.get("home_team_key"), row.get("away_team_key")}
                 and row.get("home_score") is not None
                 and row.get("away_score") is not None
+                and str(row.get("match_date") or "") < cutoff
             ]
             teams[side] = {
                 **identity,
                 "sample_size": len(oriented),
+                "sample_limit": 100,
                 "windows": _summarize_team_form(oriented),
+                "venue_windows": {"home": _summarize_venue_windows(oriented, "home"), "away": _summarize_venue_windows(oriented, "away")},
                 "sample_start": min((item.get("date") for item in oriented if item.get("date")), default=None),
                 "sample_end": max((item.get("date") for item in oriented if item.get("date")), default=None),
             }
@@ -857,13 +881,17 @@ def archive_market_patterns(
         and str(row.get("match_date") or "") < cutoff
     ]
     dates = [str(row["match_date"]) for row in league_rows if row.get("match_date")]
+    home_venue_matches = [_team_form_match(row, row["home_team_key"]) for row in league_rows if row.get("home_team_key") and row.get("home_score") is not None and row.get("away_score") is not None]
+    away_venue_matches = [_team_form_match(row, row["away_team_key"]) for row in league_rows if row.get("away_team_key") and row.get("home_score") is not None and row.get("away_score") is not None]
+    home_win_rate = _percentage(sum(item["result"] == "W" for item in home_venue_matches), len(home_venue_matches))
+    away_win_rate = _percentage(sum(item["result"] == "W" for item in away_venue_matches), len(away_venue_matches))
     return {
         "success": True,
         "provider": "Sports Predictor · Supabase archive",
         "source": SOURCE_NAME,
         "competition": code,
         "competition_name": COMPETITIONS[code]["name"],
-        "history_scope": "Muestra de hasta 1.000 partidos finalizados más recientes de esta competición; equipos: hasta sus últimos 15 partidos.",
+        "history_scope": "Muestra de hasta 1.000 partidos finalizados más recientes de esta competición; para cada equipo se consultan hasta 100 partidos previos y se calculan ventanas generales y específicas de localía de 5, 10 y 15 partidos.",
         "cutoff_date_exclusive": cutoff,
         "competition_sample": {
             **_summarize_market_sample(league_rows),
@@ -871,6 +899,14 @@ def archive_market_patterns(
             "sample_end": max(dates) if dates else None,
             "sample_limit": 1000,
             "limit_reached": len(league_rows) == 1000,
+        },
+        "competition_venue_advantage": {
+            "home_teams": _summarize_venue_sample(home_venue_matches),
+            "away_teams": _summarize_venue_sample(away_venue_matches),
+            "home_win_rate": home_win_rate,
+            "draw_rate": _percentage(sum(item["result"] == "D" for item in home_venue_matches), len(home_venue_matches)),
+            "away_win_rate": away_win_rate,
+            "home_win_rate_minus_away_win_rate": round(home_win_rate - away_win_rate, 2) if home_win_rate is not None and away_win_rate is not None else None,
         },
         "teams": teams,
         "provider_calls": 0,
