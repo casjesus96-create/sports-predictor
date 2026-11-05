@@ -366,3 +366,92 @@ def test_highlightly_rate_limit_sets_cooldown_and_blocks_followup_requests(monke
         assert "bloqueado temporalmente" in str(exc)
     assert len(calls) == 1
     monkeypatch.setattr(client, "_rate_limit_until", 0.0)
+
+
+
+def test_highlightly_native_analysis_reuses_fixture_from_league_feed(monkeypatch):
+    import football_api
+
+    fixture_row = {
+        "id": 9010,
+        "date": "2099-11-07T15:00:00Z",
+        "state": {"description": "Not started"},
+        "homeTeam": {"id": 111, "name": "Native Home"},
+        "awayTeam": {"id": 222, "name": "Native Away"},
+        "league": {"id": 333, "name": "Native League"},
+    }
+    monkeypatch.setattr(
+        football_api, "get_highlightly_fixture",
+        lambda match_id: (_ for _ in ()).throw(AssertionError("No debe consultar el detalle remoto")),
+    )
+    monkeypatch.setattr(football_api, "get_highlightly_last_five", lambda team_id: [])
+    monkeypatch.setattr(football_api, "get_highlightly_team_statistics", lambda team_id, from_date: [])
+    monkeypatch.setattr(football_api, "predict_highlightly_shadow", lambda *args: {"available": False, "reason": "test"})
+
+    result = football_api.highlightly_native_match_analysis_from_feed(9010, fixture_row)
+    assert result["provider_native"] is True
+    assert result["request_optimization"] == "fixture_reused_from_league_feed"
+    assert result["fixture_match"]["id"] == 9010
+
+
+def test_highlightly_native_analysis_rejects_mismatched_fixture_id():
+    import pytest
+    from fastapi import HTTPException
+    import football_api
+
+    with pytest.raises(HTTPException) as exc:
+        football_api.highlightly_native_match_analysis_from_feed(9011, {"id": 9010})
+    assert exc.value.status_code == 422
+
+
+def test_highlightly_provider_status_is_read_only(monkeypatch):
+    import football_api
+
+    monkeypatch.setattr(football_api, "get_highlightly_provider_status", lambda: {
+        "provider": "Highlightly", "state": "quota_exhausted",
+        "quota_remaining": 0, "quota_limit": 100, "retry_after_seconds": 120,
+    })
+    result = football_api.highlightly_provider_status()
+    assert result["state"] == "quota_exhausted"
+    assert result["quota_remaining"] == 0
+    assert result["success"] is True
+
+
+def test_highlightly_429_distinguishes_exhausted_quota_and_reads_reset(monkeypatch):
+    import highlightly_football_client as client
+
+    class FakeResponse:
+        status_code = 429
+        headers = {
+            "x-ratelimit-requests-remaining": "0",
+            "x-ratelimit-requests-limit": "100",
+            "x-ratelimit-requests-reset": "1800",
+        }
+        def json(self):
+            return {"message": "daily quota exceeded"}
+
+    class FakeRequests:
+        @staticmethod
+        def get(*args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setenv("HIGHLIGHTLY_API_KEY", "test-key")
+    monkeypatch.setattr(client, "requests", FakeRequests)
+    monkeypatch.setattr(client, "_rate_limit_until", 0.0)
+    with client._cache_lock:
+        client._cache.clear()
+        client._provider_status.clear()
+
+    try:
+        client._get("/quota-exhausted-test")
+        assert False, "Expected HighlightlyError for HTTP 429"
+    except client.HighlightlyError as exc:
+        assert exc.status_code == 429
+        assert "cuota disponible" in str(exc)
+
+    status = client.get_provider_status()
+    assert status["state"] == "quota_exhausted"
+    assert status["quota_remaining"] == 0
+    assert status["quota_limit"] == 100
+    assert status["quota_reset_seconds"] == 1800
+    assert status["cooldown_active"] is True
