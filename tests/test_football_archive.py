@@ -357,3 +357,99 @@ def test_team_form_endpoint_filters_competition_and_kickoff_before_limit(monkeyp
     assert captured["lt"] == [("match_date", "2026-11-07"), ("match_date", "2026-11-07")]
     assert captured["limits"] == [15, 15]
     assert captured["eq"].count(("competition_code", "PL")) == 2
+
+
+def test_market_sample_reports_over_under_btts_and_goal_distribution():
+    from football_archive import _summarize_market_sample
+    rows = [
+        {"home_score": 0, "away_score": 0},
+        {"home_score": 1, "away_score": 1},
+        {"home_score": 2, "away_score": 1},
+        {"home_score": 3, "away_score": 2},
+    ]
+    result = _summarize_market_sample(rows)
+    assert result["sample_size"] == 4
+    assert result["markets"]["1_5"]["over"] == {"count": 3, "percentage": 75.0}
+    assert result["markets"]["2_5"]["over"] == {"count": 2, "percentage": 50.0}
+    assert result["markets"]["3_5"]["over"] == {"count": 1, "percentage": 25.0}
+    assert result["markets"]["2_5"]["under"] == {"count": 2, "percentage": 50.0}
+    assert result["both_teams_scored"] == {"count": 3, "percentage": 75.0}
+    assert result["total_goals_distribution"]["0_1"]["count"] == 1
+    assert result["total_goals_distribution"]["2"]["count"] == 1
+    assert result["total_goals_distribution"]["3"]["count"] == 1
+    assert result["total_goals_distribution"]["4_plus"]["count"] == 1
+
+
+def test_market_sample_empty_does_not_invent_percentages():
+    from football_archive import _summarize_market_sample
+    result = _summarize_market_sample([])
+    assert result["sample_size"] == 0
+    assert result["average_total_goals"] is None
+    assert result["markets"]["1_5"]["over"]["percentage"] is None
+    assert result["both_teams_scored"]["percentage"] is None
+
+
+def test_team_form_market_windows_cover_three_goal_lines():
+    from football_archive import _summarize_team_form
+    matches = [
+        {"result": "W", "points": 3, "goals_for": 3, "goals_against": 1, "total_goals": 4, "venue": "home"},
+        {"result": "L", "points": 0, "goals_for": 0, "goals_against": 1, "total_goals": 1, "venue": "away"},
+        {"result": "D", "points": 1, "goals_for": 1, "goals_against": 1, "total_goals": 2, "venue": "home"},
+    ]
+    result = _summarize_team_form(matches)["5"]
+    assert (result["over_1_5"], result["over_2_5"], result["over_3_5"]) == (2, 1, 1)
+    assert result["under_2_5"] == 2
+    assert result["sample_complete"] is False
+
+
+def test_market_patterns_endpoint_applies_competition_and_cutoff_before_limits(monkeypatch):
+    import football_archive
+
+    captured = {"eq": [], "lt": [], "limits": [], "tables": []}
+    rows = [{
+        "source_key": "arsenal-chelsea-1",
+        "match_date": "2026-10-01",
+        "competition_name": "Premier League",
+        "home_team": "Arsenal",
+        "home_team_key": "arsenal",
+        "away_team": "Chelsea",
+        "away_team_key": "chelsea",
+        "home_score": 2,
+        "away_score": 1,
+    }]
+
+    class Query:
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, column, value): captured["eq"].append((column, value)); return self
+        def lt(self, column, value): captured["lt"].append((column, value)); return self
+        def or_(self, value): return self
+        def order(self, *_args, **_kwargs): return self
+        def limit(self, value): captured["limits"].append(value); return self
+        def execute(self): return type("Result", (), {"data": rows})()
+
+    class Client:
+        def table(self, name):
+            captured["tables"].append(name)
+            return Query()
+
+    monkeypatch.setattr(football_archive, "_client_or_503", lambda: Client())
+    monkeypatch.setattr(
+        football_archive, "_resolve_team_identity",
+        lambda _client, _code, name: (name.lower(), "exact"),
+    )
+
+    result = football_archive.archive_market_patterns(
+        competition="PL",
+        home_team="Arsenal",
+        away_team="Chelsea",
+        kickoff_at="2026-11-07T08:30:00Z",
+    )
+
+    assert result["provider_calls"] == 0
+    assert result["model_changed"] is False
+    assert result["competition_sample"]["sample_size"] == 1
+    assert result["competition_sample"]["markets"]["2_5"]["over"]["count"] == 1
+    assert captured["tables"] == ["football_match_archive"] * 3
+    assert captured["eq"].count(("competition_code", "PL")) == 3
+    assert captured["lt"] == [("match_date", "2026-11-07")] * 3
+    assert captured["limits"] == [1000, 15, 15]
