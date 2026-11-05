@@ -515,6 +515,7 @@ function FootballMarketPatternsPanel({ competition, match }: { competition: stri
                     const stats = team?.venue_windows?.[venue]?.[size];
                     return <div key={size} style={{ fontSize: 10, marginTop: 5, borderTop: "1px solid #263244", paddingTop: 4 }}>
                       <strong>Últimos {size}:</strong> {stats?.matches ?? 0}/{size}
+                      <div style={{ color: "#94a3b8" }}>{stats?.sample_start || "sin fecha"} → {stats?.sample_end || "sin fecha"}</div>
                       <div>G/E/P {stats?.wins ?? 0}/{stats?.draws ?? 0}/{stats?.losses ?? 0}</div>
                       <div>GF/GC {stats?.average_goals_for ?? "—"}/{stats?.average_goals_against ?? "—"}</div>
                       <div>O2.5 {stats?.over_2_5 ?? 0} · BTTS {stats?.both_teams_scored ?? 0}</div>
