@@ -107,9 +107,6 @@ function HighlightlyAnalysisPanel({ match }: { match: Match }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const home = match.homeTeam?.name || "Local";
-  const away = match.awayTeam?.name || "Visitante";
-
   async function loadAnalysis() {
     if (loading) return;
     setLoading(true); setError("");
@@ -154,10 +151,12 @@ function HighlightlyAnalysisPanel({ match }: { match: Match }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
           {[["Local", recent.home], ["Visitante", recent.away]].map(([label, rows]: any) => <div key={label} style={{ background: "#172033", borderRadius: 7, padding: 8 }}><strong style={{ fontSize: 12 }}>{label}</strong>{(rows || []).slice(0,5).map((row: any) => <div key={row.id} style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{row.homeTeam?.name} {row.state?.score?.current || "—"} {row.awayTeam?.name}</div>)}</div>)}
         </div>
+        <div style={{ marginTop: 10, fontWeight: 700, fontSize: 13 }}>Enfrentamientos directos · Highlightly</div>
+        <p style={{ color: "#cbd5e1", fontSize: 11, margin: "5px 0" }}>{Array.isArray(data.head_to_head) ? data.head_to_head.length : 0} partidos históricos disponibles. Se muestran como contexto y todavía no modifican las probabilidades experimentales.</p>
         <div style={{ marginTop: 10, fontWeight: 700, fontSize: 13 }}>Rendimiento de temporada por condición</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
           {[["Local (en casa)", teamStats.home], ["Visitante (fuera)", teamStats.away]].map(([label, rows]: any) => {
-            const row = Array.isArray(rows) ? rows[0] : null;
+            const row = Array.isArray(rows) ? rows.find((item: any) => item.leagueId === data.fixture_match?.league?.id) || rows[0] : null;
             const venue = label.startsWith("Local") ? row?.home : row?.away;
             return <div key={label} style={{ background: "#172033", borderRadius: 7, padding: 8 }}><strong style={{ fontSize: 12 }}>{label}</strong><div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{row?.leagueName || "Competición"} · {row?.season || "—"}</div><div style={{ fontSize: 11, marginTop: 4 }}>PJ {venue?.games?.played ?? "—"} · G {venue?.games?.wins ?? "—"} · E {venue?.games?.draws ?? "—"} · P {venue?.games?.loses ?? "—"}</div><div style={{ fontSize: 11 }}>GF {venue?.goals?.scored ?? "—"} · GC {venue?.goals?.received ?? "—"}</div></div>;
           })}
