@@ -307,10 +307,10 @@ def _resolve_league_id(league_name: str, country_name: str | None = None) -> int
 
     query_aliases = {
         # football-data.org calls Spain's top division "Primera Division".
-        "primera division": ("la liga",),
+        "primera division": ("La Liga",),
         # Highlightly commonly indexes Brazil's top division as "Serie A".
-        "campeonato brasileiro serie a": ("serie a", "brasileirao serie a"),
-        "brasileirao serie a": ("serie a", "campeonato brasileiro serie a"),
+        "campeonato brasileiro serie a": ("Serie A", "Brasileirao Serie A"),
+        "brasileirao serie a": ("Serie A", "Campeonato Brasileiro Serie A"),
     }
     accepted_names = {
         "primera division": {"la liga"},
