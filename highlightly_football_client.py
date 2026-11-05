@@ -171,6 +171,11 @@ def _resolve_league_id(league_name: str, country_name: str | None = None) -> int
                 "brasileiro serie a",
                 "serie a",
             },
+            # The primary provider labels Spain's top men's division as
+            # "Primera Division"; Highlightly catalogs it as "La Liga".
+            # Country-code filtering below prevents collisions with other
+            # countries and excludes Spain's women's/second divisions.
+            "primera division": {"la liga"},
         }
         aliases = aliases_by_source_name.get(expected_name, {expected_name})
         catalog_rows = []
