@@ -67,7 +67,7 @@ def test_h2h_uses_only_completed_valid_direct_meetings_and_deduplicates(monkeypa
     assert result["summary"]["under_2_5_count"] == 1
 
 
-def test_h2h_falls_back_to_competition_history_when_provider_returns_empty(monkeypatch):
+def test_h2h_falls_back_to_cross_competition_team_history_when_provider_returns_empty(monkeypatch):
     home_history = {
         "matches": [finished(10, HOME_ID, AWAY_ID, 1, 0)],
     }
@@ -75,7 +75,10 @@ def test_h2h_falls_back_to_competition_history_when_provider_returns_empty(monke
         "matches": [finished(10, HOME_ID, AWAY_ID, 1, 0)],
     }
 
+    calls = []
+
     def provider_call(function, *args, **kwargs):
+        calls.append((function.__name__, args, kwargs))
         if function is football_api.get_match_head_to_head:
             return {"matches": []}
         if function is football_api.get_team_matches and args[0] == HOME_ID:
@@ -95,7 +98,11 @@ def test_h2h_falls_back_to_competition_history_when_provider_returns_empty(monke
     )
 
     assert result["sample_size"] == 1
-    assert "no equivale al historial completo" in result["history_scope"]
+    assert "Historial intercompetición" in result["history_scope"]
+    assert "no garantiza el historial completo" in result["history_scope"]
+    team_history_calls = [call for call in calls if call[0] == "get_team_matches"]
+    assert len(team_history_calls) == 2
+    assert all(call[1][1] is None for call in team_history_calls)
 
 
 def test_h2h_falls_back_when_fixture_id_is_not_provided(monkeypatch):
@@ -117,7 +124,9 @@ def test_h2h_falls_back_when_fixture_id_is_not_provided(monkeypatch):
     )
 
     assert result["sample_size"] == 1
-    assert "competición seleccionada" in result["history_scope"]
+    assert "Historial intercompetición" in result["history_scope"]
+    assert "sin limitarlo a PD" in result["history_scope"]
+    assert "no garantiza el historial completo" in result["history_scope"]
 
 
 def test_h2h_rejects_same_team_ids():
