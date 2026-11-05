@@ -861,8 +861,8 @@ def highlightly_native_match_analysis(match_id: int):
                   "highlightly_match_id": match_id, "fixture_match": fixture, "statistics": [],
                   "experimental_prediction": None, "data_status": "MATCHED"}
         state = str((fixture.get("state") or {}).get("description") or "").lower()
-        is_pregame = kickoff > datetime.now(UTC) and state not in {
-            "finished", "ft", "ended", "live", "in play", "in progress", "halftime"}
+        is_pregame = kickoff > datetime.now(UTC) and state in {
+            "not started", "to be announced"}
         if is_pregame:
             from_date = f"{max(1990, kickoff.year - 1)}-01-01"
             home_recent = get_highlightly_last_five(int(home["id"]))
