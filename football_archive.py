@@ -262,10 +262,23 @@ def archive_competitions():
             count_result = client.table("football_match_archive").select(
                 "source_key", count="exact"
             ).eq("competition_code", code).limit(1).execute()
-            season_rows = client.table("football_match_archive").select(
-                "season"
-            ).eq("competition_code", code).order("season").execute().data or []
-            seasons = sorted({str(row["season"]) for row in season_rows if row.get("season")})
+            # PostgREST commonly caps a response at 1,000 rows. Paginate the
+            # lightweight season column so old seasons are not silently omitted.
+            season_values = set()
+            offset = 0
+            while True:
+                season_rows = client.table("football_match_archive").select(
+                    "season"
+                ).eq("competition_code", code).order("season").range(
+                    offset, offset + 999
+                ).execute().data or []
+                season_values.update(
+                    str(row["season"]) for row in season_rows if row.get("season")
+                )
+                if len(season_rows) < 1000:
+                    break
+                offset += 1000
+            seasons = sorted(season_values)
             result.append({
                 "code": code,
                 "name": config["name"],
