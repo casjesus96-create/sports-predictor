@@ -555,7 +555,9 @@ def archive_head_to_head(
     away_team: str = Query(..., min_length=2, max_length=100),
     kickoff_at: str | None = None,
     limit: int = Query(20, ge=1, le=100),
-    scope: str = Query("all"),
+    # Plain default keeps direct Python calls compatible with unit tests;
+    # FastAPI still exposes this parameter as an optional query string.
+    scope: str = "all",
 ):
     code = competition.strip().upper()
     scope = scope.strip().lower()
