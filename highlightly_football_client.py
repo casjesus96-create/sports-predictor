@@ -470,32 +470,69 @@ def find_fixture(
     return matches[0]
 
 
+# Curated catalog aligned with football-data.org's configured men's competitions.
+# Highlightly IDs and names are always taken from Highlightly's own response.
+# Europa League is optional: it appears only when the current plan returns it.
+CURATED_LEAGUE_QUERIES = (
+    ("Premier League", "England", {"premier league"}, False),
+    ("La Liga", "Spain", {"la liga"}, False),
+    ("Bundesliga", "Germany", {"bundesliga"}, False),
+    ("Serie A", "Italy", {"serie a"}, False),
+    ("Ligue 1", "France", {"ligue 1"}, False),
+    ("Eredivisie", "Netherlands", {"eredivisie"}, False),
+    ("Primeira Liga", "Portugal", {"primeira liga"}, False),
+    ("Serie A", "Brazil", {"serie a", "campeonato brasileiro serie a", "brasileirao serie a"}, False),
+    ("UEFA Champions League", None, {"uefa champions league"}, False),
+    ("UEFA Europa League", None, {"uefa europa league"}, True),
+)
+
+
 def get_leagues(page_size: int = 100, max_pages: int = 20) -> list[dict[str, Any]]:
-    """Return Highlightly's own paginated league catalog, preserving provider IDs/names."""
-    safe_page_size = max(1, min(int(page_size), 100))
-    safe_max_pages = max(1, min(int(max_pages), 20))
-    leagues: list[dict[str, Any]] = []
+    """Return only curated competitions using native Highlightly IDs.
+
+    Each league-name query is cached for 24 hours by _get. This avoids paging
+    through the provider's global catalogue, which can consume many quota units.
+    page_size/max_pages remain accepted for backwards compatibility but are not
+    used: this endpoint intentionally does not enumerate the full catalogue.
+    """
+    del page_size, max_pages
+    selected: list[dict[str, Any]] = []
     seen_ids: set[int] = set()
-    for page_number in range(safe_max_pages):
-        offset = page_number * safe_page_size
-        payload = _get("/leagues", {"limit": safe_page_size, "offset": offset})
+
+    for league_name, country_name, aliases, optional in CURATED_LEAGUE_QUERIES:
+        params: dict[str, Any] = {"leagueName": league_name, "limit": 100, "offset": 0}
+        if country_name:
+            params["countryName"] = country_name
+        try:
+            payload = _get("/leagues", params)
+        except HighlightlyError:
+            # Europa League is optional for plans that do not expose it.
+            if optional:
+                logger.info("Highlightly no devolvió acceso al catálogo opcional: %s", league_name)
+                continue
+            raise
+
         rows = payload.get("data", []) if isinstance(payload, dict) else payload
         if not isinstance(rows, list):
             raise HighlightlyError("Highlightly devolvió un catálogo de competiciones con formato inesperado.")
+
+        expected_country = normalize_name(country_name) if country_name else ""
         for row in rows:
             if not isinstance(row, dict):
                 continue
             league_id = row.get("id")
-            if isinstance(league_id, int) and not isinstance(league_id, bool) and league_id > 0 and league_id not in seen_ids:
-                leagues.append(row)
+            if not isinstance(league_id, int) or isinstance(league_id, bool) or league_id <= 0:
+                continue
+            if normalize_name(row.get("name", "")) not in aliases:
+                continue
+            country = row.get("country") or {}
+            if expected_country and normalize_name(country.get("name", "")) != expected_country:
+                continue
+            if league_id not in seen_ids:
+                selected.append(row)
                 seen_ids.add(league_id)
-        pagination = payload.get("pagination", {}) if isinstance(payload, dict) else {}
-        total_count = pagination.get("totalCount")
-        if not rows or len(rows) < safe_page_size:
-            break
-        if isinstance(total_count, int) and offset + len(rows) >= total_count:
-            break
-    return leagues
+
+    return selected
 
 
 def get_league_matches(league_id: int, match_date: str, page_size: int = 100) -> list[dict[str, Any]]:

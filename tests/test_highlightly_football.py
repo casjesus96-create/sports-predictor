@@ -245,29 +245,52 @@ def test_fixture_resolution_matches_espanyol_and_deportivo_provider_short_names(
 
 
 
-def test_highlightly_league_catalog_pages_and_preserves_native_names(monkeypatch):
+def test_highlightly_league_catalog_queries_only_curated_competitions(monkeypatch):
     import highlightly_football_client as client
 
     calls = []
+    responses = {
+        ("Premier League", "England"): [{"id": 10, "name": "Premier League", "country": {"name": "England"}}],
+        ("La Liga", "Spain"): [{"id": 20, "name": "La Liga", "country": {"name": "Spain"}}],
+        ("Bundesliga", "Germany"): [{"id": 30, "name": "Bundesliga", "country": {"name": "Germany"}}],
+        ("Serie A", "Italy"): [{"id": 40, "name": "Serie A", "country": {"name": "Italy"}}],
+        ("Ligue 1", "France"): [{"id": 50, "name": "Ligue 1", "country": {"name": "France"}}],
+        ("Eredivisie", "Netherlands"): [{"id": 60, "name": "Eredivisie", "country": {"name": "Netherlands"}}],
+        ("Primeira Liga", "Portugal"): [{"id": 70, "name": "Primeira Liga", "country": {"name": "Portugal"}}],
+        ("Serie A", "Brazil"): [{"id": 80, "name": "Serie A", "country": {"name": "Brazil"}}],
+        ("UEFA Champions League", None): [{"id": 90, "name": "UEFA Champions League", "country": {"name": "World"}}],
+        ("UEFA Europa League", None): [],
+    }
+
     def fake_get(path, params=None):
         calls.append((path, params))
-        offset = (params or {}).get("offset", 0)
-        if offset == 0:
-            return {"data": [
-                {"id": 10, "name": "Premier League", "country": {"name": "England"}},
-                {"id": 11, "name": "Liga MX", "country": {"name": "Mexico"}},
-            ], "pagination": {"totalCount": 3}}
-        return {"data": [
-            {"id": 12, "name": "Primera División", "country": {"name": "Uruguay"}},
-            {"id": 11, "name": "Liga MX", "country": {"name": "Mexico"}},
-        ], "pagination": {"totalCount": 3}}
+        key = ((params or {}).get("leagueName"), (params or {}).get("countryName"))
+        return {"data": responses[key], "pagination": {"totalCount": len(responses[key])}}
 
     monkeypatch.setattr(client, "_get", fake_get)
-    rows = client.get_leagues(page_size=2, max_pages=4)
-    assert [row["id"] for row in rows] == [10, 11, 12]
-    assert rows[1]["name"] == "Liga MX"
-    assert len(calls) == 2
-    assert calls[1][1]["offset"] == 2
+    rows = client.get_leagues()
+
+    assert [row["id"] for row in rows] == [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    assert rows[1]["name"] == "La Liga"
+    assert len(calls) == 10
+    assert all(path == "/leagues" and params["limit"] == 100 and params["offset"] == 0 for path, params in calls)
+
+
+def test_highlightly_league_catalog_includes_europa_league_when_available(monkeypatch):
+    import highlightly_football_client as client
+
+    def fake_get(path, params=None):
+        name = (params or {}).get("leagueName")
+        country = (params or {}).get("countryName")
+        if name == "UEFA Europa League":
+            return {"data": [{"id": 3337, "name": "UEFA Europa League", "country": {"name": "World"}}]}
+        if name == "Premier League":
+            return {"data": [{"id": 33973, "name": "Premier League", "country": {"name": "England"}}]}
+        return {"data": []}
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    rows = client.get_leagues()
+    assert [row["id"] for row in rows] == [33973, 3337]
 
 
 def test_highlightly_league_matches_use_native_league_id_and_exact_date(monkeypatch):
