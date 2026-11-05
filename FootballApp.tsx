@@ -274,6 +274,7 @@ function HighlightlyLeagueExplorer() {
 
 function HeadToHeadPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
+  const [historyScope, setHistoryScope] = useState<"all" | "competition">("all");
   const [experiment, setExperiment] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [experimentLoading, setExperimentLoading] = useState(false);
@@ -299,7 +300,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
     setLoading(true); setError("");
     try {
-      const params = new URLSearchParams({ competition, home_team: homeName, away_team: awayName, kickoff_at: kickoffAt, limit: "20" });
+      const params = new URLSearchParams({ competition, home_team: homeName, away_team: awayName, kickoff_at: kickoffAt, limit: "20", scope: historyScope });
       const response = await fetch(`${API}/archive/head-to-head?${params.toString()}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo cargar el historial.");
@@ -418,6 +419,14 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
   return <section style={{ marginTop: 12, padding: 12, border: "1px solid #475569", borderRadius: 8, background: "#0b1220" }}>
     <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
       <strong>Enfrentamientos históricos (H2H) · Archivo propio</strong>
+      <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#cbd5e1", fontSize: 12 }}>
+        Alcance
+        <select aria-label="Alcance del historial H2H" value={historyScope} onChange={event => { setHistoryScope(event.target.value as "all" | "competition"); setData(null); setError(""); }}
+          style={{ minHeight: 36, padding: 6, borderRadius: 7, border: "1px solid #475569", background: "#111827", color: "#f9fafb" }}>
+          <option value="all">Todas las competiciones del archivo</option>
+          <option value="competition">Solo esta competición</option>
+        </select>
+      </label>
       <button type="button" onClick={loadHistory} disabled={loading || !homeId || !awayId} style={buttonStyle}>{loading ? "Consultando…" : data ? "Actualizar historial" : "Consultar historial"}</button>
     </div>
     {error && <p role="alert" style={{ color: "#fecaca" }}>{error}</p>}
@@ -448,13 +457,26 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
               ["Menos de 1.5 goles", data.summary.under_1_5_count, data.summary.under_1_5_percentage],
               ["Menos de 2.5 goles", data.summary.under_2_5_count, data.summary.under_2_5_percentage],
               ["Menos de 3.5 goles", data.summary.under_3_5_count, data.summary.under_3_5_percentage],
-              ["Porterías a cero · local/visitante", `${data.summary.home_team_clean_sheets}/${data.summary.away_team_clean_sheets}`, null],
             ].map(([label, count, rate]) => <div key={String(label)} style={{ background: "#0b1220", padding: 8, borderRadius: 7 }}>
               <div style={{ color: "#9ca3af", fontSize: 11 }}>{label}</div>
               <strong>{count ?? "—"}{rate != null ? ` · ${rate}%` : ""}</strong>
               <div style={{ color: "#64748b", fontSize: 10 }}>de {data.sample_size} partidos</div>
             </div>)}
           </div>
+          <section style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "#0b1220" }}>
+            <strong>Porterías a cero y partidos sin marcar</strong>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 8 }}>
+              {[
+                [homeName + " · portería a cero", data.summary.home_team_clean_sheets, data.summary.home_team_clean_sheets_percentage],
+                [awayName + " · portería a cero", data.summary.away_team_clean_sheets, data.summary.away_team_clean_sheets_percentage],
+                [homeName + " · no marcó", data.summary.home_team_failed_to_score_count, data.summary.home_team_failed_to_score_percentage],
+                [awayName + " · no marcó", data.summary.away_team_failed_to_score_count, data.summary.away_team_failed_to_score_percentage],
+              ].map(([label, count, rate]: any) => <div key={String(label)} style={{ background: "#111827", padding: 8, borderRadius: 7 }}>
+                <div style={{ color: "#9ca3af", fontSize: 11 }}>{label}</div>
+                <strong>{count ?? 0}/{data.sample_size} · {rate ?? 0}%</strong>
+              </div>)}
+            </div>
+          </section>
         </section>
         <section style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "#111827" }}>
           <strong>Separación por localía en los enfrentamientos directos</strong>
