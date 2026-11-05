@@ -308,17 +308,27 @@ def _resolve_league_id(league_name: str, country_name: str | None = None) -> int
     query_aliases = {
         # football-data.org calls Spain's top division "Primera Division".
         "primera division": ("La Liga",),
-        # Highlightly commonly indexes Brazil's top division as "Serie A".
-        "campeonato brasileiro serie a": ("Serie A", "Brasileirao Serie A"),
-        "brasileirao serie a": ("Serie A", "Campeonato Brasileiro Serie A"),
+        # Brazil's top division is the Brasileirao, never the Italian Serie A.
+        "campeonato brasileiro serie a": (
+            "Campeonato Brasileiro Série A", "Brasileirão Série A", "Brasileirão",
+        ),
+        "brasileirao serie a": (
+            "Brasileirão Série A", "Campeonato Brasileiro Série A", "Brasileirão",
+        ),
+        "brasileirao": (
+            "Brasileirão", "Brasileirão Série A", "Campeonato Brasileiro Série A",
+        ),
     }
     accepted_names = {
         "primera division": {"la liga"},
         "campeonato brasileiro serie a": {
-            "serie a", "campeonato brasileiro serie a", "brasileirao serie a",
+            "campeonato brasileiro serie a", "brasileirao serie a", "brasileirao",
         },
         "brasileirao serie a": {
-            "serie a", "campeonato brasileiro serie a", "brasileirao serie a",
+            "campeonato brasileiro serie a", "brasileirao serie a", "brasileirao",
+        },
+        "brasileirao": {
+            "campeonato brasileiro serie a", "brasileirao serie a", "brasileirao",
         },
     }.get(source_name, {source_name})
     queries = query_aliases.get(source_name, (str(league_name).strip(),))
@@ -453,7 +463,7 @@ CURATED_LEAGUE_QUERIES = (
     ("Ligue 1", "France", {"ligue 1"}, False),
     ("Eredivisie", "Netherlands", {"eredivisie"}, False),
     ("Primeira Liga", "Portugal", {"primeira liga"}, False),
-    ("Serie A", "Brazil", {"serie a", "campeonato brasileiro serie a", "brasileirao serie a"}, False),
+    ("Brasileirão Série A", "Brazil", {"campeonato brasileiro serie a", "brasileirao serie a", "brasileirao"}, False),
     ("UEFA Champions League", None, {"uefa champions league"}, False),
     ("UEFA Europa League", None, {"uefa europa league"}, True),
 )

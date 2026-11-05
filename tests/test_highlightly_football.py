@@ -249,12 +249,12 @@ def test_fixture_resolution_uses_no_country_catalog_scan_for_brazilian_alias(mon
         calls.append((path, params))
         if path == "/leagues":
             return {"data": [
-                {"id": 71, "name": "Serie A", "country": {"name": "Brazil"}}
+                {"id": 71, "name": "Campeonato Brasileiro Série A", "country": {"name": "Brazil"}}
             ]}
         return {"data": [
             {"id": 88004, "date": "2026-11-07T20:00:00Z",
              "homeTeam": {"name": "Flamengo"}, "awayTeam": {"name": "Palmeiras"},
-             "league": {"id": 71, "name": "Serie A"}}
+             "league": {"id": 71, "name": "Campeonato Brasileiro Série A"}}
         ]}
 
     monkeypatch.setattr(client, "_get", fake_get)
@@ -265,10 +265,34 @@ def test_fixture_resolution_uses_no_country_catalog_scan_for_brazilian_alias(mon
 
     assert result["id"] == 88004
     assert calls == [
-        ("/leagues", {"leagueName": "Serie A", "limit": 100, "offset": 0, "countryName": "Brazil"}),
+        ("/leagues", {"leagueName": "Campeonato Brasileiro Série A", "limit": 100, "offset": 0, "countryName": "Brazil"}),
         ("/matches", {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 71}),
     ]
 
+
+
+def test_brazilian_resolver_never_accepts_italian_serie_a_label(monkeypatch):
+    import pytest
+    import highlightly_football_client as client
+    from highlightly_football_client import HighlightlyError, find_fixture
+
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        return {"data": [
+            {"id": 71, "name": "Serie A", "country": {"name": "Brazil"}}
+        ]}
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    with pytest.raises(HighlightlyError) as exc:
+        find_fixture(
+            "2026-11-07", "Flamengo", "Palmeiras",
+            "Campeonato Brasileiro Série A", "Brazil",
+        )
+    assert exc.value.status_code == 404
+    assert all(params.get("countryName") == "Brazil" for _, params in calls)
+    assert all(params.get("leagueName") != "Serie A" for _, params in calls)
 
 def test_fixture_resolution_matches_espanyol_and_deportivo_provider_short_names(monkeypatch):
     import highlightly_football_client as client
@@ -301,7 +325,7 @@ def test_highlightly_league_catalog_queries_only_curated_competitions(monkeypatc
         ("Ligue 1", "France"): [{"id": 50, "name": "Ligue 1", "country": {"name": "France"}}],
         ("Eredivisie", "Netherlands"): [{"id": 60, "name": "Eredivisie", "country": {"name": "Netherlands"}}],
         ("Primeira Liga", "Portugal"): [{"id": 70, "name": "Primeira Liga", "country": {"name": "Portugal"}}],
-        ("Serie A", "Brazil"): [{"id": 80, "name": "Serie A", "country": {"name": "Brazil"}}],
+        ("Brasileirão Série A", "Brazil"): [{"id": 80, "name": "Campeonato Brasileiro Série A", "country": {"name": "Brazil"}}],
         ("UEFA Champions League", None): [{"id": 90, "name": "UEFA Champions League", "country": {"name": "World"}}],
         ("UEFA Europa League", None): [],
     }
