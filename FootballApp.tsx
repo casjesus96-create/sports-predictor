@@ -366,6 +366,112 @@ function TeamRecentFormPanel({ competition, match }: { competition: string; matc
 }
 
 
+
+
+function FootballMarketPatternsPanel({ competition, match }: { competition: string; match: Match }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const homeName = match.homeTeam?.name || "";
+  const awayName = match.awayTeam?.name || "";
+  const kickoffAt = match.utcDate || "";
+
+  async function loadPatterns() {
+    if (!homeName || !awayName || !kickoffAt) {
+      setError("Faltan los nombres de los equipos o la fecha del encuentro.");
+      return;
+    }
+    setLoading(true); setError("");
+    try {
+      const params = new URLSearchParams({ competition, home_team: homeName, away_team: awayName, kickoff_at: kickoffAt });
+      const response = await fetch(`${API}/archive/market-patterns?${params.toString()}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudieron consultar los patrones históricos.");
+      setData(body);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error consultando patrones históricos.");
+    } finally { setLoading(false); }
+  }
+
+  const rate = (value: any) => value?.percentage == null ? "—" : `${value.percentage}%`;
+  const renderMarkets = (sample: any) => [
+    ["Over 1.5", sample?.markets?.["1_5"]?.over],
+    ["Under 1.5", sample?.markets?.["1_5"]?.under],
+    ["Over 2.5", sample?.markets?.["2_5"]?.over],
+    ["Under 2.5", sample?.markets?.["2_5"]?.under],
+    ["Over 3.5", sample?.markets?.["3_5"]?.over],
+    ["Under 3.5", sample?.markets?.["3_5"]?.under],
+    ["Ambos marcan", sample?.both_teams_scored],
+  ];
+
+  const renderTeam = (side: "home" | "away", name: string) => {
+    const team = data?.teams?.[side];
+    if (!team) return null;
+    return <section style={{ background: "#111827", borderRadius: 8, padding: 10, minWidth: 0 }}>
+      <strong>{name}</strong>
+      <div style={{ color: "#94a3b8", fontSize: 10, margin: "3px 0 8px" }}>
+        {team.sample_size} partidos · {team.sample_start || "sin fecha"} a {team.sample_end || "sin fecha"}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+        {(["5", "10", "15"] as const).map(size => {
+          const stats = team.windows?.[size];
+          return <div key={size} style={{ background: "#0b1220", padding: 7, borderRadius: 7, minWidth: 0 }}>
+            <strong style={{ fontSize: 11 }}>Últimos {size}</strong>
+            <div style={{ fontSize: 10, color: "#94a3b8" }}>{stats?.matches ?? 0}/{size} partidos</div>
+            {[
+              ["Over 1.5", stats?.over_1_5, stats?.over_1_5_percentage],
+              ["Over 2.5", stats?.over_2_5, stats?.over_2_5_percentage],
+              ["Over 3.5", stats?.over_3_5, stats?.over_3_5_percentage],
+              ["BTTS", stats?.both_teams_scored, stats?.both_teams_scored_percentage],
+            ].map(([label, count, pct]: any) => <div key={label} style={{ fontSize: 10, marginTop: 5 }}>{label}: <strong>{count ?? 0}</strong> · {pct == null ? "—" : `${pct}%`}</div>)}
+            <div style={{ fontSize: 10, marginTop: 5 }}>GF: <strong>{stats?.average_goals_for ?? "—"}</strong> · GC: <strong>{stats?.average_goals_against ?? "—"}</strong></div>
+            <div style={{ fontSize: 10, marginTop: 4, color: "#cbd5e1" }}>Local {stats?.venue_split?.at_home?.matches ?? 0} · Fuera {stats?.venue_split?.away?.matches ?? 0}</div>
+            {!stats?.sample_complete && <div style={{ color: "#fbbf24", fontSize: 9, marginTop: 4 }}>Muestra incompleta</div>}
+          </div>;
+        })}
+      </div>
+    </section>;
+  };
+
+  return <section style={{ marginTop: 12, padding: 12, border: "1px solid #0e7490", borderRadius: 8, background: "#0c1b2a" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+      <div>
+        <strong>Laboratorio de patrones de mercado · Histórico propio</strong>
+        <div style={{ color: "#94a3b8", fontSize: 11 }}>Frecuencias observadas · no son probabilidades futuras · no modifica el modelo oficial</div>
+      </div>
+      <button type="button" onClick={loadPatterns} disabled={loading || !homeName || !awayName} style={buttonStyle}>{loading ? "Calculando patrones…" : data ? "Actualizar laboratorio" : "Consultar laboratorio"}</button>
+    </div>
+    {error && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{error}</p>}
+    {data && <>
+      <section style={{ marginTop: 9, background: "#111827", padding: 10, borderRadius: 8 }}>
+        <strong>Referencia de la competición · {data.competition_name}</strong>
+        <div style={{ color: "#94a3b8", fontSize: 10, margin: "4px 0 8px" }}>
+          {data.competition_sample?.sample_size ?? 0} partidos · {data.competition_sample?.sample_start || "sin fecha"} a {data.competition_sample?.sample_end || "sin fecha"} · máximo 1.000
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+          {renderMarkets(data.competition_sample).map(([label, value]: any) => <div key={label} style={{ background: "#0b1220", padding: 8, borderRadius: 7 }}>
+            <div style={{ color: "#94a3b8", fontSize: 10 }}>{label}</div>
+            <strong>{value?.count ?? 0}/{data.competition_sample?.sample_size ?? 0} · {rate(value)}</strong>
+          </div>)}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 7, marginTop: 8 }}>
+          <div style={{ background: "#0b1220", padding: 8, borderRadius: 7, fontSize: 10 }}>Media goles <strong>{data.competition_sample?.average_total_goals ?? "—"}</strong></div>
+          <div style={{ background: "#0b1220", padding: 8, borderRadius: 7, fontSize: 10 }}>Media local <strong>{data.competition_sample?.average_home_goals ?? "—"}</strong></div>
+          <div style={{ background: "#0b1220", padding: 8, borderRadius: 7, fontSize: 10 }}>Media visitante <strong>{data.competition_sample?.average_away_goals ?? "—"}</strong></div>
+        </div>
+        <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 8 }}>
+          Distribución de goles: 0–1 {data.competition_sample?.total_goals_distribution?.["0_1"]?.count ?? 0} · 2 {data.competition_sample?.total_goals_distribution?.["2"]?.count ?? 0} · 3 {data.competition_sample?.total_goals_distribution?.["3"]?.count ?? 0} · 4+ {data.competition_sample?.total_goals_distribution?.["4_plus"]?.count ?? 0}
+        </div>
+      </section>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 8, marginTop: 8 }}>
+        {renderTeam("home", homeName)}
+        {renderTeam("away", awayName)}
+      </div>
+      <p style={{ color: "#94a3b8", fontSize: 10, marginBottom: 0 }}>{data.history_scope} {data.interpretation} Los partidos de la fecha del encuentro se excluyen porque el archivo no conserva hora de inicio. Consultas locales: 0 llamadas a proveedores.</p>
+    </>}
+  </section>;
+}
+
 function HeadToHeadPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
   const [historyScope, setHistoryScope] = useState<"all" | "competition">("all");
@@ -1048,6 +1154,7 @@ export default function FootballApp() {
             </div>
                 <HeadToHeadPanel competition={competition} match={match} />
                 {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <TeamRecentFormPanel competition={competition} match={match} />}
+                {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <FootballMarketPatternsPanel competition={competition} match={match} />}
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
               <strong>Probabilidades 1X2</strong>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>
