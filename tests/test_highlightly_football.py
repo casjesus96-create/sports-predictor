@@ -134,8 +134,7 @@ def test_fixture_resolution_scopes_match_query_to_resolved_league_id(monkeypatch
 
     assert result["id"] == 99
     assert calls == [
-        ("/countries", {"name": "England"}),
-        ("/leagues", {"leagueName": "Premier League", "limit": 100, "offset": 0, "countryCode": "GB-ENG"}),
+        ("/leagues", {"leagueName": "Premier League", "limit": 100, "offset": 0, "countryName": "England"}),
         ("/matches", {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 39}),
     ]
 
@@ -219,11 +218,56 @@ def test_fixture_resolution_maps_spain_primera_division_to_la_liga(monkeypatch):
     )
 
     assert result["id"] == 88001
-    assert calls[-1] == (
-        "/matches",
-        {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 140},
+    assert calls == [
+        ("/leagues", {"leagueName": "La Liga", "limit": 100, "offset": 0, "countryName": "Spain"}),
+        ("/matches", {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 140}),
+    ]
+
+
+
+
+def test_fixture_resolution_matches_arsenal_hull_city_short_name(monkeypatch):
+    import highlightly_football_client as client
+    from highlightly_football_client import find_fixture
+
+    monkeypatch.setattr(client, "_get", lambda path, params=None: {"data": [
+        {"id": 88003, "date": "2026-11-07T11:00:00Z",
+         "homeTeam": {"name": "Arsenal"}, "awayTeam": {"name": "Hull"}}
+    ]})
+
+    result = find_fixture("2026-11-07", "Arsenal FC", "Hull City AFC")
+    assert result["id"] == 88003
+
+
+def test_fixture_resolution_uses_no_country_catalog_scan_for_brazilian_alias(monkeypatch):
+    import highlightly_football_client as client
+    from highlightly_football_client import find_fixture
+
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        if path == "/leagues":
+            return {"data": [
+                {"id": 71, "name": "Serie A", "country": {"name": "Brazil"}}
+            ]}
+        return {"data": [
+            {"id": 88004, "date": "2026-11-07T20:00:00Z",
+             "homeTeam": {"name": "Flamengo"}, "awayTeam": {"name": "Palmeiras"},
+             "league": {"id": 71, "name": "Serie A"}}
+        ]}
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    result = find_fixture(
+        "2026-11-07", "Flamengo", "Palmeiras",
+        "Campeonato Brasileiro Série A", "Brazil",
     )
 
+    assert result["id"] == 88004
+    assert calls == [
+        ("/leagues", {"leagueName": "serie a", "limit": 100, "offset": 0, "countryName": "Brazil"}),
+        ("/matches", {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 71}),
+    ]
 
 
 def test_fixture_resolution_matches_espanyol_and_deportivo_provider_short_names(monkeypatch):
