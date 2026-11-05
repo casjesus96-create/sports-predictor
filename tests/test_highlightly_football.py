@@ -455,3 +455,72 @@ def test_highlightly_429_distinguishes_exhausted_quota_and_reads_reset(monkeypat
     assert status["quota_limit"] == 100
     assert status["quota_reset_seconds"] == 1800
     assert status["cooldown_active"] is True
+
+
+
+def test_persisted_quota_cooldown_is_restored_after_process_restart(monkeypatch):
+    from types import SimpleNamespace
+    import highlightly_football_client as client
+
+    class Query:
+        def select(self, *_args): return self
+        def eq(self, *_args): return self
+        def limit(self, *_args): return self
+        def execute(self):
+            return SimpleNamespace(data=[{
+                "state": {
+                    "provider": "Highlightly",
+                    "state": "quota_exhausted",
+                    "message": "Highlightly indica que se agotó la cuota disponible.",
+                    "blocked_until_epoch": int(client.time.time()) + 240,
+                }
+            }])
+
+    class Store:
+        def table(self, _name): return Query()
+
+    monkeypatch.setattr(client, "_quota_store_client", lambda: Store())
+    monkeypatch.setattr(client, "_quota_state_loaded", False)
+    monkeypatch.setattr(client, "_rate_limit_until", 0.0)
+    client._provider_status.clear()
+
+    status = client.get_provider_status()
+
+    assert status["state"] == "quota_exhausted"
+    assert status["cooldown_active"] is True
+    assert 1 <= status["retry_after_seconds"] <= 240
+
+
+def test_quota_state_persistence_writes_only_sanitized_diagnostics(monkeypatch):
+    import highlightly_football_client as client
+
+    captured = {}
+
+    class Query:
+        def upsert(self, payload, **_kwargs):
+            captured.update(payload)
+            return self
+        def execute(self):
+            return None
+
+    class Store:
+        def table(self, name):
+            assert name == "provider_quota_state"
+            return Query()
+
+    monkeypatch.setattr(client, "_quota_store_client", lambda: Store())
+    with client._cache_lock:
+        client._provider_status.clear()
+        client._provider_status.update({
+            "provider": "Highlightly",
+            "state": "quota_exhausted",
+            "message": "Quota exhausted",
+            "observed_at": 123,
+        })
+
+    client._persist_quota_state(456)
+
+    assert captured["provider"] == "Highlightly"
+    assert captured["state"]["blocked_until_epoch"] == 456
+    assert "api_key" not in str(captured).lower()
+    assert "response_body" not in captured["state"]
