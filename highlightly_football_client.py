@@ -113,7 +113,10 @@ def _load_persisted_quota_state() -> None:
                 _rate_limit_until = time.monotonic() + wait
                 _rate_limit_message = str(state.get("message") or "Highlightly ha limitado las solicitudes.")
     except Exception as exc:
-        # Provider access must remain available even if optional quota persistence is unavailable.
+        # Retry on a later status/provider request; this also lets an operator apply
+        # the migration after the service has already started.
+        with _cache_lock:
+            _quota_state_loaded = False
         logger.warning("No se pudo restaurar el estado de cuota Highlightly desde Supabase: %s", exc)
 
 
@@ -244,6 +247,7 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
             except ValueError as exc:
                 raise HighlightlyError("Highlightly devolvió una respuesta JSON no válida.") from exc
             with _cache_lock:
+                had_persisted_block = _provider_status.get("state") in {"quota_exhausted", "rate_limited"}
                 _cache[cache_key] = (time.monotonic() + _ttl(path), data)
                 _provider_status.update({
                     "provider": "Highlightly", "state": "available",
@@ -252,7 +256,8 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
                     "quota_reset_seconds": reset_seconds,
                     "observed_at": int(time.time()),
                 })
-            _persist_quota_state(0)
+            if had_persisted_block:
+                _persist_quota_state(0)
             return data
     finally:
         with _cache_lock:
