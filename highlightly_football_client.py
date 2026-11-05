@@ -84,7 +84,9 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
 def normalize_name(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in text).split())
+    tokens = "".join(ch.lower() if ch.isalnum() else " " for ch in text).split()
+    ignored = {"fc", "cf", "afc", "sc", "ac", "cd", "ud", "sd", "fk", "sk", "de", "the"}
+    return " ".join(token for token in tokens if token not in ignored)
 
 
 def find_fixture(date: str, home_name: str, away_name: str) -> dict:
