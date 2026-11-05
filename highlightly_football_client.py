@@ -90,33 +90,68 @@ def normalize_name(value: str) -> str:
 
 
 def find_fixture(date: str, home_name: str, away_name: str) -> dict:
-    """Resolve a football-data fixture only when date and both team names match exactly after normalization."""
+    """Resolve a fixture from the UTC date feed, then verify both teams locally.
+
+    Do not send provider-specific team-name filters: their exact matching rules
+    can differ from football-data.org naming (for example, suffixes such as FC).
+    A date-only request is bounded to one calendar day and keeps discovery to
+    one quota unit; identity is verified against the returned records below.
+    """
     payload = _get("/matches", {
         "date": date,
-        "homeTeamName": home_name,
-        "awayTeamName": away_name,
         "limit": 100,
         "offset": 0,
     })
     rows = payload.get("data", []) if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
         raise HighlightlyError("Highlightly devolvió un formato inesperado al buscar el partido.")
-    expected_home, expected_away = normalize_name(home_name), normalize_name(away_name)
+
+    expected_home = normalize_name(home_name)
+    expected_away = normalize_name(away_name)
+    if not expected_home or not expected_away:
+        raise HighlightlyError("No se pudieron normalizar los nombres de los equipos.", 422)
+
     matches = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        home = normalize_name((row.get("homeTeam") or {}).get("name", ""))
-        away = normalize_name((row.get("awayTeam") or {}).get("name", ""))
+        home_data = row.get("homeTeam") or {}
+        away_data = row.get("awayTeam") or {}
+        home = normalize_name(home_data.get("name", ""))
+        away = normalize_name(away_data.get("name", ""))
         kickoff = str(row.get("date") or "")
-        if home == expected_home and away == expected_away and kickoff[:10] == date and isinstance(row.get("id"), int):
+        if (
+            home == expected_home
+            and away == expected_away
+            and kickoff[:10] == date
+            and isinstance(row.get("id"), int)
+        ):
             matches.append(row)
+
     if len(matches) != 1:
         if not matches:
-            raise HighlightlyError("No se encontró una coincidencia exacta de equipos y fecha en Highlightly.", 404)
-        raise HighlightlyError("Highlightly devolvió más de una coincidencia exacta; se requiere revisión manual.", 409)
+            # Include a small, sanitized diagnostic to distinguish an empty
+            # date feed from a team-name mismatch without exposing credentials.
+            same_day = [
+                f"{(row.get('homeTeam') or {}).get('name', '?')} vs "
+                f"{(row.get('awayTeam') or {}).get('name', '?')}"
+                for row in rows if isinstance(row, dict)
+            ][:8]
+            if same_day:
+                raise HighlightlyError(
+                    "Highlightly devolvió partidos para la fecha, pero los nombres "
+                    f"no coincidieron exactamente. Partidos recibidos: {'; '.join(same_day)}",
+                    404,
+                )
+            raise HighlightlyError(
+                "Highlightly no devolvió partidos para la fecha solicitada.",
+                404,
+            )
+        raise HighlightlyError(
+            "Highlightly devolvió más de una coincidencia exacta; se requiere revisión manual.",
+            409,
+        )
     return matches[0]
-
 
 def get_match_statistics(match_id: int) -> Any:
     return _get(f"/statistics/{int(match_id)}")
