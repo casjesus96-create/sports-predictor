@@ -818,7 +818,9 @@ def football_highlightly_analysis(match_id: int):
     home = (match.get("homeTeam") or {}).get("name")
     away = (match.get("awayTeam") or {}).get("name")
     kickoff_at = match.get("utcDate")
-    competition_name = (match.get("competition") or {}).get("name")
+    competition = match.get("competition") or {}
+    competition_name = competition.get("name")
+    competition_country = (competition.get("area") or {}).get("name")
     if not home or not away or not kickoff_at or not competition_name:
         raise HTTPException(status_code=422, detail="El proveedor principal no devolvió equipos y fecha completos.")
     try:
@@ -829,7 +831,7 @@ def football_highlightly_analysis(match_id: int):
         raise HTTPException(status_code=422, detail="La fecha del encuentro no incluye zona horaria.")
     try:
         fixture = find_highlightly_fixture(
-            kickoff.astimezone(UTC).date().isoformat(), home, away, competition_name
+            kickoff.astimezone(UTC).date().isoformat(), home, away, competition_name, competition_country
         )
         state = str((fixture.get("state") or {}).get("description") or "")
         result = {

@@ -12,6 +12,7 @@ import requests
 BASE_URL = "https://soccer.highlightly.net"
 TIMEOUT_SECONDS = 10
 CACHE_TTLS = {
+    "/leagues": 86400,
     "/matches": 300,
     "/statistics/": 300,
     "/last-five-games": 1800,
@@ -89,30 +90,65 @@ def normalize_name(value: str) -> str:
     return " ".join(token for token in tokens if token not in ignored)
 
 
-def find_fixture(date: str, home_name: str, away_name: str, league_name: str | None = None) -> dict:
-    """Resolve a fixture from the UTC date feed, then verify both teams locally.
-
-    Do not send provider-specific team-name filters: their exact matching rules
-    can differ from football-data.org naming (for example, suffixes such as FC).
-    A date-only request is bounded to one calendar day and keeps discovery to
-    one quota unit; identity is verified against the returned records below.
-    """
-    params = {
-        "date": date,
-        "limit": 100,
-        "offset": 0,
-    }
-    if league_name and str(league_name).strip():
-        params["leagueName"] = str(league_name).strip()
-    payload = _get("/matches", params)
+def _resolve_league_id(league_name: str, country_name: str | None = None) -> int:
+    """Resolve a league by its exact normalized name, optionally scoped by country."""
+    params: dict[str, Any] = {"leagueName": str(league_name).strip(), "limit": 100, "offset": 0}
+    if country_name and str(country_name).strip():
+        params["countryName"] = str(country_name).strip()
+    payload = _get("/leagues", params)
     rows = payload.get("data", []) if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
-        raise HighlightlyError("Highlightly devolvió un formato inesperado al buscar el partido.")
+        raise HighlightlyError("Highlightly devolvió un formato inesperado al consultar las competiciones.")
 
+    expected_name = normalize_name(league_name)
+    expected_country = normalize_name(country_name) if country_name else ""
+    exact = []
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("id"), int):
+            continue
+        if normalize_name(row.get("name", "")) != expected_name:
+            continue
+        country = row.get("country") or {}
+        if expected_country and normalize_name(country.get("name", "")) != expected_country:
+            continue
+        exact.append(row)
+
+    if len(exact) != 1:
+        candidates = [
+            f"{row.get('name', '?')} ({(row.get('country') or {}).get('name', 'país no indicado')})"
+            for row in rows if isinstance(row, dict)
+        ][:6]
+        detail = f" Opciones devueltas: {'; '.join(candidates)}." if candidates else ""
+        raise HighlightlyError(
+            f"No se pudo identificar una competición única en Highlightly para '{league_name}'.{detail}",
+            404 if not exact else 409,
+        )
+    return exact[0]["id"]
+
+
+def find_fixture(
+    date: str,
+    home_name: str,
+    away_name: str,
+    league_name: str | None = None,
+    country_name: str | None = None,
+) -> dict:
+    """Resolve a fixture by date and verified teams; scope the provider query by league ID."""
     expected_home = normalize_name(home_name)
     expected_away = normalize_name(away_name)
     if not expected_home or not expected_away:
         raise HighlightlyError("No se pudieron normalizar los nombres de los equipos.", 422)
+
+    params: dict[str, Any] = {"date": date, "limit": 100, "offset": 0}
+    expected_league_id = None
+    if league_name and str(league_name).strip():
+        expected_league_id = _resolve_league_id(league_name, country_name)
+        params["leagueId"] = expected_league_id
+
+    payload = _get("/matches", params)
+    rows = payload.get("data", []) if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        raise HighlightlyError("Highlightly devolvió un formato inesperado al buscar el partido.")
 
     matches = []
     for row in rows:
@@ -123,33 +159,33 @@ def find_fixture(date: str, home_name: str, away_name: str, league_name: str | N
         home = normalize_name(home_data.get("name", ""))
         away = normalize_name(away_data.get("name", ""))
         kickoff = str(row.get("date") or "")
+        league = row.get("league") or {}
+        league_matches = expected_league_id is None or league.get("id") == expected_league_id
         if (
             home == expected_home
             and away == expected_away
             and kickoff[:10] == date
+            and league_matches
             and isinstance(row.get("id"), int)
         ):
             matches.append(row)
 
     if len(matches) != 1:
         if not matches:
-            # Include a small, sanitized diagnostic to distinguish an empty
-            # date feed from a team-name mismatch without exposing credentials.
             same_day = [
                 f"{(row.get('homeTeam') or {}).get('name', '?')} vs "
-                f"{(row.get('awayTeam') or {}).get('name', '?')}"
+                f"{(row.get('awayTeam') or {}).get('name', '?')} "
+                f"[{((row.get('league') or {}).get('name') or 'competición no indicada')}]"
                 for row in rows if isinstance(row, dict)
             ][:8]
             if same_day:
                 raise HighlightlyError(
-                    "Highlightly devolvió partidos para la fecha, pero los nombres "
-                    f"no coincidieron exactamente. Partidos recibidos: {'; '.join(same_day)}",
+                    "Highlightly devolvió partidos para la fecha, pero no encontró una "
+                    "coincidencia exacta de equipos, fecha y competición. "
+                    f"Partidos recibidos: {'; '.join(same_day)}",
                     404,
                 )
-            raise HighlightlyError(
-                "Highlightly no devolvió partidos para la fecha solicitada.",
-                404,
-            )
+            raise HighlightlyError("Highlightly no devolvió partidos para la fecha y competición solicitadas.", 404)
         raise HighlightlyError(
             "Highlightly devolvió más de una coincidencia exacta; se requiere revisión manual.",
             409,
