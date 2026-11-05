@@ -38,14 +38,35 @@ COMPETITIONS = {
 }
 
 
+TEAM_ALIASES = {
+    "man utd": "manchester united",
+    "man united": "manchester united",
+    "manchester utd": "manchester united",
+    "man city": "manchester city",
+    "ath madrid": "atletico madrid",
+    "atletico de madrid": "atletico madrid",
+    "spurs": "tottenham hotspur",
+    "wolves": "wolverhampton wanderers",
+    "newcastle": "newcastle united",
+    "west ham": "west ham united",
+    "brighton": "brighton and hove albion",
+    "leicester": "leicester city",
+    "qpr": "queens park rangers",
+    "psg": "paris saint germain",
+    "inter": "internazionale",
+    "ac milan": "milan",
+}
+
+
 def normalize_team_key(value: str) -> str:
-    """Normalize common FC/AFC/CF suffix differences without guessing aliases."""
+    """Normalize accents/suffixes and a small explicit alias list; never fuzzy-match."""
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(char for char in text if not unicodedata.combining(char))
     text = text.lower().replace("&", " and ")
     text = re.sub(r"[^a-z0-9]+", " ", text)
     tokens = [token for token in text.split() if token not in {"fc", "afc", "cf", "sc"}]
-    return " ".join(tokens).strip()
+    key = " ".join(tokens).strip()
+    return TEAM_ALIASES.get(key, key)
 
 
 def season_code(start_year: int) -> str:
@@ -283,9 +304,11 @@ def archive_head_to_head(
 
     client = _client_or_503()
     try:
-        query = client.table("football_match_archive").select("*").eq(
-            "competition_code", code
-        ).or_(f"home_team_key.eq.{home_key},away_team_key.eq.{home_key}").order(
+        # Search every imported league so direct meetings in another covered
+        # competition are retained, matching the previous cross-competition H2H intent.
+        query = client.table("football_match_archive").select("*").or_(
+            f"home_team_key.eq.{home_key},away_team_key.eq.{home_key}"
+        ).order(
             "match_date", desc=True
         ).limit(1000)
         rows = query.execute().data or []
@@ -319,10 +342,10 @@ def archive_head_to_head(
         "provider": "Sports Predictor · Supabase archive",
         "source": SOURCE_NAME,
         "competition": code,
-        "history_scope": "Histórico propio almacenado. Solo incluye partidos de esta competición presentes en nuestra base de datos; no representa necesariamente todos los enfrentamientos disputados.",
+        "history_scope": "Histórico propio almacenado en las cinco ligas cubiertas. Incluye enfrentamientos de cualquier liga importada; no representa necesariamente todos los torneos ni todos los partidos disputados.",
         "availability": "available" if count else "no_data",
         "history_strategy": "owned_local_archive",
-        "competitions_in_sample": [COMPETITIONS[code]["name"]] if count else [],
+        "competitions_in_sample": sorted({row["competition"] for row in clean_meetings}),
         "teams": {"home": {"name": home_team, "key": home_key}, "away": {"name": away_team, "key": away_key}},
         "sample_size": count,
         "summary": summary,
