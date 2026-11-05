@@ -12,6 +12,7 @@ import requests
 BASE_URL = "https://soccer.highlightly.net"
 TIMEOUT_SECONDS = 10
 CACHE_TTLS = {
+    "/countries": 86400,
     "/leagues": 86400,
     "/matches": 300,
     "/statistics/": 300,
@@ -90,18 +91,43 @@ def normalize_name(value: str) -> str:
     return " ".join(token for token in tokens if token not in ignored)
 
 
+def _resolve_country_code(country_name: str) -> str:
+    """Resolve a Highlightly ISO country code from its canonical country list."""
+    payload = _get("/countries", {"name": str(country_name).strip()})
+    rows = payload.get("data", []) if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        raise HighlightlyError("Highlightly devolvió un formato inesperado al consultar los países.")
+    expected_country = normalize_name(country_name)
+    exact = [
+        row for row in rows
+        if isinstance(row, dict)
+        and normalize_name(row.get("name", "")) == expected_country
+        and isinstance(row.get("code"), str)
+        and row.get("code").strip()
+    ]
+    if len(exact) != 1:
+        candidates = [str(row.get("name", "?")) for row in rows if isinstance(row, dict)][:6]
+        detail = f" Países devueltos: {'; '.join(candidates)}." if candidates else ""
+        raise HighlightlyError(
+            f"No se pudo resolver un código de país único en Highlightly para '{country_name}'.{detail}",
+            404 if not exact else 409,
+        )
+    return exact[0]["code"].strip().upper()
+
+
 def _resolve_league_id(league_name: str, country_name: str | None = None) -> int:
-    """Resolve a league by its exact normalized name, optionally scoped by country."""
+    """Resolve a league by exact normalized name and Highlightly ISO country code."""
     params: dict[str, Any] = {"leagueName": str(league_name).strip(), "limit": 100, "offset": 0}
-    if country_name and str(country_name).strip():
-        params["countryName"] = str(country_name).strip()
+    expected_country = normalize_name(country_name) if country_name else ""
+    country_code = _resolve_country_code(country_name) if expected_country else None
+    if country_code:
+        params["countryCode"] = country_code
     payload = _get("/leagues", params)
     rows = payload.get("data", []) if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
         raise HighlightlyError("Highlightly devolvió un formato inesperado al consultar las competiciones.")
 
     expected_name = normalize_name(league_name)
-    expected_country = normalize_name(country_name) if country_name else ""
     exact = []
     for row in rows:
         if not isinstance(row, dict) or not isinstance(row.get("id"), int):
@@ -111,6 +137,8 @@ def _resolve_league_id(league_name: str, country_name: str | None = None) -> int
         country = row.get("country") or {}
         if expected_country and normalize_name(country.get("name", "")) != expected_country:
             continue
+        if country_code and str(country.get("code", "")).strip().upper() != country_code:
+            continue
         exact.append(row)
 
     if len(exact) != 1:
@@ -119,11 +147,14 @@ def _resolve_league_id(league_name: str, country_name: str | None = None) -> int
             for row in rows if isinstance(row, dict)
         ][:6]
         detail = f" Opciones devueltas: {'; '.join(candidates)}." if candidates else ""
+        country_detail = f" País solicitado: '{country_name}'." if country_name else ""
         raise HighlightlyError(
-            f"No se pudo identificar una competición única en Highlightly para '{league_name}'.{detail}",
+            f"No se pudo identificar una competición única en Highlightly para '{league_name}'."
+            f"{country_detail}{detail}",
             404 if not exact else 409,
         )
     return exact[0]["id"]
+
 
 
 def find_fixture(
