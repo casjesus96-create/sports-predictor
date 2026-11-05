@@ -24,6 +24,8 @@ _cache: dict[tuple, tuple[float, Any]] = {}
 _cache_lock = Lock()
 _rate_limit_until = 0.0
 _rate_limit_message = "Highlightly ha limitado temporalmente las solicitudes."
+_request_locks: dict[tuple, Lock] = {}
+_provider_status: dict[str, Any] = {}
 
 
 class HighlightlyError(RuntimeError):
@@ -46,6 +48,45 @@ def _ttl(path: str) -> int:
     return 300
 
 
+def _header_int(headers: Any, *names: str) -> int | None:
+    for name in names:
+        value = headers.get(name)
+        if value is None:
+            continue
+        try:
+            return int(float(str(value).strip()))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _reset_seconds(headers: Any) -> int | None:
+    value = _header_int(
+        headers,
+        "x-ratelimit-requests-reset",
+        "X-RateLimit-Requests-Reset",
+        "ratelimit-reset",
+        "RateLimit-Reset",
+    )
+    if value is None:
+        return None
+    # RapidAPI commonly reports a duration; some gateways report a Unix epoch.
+    seconds = value - int(time.time()) if value > 86400 else value
+    return max(1, min(seconds, 86400)) if seconds > 0 else None
+
+
+def get_provider_status() -> dict[str, Any]:
+    """Return last observed provider/quota diagnostics without making an API request."""
+    with _cache_lock:
+        status = dict(_provider_status)
+        wait = max(0, int(_rate_limit_until - time.monotonic()))
+    status["cooldown_active"] = wait > 0
+    status["retry_after_seconds"] = wait
+    status.setdefault("provider", "Highlightly")
+    status.setdefault("state", "unknown")
+    return status
+
+
 def _get(path: str, params: dict[str, Any] | None = None) -> Any:
     token = _key()
     clean = tuple(sorted((str(k), str(v)) for k, v in (params or {}).items() if v is not None))
@@ -56,52 +97,103 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
         cached = _cache.get(cache_key)
         if cached and cached[0] > now:
             return cached[1]
-        if _rate_limit_until > now:
-            wait_seconds = max(1, int(_rate_limit_until - now))
-            raise HighlightlyError(
-                f"{_rate_limit_message} Reintento bloqueado temporalmente; espera aproximadamente {wait_seconds} segundos.",
-                429,
-            )
+        request_lock = _request_locks.setdefault(cache_key, Lock())
+
     try:
-        response = requests.get(
-            f"{BASE_URL}{path}",
-            headers={"x-rapidapi-key": token, "Accept": "application/json"},
-            params=dict(clean),
-            timeout=TIMEOUT_SECONDS,
-        )
-    except requests.RequestException as exc:
-        raise HighlightlyError("No fue posible conectar con Highlightly.") from exc
-    if response.status_code == 401:
-        raise HighlightlyError("Highlightly rechazó la clave configurada (HTTP 401). Revisa HIGHLIGHTLY_API_KEY en Render.", 502)
-    if response.status_code == 403:
-        raise HighlightlyError("Highlightly rechazó la solicitud o el acceso al recurso (HTTP 403).", 502)
-    if response.status_code == 429:
-        retry_after = response.headers.get("Retry-After", "")
-        try:
-            cooldown_seconds = max(30, min(int(float(retry_after)), 3600))
-        except (TypeError, ValueError):
-            cooldown_seconds = 60
-        message = "Se alcanzó el límite de solicitudes de Highlightly."
+        # Coalesce simultaneous identical cache misses into one provider request.
+        with request_lock:
+            now = time.monotonic()
+            with _cache_lock:
+                cached = _cache.get(cache_key)
+                if cached and cached[0] > now:
+                    return cached[1]
+                if _rate_limit_until > now:
+                    wait_seconds = max(1, int(_rate_limit_until - now))
+                    raise HighlightlyError(
+                        f"{_rate_limit_message} Reintento bloqueado temporalmente; espera aproximadamente {wait_seconds} segundos.",
+                        429,
+                    )
+            try:
+                response = requests.get(
+                    f"{BASE_URL}{path}",
+                    headers={"x-rapidapi-key": token, "Accept": "application/json"},
+                    params=dict(clean),
+                    timeout=TIMEOUT_SECONDS,
+                )
+            except requests.RequestException as exc:
+                with _cache_lock:
+                    _provider_status.update({
+                        "provider": "Highlightly", "state": "connection_error",
+                        "last_http_status": None, "message": "No fue posible conectar con Highlightly.",
+                        "observed_at": int(time.time()),
+                    })
+                raise HighlightlyError("No fue posible conectar con Highlightly.") from exc
+
+            headers = response.headers
+            remaining = _header_int(headers, "x-ratelimit-requests-remaining", "X-RateLimit-Requests-Remaining")
+            limit = _header_int(headers, "x-ratelimit-requests-limit", "X-RateLimit-Requests-Limit")
+            reset_seconds = _reset_seconds(headers)
+            if response.status_code == 429:
+                retry_after = _header_int(headers, "Retry-After", "retry-after")
+                try:
+                    error_payload = response.json()
+                    provider_error_text = str(error_payload).casefold()
+                except (ValueError, AttributeError):
+                    provider_error_text = ""
+                daily_quota_signal = any(
+                    marker in provider_error_text
+                    for marker in ("daily quota", "daily limit", "quota exceeded", "daily request")
+                )
+                exhausted = remaining == 0 or daily_quota_signal
+                cooldown_seconds = retry_after or reset_seconds or (3600 if exhausted else 60)
+                cooldown_seconds = max(30, min(cooldown_seconds, 86400))
+                message = (
+                    "Highlightly indica que se agotó la cuota disponible."
+                    if exhausted else
+                    "Highlightly aplicó un límite temporal de solicitudes."
+                )
+                with _cache_lock:
+                    _rate_limit_until = time.monotonic() + cooldown_seconds
+                    _rate_limit_message = message
+                    _provider_status.update({
+                        "provider": "Highlightly", "state": "quota_exhausted" if exhausted else "rate_limited",
+                        "last_http_status": 429, "message": message,
+                        "quota_remaining": remaining, "quota_limit": limit,
+                        "quota_reset_seconds": reset_seconds,
+                        "observed_at": int(time.time()),
+                    })
+                raise HighlightlyError(
+                    f"{message} Se pausaron nuevas consultas durante aproximadamente {cooldown_seconds} segundos.",
+                    429,
+                )
+            if response.status_code == 401:
+                raise HighlightlyError("Highlightly rechazó la clave configurada (HTTP 401). Revisa HIGHLIGHTLY_API_KEY en Render.", 502)
+            if response.status_code == 403:
+                raise HighlightlyError("Highlightly rechazó la solicitud o el acceso al recurso (HTTP 403).", 502)
+            if response.status_code == 404:
+                raise HighlightlyError("Highlightly no encontró datos para este encuentro o recurso.", 404)
+            if response.status_code >= 500:
+                raise HighlightlyError("Highlightly presenta un error temporal.")
+            if response.status_code >= 400:
+                raise HighlightlyError(f"Highlightly rechazó la consulta (HTTP {response.status_code}).")
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise HighlightlyError("Highlightly devolvió una respuesta JSON no válida.") from exc
+            with _cache_lock:
+                _cache[cache_key] = (time.monotonic() + _ttl(path), data)
+                _provider_status.update({
+                    "provider": "Highlightly", "state": "available",
+                    "last_http_status": response.status_code, "message": "Última consulta correcta.",
+                    "quota_remaining": remaining, "quota_limit": limit,
+                    "quota_reset_seconds": reset_seconds,
+                    "observed_at": int(time.time()),
+                })
+            return data
+    finally:
         with _cache_lock:
-            _rate_limit_until = time.monotonic() + cooldown_seconds
-            _rate_limit_message = message
-        raise HighlightlyError(
-            f"{message} Se pausaron nuevas consultas durante aproximadamente {cooldown_seconds} segundos para proteger la cuota.",
-            429,
-        )
-    if response.status_code == 404:
-        raise HighlightlyError("Highlightly no encontró datos para este encuentro o recurso.", 404)
-    if response.status_code >= 500:
-        raise HighlightlyError("Highlightly presenta un error temporal.")
-    if response.status_code >= 400:
-        raise HighlightlyError(f"Highlightly rechazó la consulta (HTTP {response.status_code}).")
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise HighlightlyError("Highlightly devolvió una respuesta JSON no válida.") from exc
-    with _cache_lock:
-        _cache[cache_key] = (time.monotonic() + _ttl(path), data)
-    return data
+            if _request_locks.get(cache_key) is request_lock:
+                _request_locks.pop(cache_key, None)
 
 
 def normalize_name(value: str) -> str:

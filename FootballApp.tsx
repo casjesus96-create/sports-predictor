@@ -114,6 +114,17 @@ function HighlightlyLeagueExplorer() {
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [providerStatus, setProviderStatus] = useState<any>(null);
+
+  async function refreshProviderStatus() {
+    try {
+      const response = await fetch(`${API}/highlightly/status`);
+      const body = await response.json();
+      if (response.ok) setProviderStatus(body);
+    } catch {
+      // Status is diagnostic-only; never block the independent catalog UI.
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -131,6 +142,10 @@ function HighlightlyLeagueExplorer() {
       })
       .catch(err => { if (active) setError(err instanceof Error ? err.message : "Error consultando Highlightly."); })
       .finally(() => { if (active) setLoadingCatalog(false); });
+    fetch(`${API}/highlightly/status`)
+      .then(async response => response.ok ? response.json() : null)
+      .then(body => { if (active && body) setProviderStatus(body); })
+      .catch(() => {});
     return () => { active = false; };
   }, []);
 
@@ -138,6 +153,7 @@ function HighlightlyLeagueExplorer() {
     `${item.name || ""} ${item.country?.name || ""}`.toLowerCase().includes(filter.toLowerCase())
   );
   const selectedLeague = competitions.find(item => String(item.id) === leagueId);
+  const countriesCount = new Set(competitions.map(item => item.country?.name).filter(Boolean)).size;
 
   async function loadMatches() {
     if (!leagueId || !date) return;
@@ -149,33 +165,59 @@ function HighlightlyLeagueExplorer() {
       setMatches(Array.isArray(body.matches) ? body.matches : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error consultando partidos Highlightly.");
+      await refreshProviderStatus();
     } finally { setLoadingMatches(false); }
   }
 
-  async function analyze(matchId: number) {
+  async function analyze(match: any) {
+    const matchId = Number(match?.id);
+    if (!Number.isInteger(matchId) || matchId <= 0 || analyzingId !== null) return;
     setAnalyzingId(matchId); setError("");
     try {
-      const response = await fetch(`${API}/highlightly/matches/${matchId}/analysis`);
+      // Reuse the complete native fixture already returned by /games.
+      // This avoids a redundant /matches/{id} provider request.
+      const response = await fetch(`${API}/highlightly/matches/${matchId}/analysis`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(match),
+      });
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo analizar el encuentro Highlightly.");
       setAnalysis(current => ({ ...current, [matchId]: body }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error analizando el encuentro.");
-    } finally { setAnalyzingId(null); }
+    } finally {
+      setAnalyzingId(null);
+      await refreshProviderStatus();
+    }
   }
+
+  const quotaText = providerStatus?.state === "quota_exhausted"
+    ? "La última respuesta indicó cuota agotada; espera el reinicio informado por el proveedor."
+    : providerStatus?.state === "rate_limited"
+      ? "La última respuesta indicó un límite temporal de solicitudes."
+      : providerStatus?.state === "available"
+        ? "Última consulta correcta al proveedor."
+        : "Estado del proveedor aún no comprobado.";
 
   return <section style={{ ...cardStyle, borderColor: "#0e7490", background: "#0c1b2a" }}>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
       <div><strong style={{ fontSize: 16 }}>Highlightly · Catálogo independiente</strong>
         <p style={{ color: "#94a3b8", fontSize: 12, margin: "5px 0" }}>Competiciones, equipos y partidos con los nombres e identificadores originales de Highlightly. Fuente experimental; no modifica el modelo oficial.</p></div>
-      <span style={{ color: "#67e8f9", fontSize: 12 }}>{competitions.length} competiciones</span>
+      <span style={{ color: "#67e8f9", fontSize: 12 }}>{competitions.length} competiciones · {countriesCount} países</span>
+    </div>
+    <div style={{ marginTop: 8, padding: 9, borderRadius: 8, background: "#111827", fontSize: 11, color: providerStatus?.state === "quota_exhausted" || providerStatus?.state === "rate_limited" ? "#fbbf24" : "#94a3b8" }}>
+      <strong>Estado API Highlightly:</strong> {quotaText}
+      {providerStatus?.quota_remaining != null && <span> Solicitudes restantes informadas: {providerStatus.quota_remaining}{providerStatus.quota_limit != null ? ` / ${providerStatus.quota_limit}` : ""}.</span>}
+      {providerStatus?.retry_after_seconds > 0 && <span> Pausa local: aproximadamente {providerStatus.retry_after_seconds} s.</span>}
+      <button type="button" onClick={refreshProviderStatus} style={{ ...buttonStyle, minHeight: 30, padding: "4px 8px", marginLeft: 8, background: "#334155", fontSize: 11 }}>Actualizar estado</button>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8, marginTop: 10 }}>
       <input aria-label="Buscar competición Highlightly" placeholder="Filtrar por liga o país" value={filter} onChange={event => setFilter(event.target.value)} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #475569", background: "#111827", color: "#fff" }} />
       <select aria-label="Competición Highlightly" value={leagueId} onChange={event => { setLeagueId(event.target.value); setMatches([]); setAnalysis({}); }} disabled={loadingCatalog || !visibleCompetitions.length} style={{ minHeight: 44, padding: 10, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff" }}>
         {visibleCompetitions.map(item => <option key={item.id} value={String(item.id)}>{item.name || "Competición"} · {item.country?.name || "País no indicado"} · ID {item.id}</option>)}
       </select>
-      <div style={{ color: "#94a3b8", fontSize: 11 }}>{loadingCatalog ? "Cargando catálogo…" : selectedLeague ? `Proveedor: Highlightly · ${selectedLeague.name} · ID ${selectedLeague.id}` : "No hay competiciones que coincidan con el filtro."}</div>
+      <div style={{ color: "#94a3b8", fontSize: 11 }}>{loadingCatalog ? "Cargando catálogo…" : selectedLeague ? `Proveedor: Highlightly · ${selectedLeague.name} · ${selectedLeague.country?.name || "País no indicado"} · ID ${selectedLeague.id}` : "No hay competiciones que coincidan con el filtro."}</div>
       <label style={{ display: "grid", gap: 5, fontSize: 13, fontWeight: 700 }}>Fecha de partidos
         <input type="date" value={date} onChange={event => { setDate(event.target.value); setMatches([]); setAnalysis({}); }} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff", colorScheme: "dark" }} />
       </label>
@@ -194,19 +236,29 @@ function HighlightlyLeagueExplorer() {
           <span style={{ color: "#94a3b8", fontSize: 11 }}>Highlightly match ID {id}</span>
         </div>
         <div style={{ color: "#94a3b8", fontSize: 11, margin: "5px 0" }}>{match.date || "Fecha por confirmar"} · {match.league?.name || selectedLeague?.name || "Competición"} · {match.state?.description || "Estado no informado"}</div>
-        <button type="button" onClick={() => analyze(id)} disabled={analyzingId !== null} style={{ ...buttonStyle, background: "#334155" }}>{analyzingId === id ? "Analizando…" : result ? "Actualizar análisis Highlightly" : "Analizar con Highlightly"}</button>
+        <button type="button" onClick={() => analyze(match)} disabled={analyzingId !== null} style={{ ...buttonStyle, background: "#334155" }}>{analyzingId === id ? "Analizando…" : result ? "Volver a analizar" : "Analizar con Highlightly"}</button>
         {result && <div style={{ marginTop: 8, fontSize: 12 }}>
           <div style={{ color: "#67e8f9" }}>Análisis independiente · {result.data_status}</div>
-          {prediction?.available ? <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 5 }}>
-            <span>Local {percent(prediction.probabilities?.home)}</span><span>Empate {percent(prediction.probabilities?.draw)}</span><span>Visitante {percent(prediction.probabilities?.away)}</span>
-          </div> : <p style={{ color: "#fbbf24" }}>{prediction?.reason || result.statistics_note || "Datos recibidos; no hay proyección prepartido disponible."}</p>}
-          <div style={{ color: "#94a3b8", marginTop: 4 }}>Esta información no se guarda como predicción oficial ni altera el historial principal.</div>
+          {prediction?.available ? <>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 5 }}>
+              <span>Local {percent(prediction.probabilities?.home)}</span><span>Empate {percent(prediction.probabilities?.draw)}</span><span>Visitante {percent(prediction.probabilities?.away)}</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 7, marginTop: 8 }}>
+              <div style={{ background: "#0f172a", padding: 8, borderRadius: 7 }}>Goles esperados local <strong>{prediction.expected_goals?.home ?? "—"}</strong></div>
+              <div style={{ background: "#0f172a", padding: 8, borderRadius: 7 }}>Goles esperados visitante <strong>{prediction.expected_goals?.away ?? "—"}</strong></div>
+              <div style={{ background: "#0f172a", padding: 8, borderRadius: 7 }}>Total esperado <strong>{prediction.expected_goals?.total ?? "—"}</strong></div>
+            </div>
+          </> : <p style={{ color: "#fbbf24" }}>{prediction?.reason || result.statistics_note || "Datos recibidos; no hay proyección prepartido disponible."}</p>}
+          <details style={{ marginTop: 8 }}>
+            <summary style={{ cursor: "pointer", color: "#cbd5e1", fontWeight: 700 }}>Ver datos originales de Highlightly (forma, estadísticas y respuesta completa)</summary>
+            <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 420, overflow: "auto", background: "#030712", padding: 10, borderRadius: 8, fontSize: 10 }}>{JSON.stringify({ recent_form: result.recent_form, team_statistics: result.team_statistics, match_statistics: result.statistics, experimental_features: prediction?.highlightly_features, fixture: result.fixture_match }, null, 2)}</pre>
+          </details>
+          <div style={{ color: "#94a3b8", marginTop: 4 }}>Fuente experimental. No se guarda como predicción oficial ni altera el historial principal.</div>
         </div>}
       </article>;
     })}
   </section>;
 }
-
 
 function HeadToHeadPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
