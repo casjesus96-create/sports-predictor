@@ -326,3 +326,43 @@ def test_highlightly_native_analysis_uses_highlightly_id_without_primary_provide
     assert result["provider_native"] is True
     assert result["highlightly_match_id"] == 9001
     assert result["fixture_match"]["homeTeam"]["name"] == "Provider Home"
+
+
+def test_highlightly_rate_limit_sets_cooldown_and_blocks_followup_requests(monkeypatch):
+    import highlightly_football_client as client
+
+    class FakeResponse:
+        status_code = 429
+        headers = {"Retry-After": "90"}
+        def json(self):
+            return {"message": "rate limit"}
+
+    calls = []
+    class FakeRequests:
+        @staticmethod
+        def get(*args, **kwargs):
+            calls.append((args, kwargs))
+            return FakeResponse()
+
+    monkeypatch.setenv("HIGHLIGHTLY_API_KEY", "test-key")
+    monkeypatch.setattr(client, "requests", FakeRequests)
+    monkeypatch.setattr(client, "_rate_limit_until", 0.0)
+    monkeypatch.setattr(client, "_rate_limit_message", "Highlightly ha limitado temporalmente las solicitudes.")
+    with client._cache_lock:
+        client._cache.clear()
+
+    try:
+        client._get("/cooldown-test")
+        assert False, "Expected HighlightlyError for HTTP 429"
+    except client.HighlightlyError as exc:
+        assert exc.status_code == 429
+        assert "90 segundos" in str(exc)
+
+    try:
+        client._get("/cooldown-test-other")
+        assert False, "Expected cooldown to block the next request"
+    except client.HighlightlyError as exc:
+        assert exc.status_code == 429
+        assert "bloqueado temporalmente" in str(exc)
+    assert len(calls) == 1
+    monkeypatch.setattr(client, "_rate_limit_until", 0.0)
