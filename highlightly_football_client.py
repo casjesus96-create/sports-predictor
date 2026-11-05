@@ -93,6 +93,8 @@ def normalize_name(value: str) -> str:
 
 TEAM_NAME_ALIAS_GROUPS = (
     {"coventry", "coventry city"},
+    {"leeds", "leeds united"},
+    {"tottenham", "tottenham hotspur"},
 )
 
 
