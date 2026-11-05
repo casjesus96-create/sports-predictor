@@ -95,6 +95,7 @@ TEAM_NAME_ALIAS_GROUPS = (
     {"coventry", "coventry city"},
     {"leeds", "leeds united"},
     {"tottenham", "tottenham hotspur"},
+    {"racing santander", "real racing club santander"},
 )
 
 
