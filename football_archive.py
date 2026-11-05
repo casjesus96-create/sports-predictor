@@ -891,7 +891,7 @@ def archive_market_patterns(
         "source": SOURCE_NAME,
         "competition": code,
         "competition_name": COMPETITIONS[code]["name"],
-        "history_scope": "Muestra de hasta 1.000 partidos finalizados más recientes de esta competición; equipos: hasta sus últimos 15 partidos.",
+        "history_scope": "Muestra de hasta 1.000 partidos finalizados más recientes de esta competición; para cada equipo se consultan hasta 100 partidos previos y se calculan ventanas generales y específicas de localía de 5, 10 y 15 partidos.",
         "cutoff_date_exclusive": cutoff,
         "competition_sample": {
             **_summarize_market_sample(league_rows),
