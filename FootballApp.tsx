@@ -103,80 +103,6 @@ const buttonStyle: React.CSSProperties = { minHeight: 42, padding: "9px 14px", b
 const cardStyle: React.CSSProperties = { padding: 14, border: "1px solid #374151", borderRadius: 12, background: "#111827", marginBottom: 12 };
 
 
-function HighlightlyAnalysisPanel({ match }: { match: Match }) {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  async function loadAnalysis() {
-    if (loading) return;
-    setLoading(true); setError("");
-    try {
-      const response = await fetch(`${API}/highlightly-analysis/${match.id}`);
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.detail || "No se pudo consultar Highlightly.");
-      setData(body);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error consultando Highlightly.");
-    } finally { setLoading(false); }
-  }
-
-  const prediction = data?.experimental_prediction;
-  const statistics = Array.isArray(data?.statistics) ? data.statistics : [];
-  const recent = data?.recent_form || {};
-  const teamStats = data?.team_statistics || {};
-
-  return <section style={{ marginTop: 10, padding: 12, border: "1px solid #475569", borderRadius: 9, background: "#101b2d" }}>
-    <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
-      <div><strong>Highlightly · Modelo experimental</strong><div style={{ color: "#94a3b8", fontSize: 11 }}>Datos adicionales · No modifica el pronóstico oficial</div></div>
-      <button type="button" onClick={loadAnalysis} disabled={loading} style={{ ...buttonStyle, background: "#334155" }}>{loading ? "Consultando…" : data ? "Actualizar datos" : "Analizar con Highlightly"}</button>
-    </div>
-    {error && <p role="alert" style={{ color: "#fecaca", fontSize: 13 }}>{error}</p>}
-    {data && <>
-      <p style={{ color: "#94a3b8", fontSize: 11 }}>Partido asociado: Highlightly ID {data.highlightly_match_id} · Estado: {data.data_status}</p>
-      {prediction?.available ? <>
-        <div style={{ color: "#fbbf24", fontSize: 12, fontWeight: 700 }}>EXPERIMENTAL · SIN CALIBRACIÓN</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 7, marginTop: 8 }}>
-          {[["Local", prediction.probabilities?.home], ["Empate", prediction.probabilities?.draw], ["Visitante", prediction.probabilities?.away]].map(([label, value]) => <div key={String(label)} style={{ background: "#172033", borderRadius: 7, padding: 8, textAlign: "center" }}><div style={{ color: "#94a3b8", fontSize: 11 }}>{label}</div><strong>{percent(typeof value === "number" && Number.isFinite(value) ? value : undefined)}</strong></div>)}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 7, marginTop: 7 }}>
-          {[["Goles local", prediction.expected_goals?.home], ["Goles visitante", prediction.expected_goals?.away], ["Total", prediction.expected_goals?.total]].map(([label, value]) => <div key={String(label)} style={{ background: "#172033", borderRadius: 7, padding: 8, textAlign: "center" }}><div style={{ color: "#94a3b8", fontSize: 11 }}>{label}</div><strong>{typeof value === "number" ? value.toFixed(2) : "—"}</strong></div>)}
-        </div>
-        <p style={{ fontSize: 12, color: "#cbd5e1" }}>Ambos marcan: <strong>{percent(prediction.goal_markets?.both_teams_to_score?.yes)}</strong> · Over 2.5: <strong>{percent(prediction.goal_markets?.total_goals?.over_2_5)}</strong> · Under 2.5: <strong>{percent(prediction.goal_markets?.total_goals?.under_2_5)}</strong></p>
-        <strong style={{ fontSize: 12 }}>Marcadores más probables</strong>
-        <p style={{ margin: "5px 0", fontSize: 12 }}>{(prediction.most_likely_scorelines || []).map((row: any) => `${row.home}-${row.away} (${percent(row.probability)})`).join(" · ") || "—"}</p>
-        <p style={{ color: "#fbbf24", fontSize: 11, marginBottom: 0 }}>NO PLAY hasta completar validación walk-forward. No sustituye al modelo oficial.</p>
-      </> : prediction && <p style={{ color: "#fbbf24", fontSize: 12 }}>{prediction.reason || "No hay muestra suficiente para generar el pronóstico experimental."}</p>}
-      {data.data_status === "PREMATCH_ANALYSIS" && <>
-        <div style={{ marginTop: 10, fontWeight: 700, fontSize: 13 }}>Forma reciente · últimos cinco partidos</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
-          {[["Local", recent.home], ["Visitante", recent.away]].map(([label, rows]: any) => <div key={label} style={{ background: "#172033", borderRadius: 7, padding: 8 }}><strong style={{ fontSize: 12 }}>{label}</strong>{(rows || []).slice(0,5).map((row: any) => <div key={row.id} style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{row.homeTeam?.name} {row.state?.score?.current || "—"} {row.awayTeam?.name}</div>)}</div>)}
-        </div>
-        <div style={{ marginTop: 10, fontWeight: 700, fontSize: 13 }}>Enfrentamientos directos · Highlightly</div>
-        <p style={{ color: "#cbd5e1", fontSize: 11, margin: "5px 0" }}>{Array.isArray(data.head_to_head) ? data.head_to_head.length : 0} partidos históricos disponibles. Se muestran como contexto y todavía no modifican las probabilidades experimentales.</p>
-        <div style={{ marginTop: 10, fontWeight: 700, fontSize: 13 }}>Rendimiento de temporada por condición</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
-          {[["Local (en casa)", teamStats.home], ["Visitante (fuera)", teamStats.away]].map(([label, rows]: any) => {
-            const row = Array.isArray(rows) ? rows.find((item: any) => item.leagueId === data.fixture_match?.league?.id) || rows[0] : null;
-            const venue = label.startsWith("Local") ? row?.home : row?.away;
-            return <div key={label} style={{ background: "#172033", borderRadius: 7, padding: 8 }}><strong style={{ fontSize: 12 }}>{label}</strong><div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{row?.leagueName || "Competición"} · {row?.season || "—"}</div><div style={{ fontSize: 11, marginTop: 4 }}>PJ {venue?.games?.played ?? "—"} · G {venue?.games?.wins ?? "—"} · E {venue?.games?.draws ?? "—"} · P {venue?.games?.loses ?? "—"}</div><div style={{ fontSize: 11 }}>GF {venue?.goals?.scored ?? "—"} · GC {venue?.goals?.received ?? "—"}</div></div>;
-          })}
-        </div>
-      </>}
-      {statistics.length > 0 && <>
-        <div style={{ marginTop: 10, fontWeight: 700, fontSize: 13 }}>Estadísticas del encuentro</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
-          {statistics.map((team: any) => <div key={team.team?.id} style={{ background: "#172033", borderRadius: 7, padding: 8 }}><strong style={{ fontSize: 12 }}>{team.team?.name || "Equipo"}</strong>{(team.statistics || []).map((item: any) => <div key={item.displayName} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 11, borderBottom: "1px solid #334155", padding: "4px 0" }}><span>{item.displayName}</span><strong>{item.value ?? "—"}</strong></div>)}</div>)}
-        </div>
-      </>}
-      {data.statistics_note && <p style={{ color: "#94a3b8", fontSize: 12 }}>{data.statistics_note}</p>}
-    </>}
-  </section>;
-}
-
-
-
-
-
 function HighlightlyLeagueExplorer() {
   const [competitions, setCompetitions] = useState<any[]>([]);
   const [leagueId, setLeagueId] = useState("");
@@ -755,8 +681,7 @@ export default function FootballApp() {
                 <div style={{ fontWeight: 700 }}>{away}</div><small style={{ color: "#9ca3af" }}>{match.awayTeam?.tla || ""}</small>
               </div>
             </div>
-            <HighlightlyAnalysisPanel match={match} />
-            <HeadToHeadPanel competition={competition} match={match} />
+                <HeadToHeadPanel competition={competition} match={match} />
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
               <strong>Probabilidades 1X2</strong>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>
