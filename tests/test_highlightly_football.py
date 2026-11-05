@@ -105,25 +105,67 @@ def test_fixture_resolution_reports_date_feed_name_mismatch(monkeypatch):
     assert "Leeds vs Tottenham" in str(exc.value)
 
 
-def test_fixture_resolution_scopes_date_query_to_league(monkeypatch):
+def test_fixture_resolution_scopes_match_query_to_resolved_league_id(monkeypatch):
     import highlightly_football_client as client
     from highlightly_football_client import find_fixture
 
     calls = []
-    payload = {"data": [
+    league_payload = {"data": [
+        {"id": 39, "name": "Premier League", "country": {"name": "England"}}
+    ]}
+    match_payload = {"data": [
         {"id": 99, "date": "2026-11-07T12:30:00Z",
          "homeTeam": {"name": "Leeds United"}, "awayTeam": {"name": "Tottenham Hotspur"},
-         "league": {"name": "Premier League"}},
+         "league": {"id": 39, "name": "Premier League"}},
+        {"id": 100, "date": "2026-11-07T13:00:00Z",
+         "homeTeam": {"name": "Leeds United"}, "awayTeam": {"name": "Tottenham Hotspur"},
+         "league": {"id": 140, "name": "Other League"}},
     ]}
 
     def fake_get(path, params=None):
         calls.append((path, params))
-        return payload
+        return league_payload if path == "/leagues" else match_payload
 
     monkeypatch.setattr(client, "_get", fake_get)
-    result = find_fixture("2026-11-07", "Leeds United FC", "Tottenham Hotspur FC", "Premier League")
+    result = find_fixture("2026-11-07", "Leeds United FC", "Tottenham Hotspur FC", "Premier League", "England")
 
     assert result["id"] == 99
-    assert calls == [("/matches", {
-        "date": "2026-11-07", "limit": 100, "offset": 0, "leagueName": "Premier League"
-    })]
+    assert calls == [
+        ("/leagues", {"leagueName": "Premier League", "limit": 100, "offset": 0, "countryName": "England"}),
+        ("/matches", {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 39}),
+    ]
+
+
+def test_fixture_resolution_rejects_ambiguous_same_name_leagues(monkeypatch):
+    import pytest
+    import highlightly_football_client as client
+    from highlightly_football_client import HighlightlyError, find_fixture
+
+    monkeypatch.setattr(client, "_get", lambda path, params=None: {"data": [
+        {"id": 39, "name": "Premier League", "country": {"name": "England"}},
+        {"id": 40, "name": "Premier League", "country": {"name": "Country B"}},
+    ]})
+    with pytest.raises(HighlightlyError) as exc:
+        find_fixture("2026-11-07", "Leeds United", "Tottenham Hotspur", "Premier League")
+    assert exc.value.status_code == 409
+
+
+def test_fixture_resolution_rejects_wrong_league_even_if_team_names_match(monkeypatch):
+    import pytest
+    import highlightly_football_client as client
+    from highlightly_football_client import HighlightlyError, find_fixture
+
+    def fake_get(path, params=None):
+        if path == "/leagues":
+            return {"data": [{"id": 39, "name": "Premier League", "country": {"name": "England"}}]}
+        return {"data": [
+            {"id": 99, "date": "2026-11-07T12:30:00Z",
+             "homeTeam": {"name": "Leeds United"}, "awayTeam": {"name": "Tottenham Hotspur"},
+             "league": {"id": 140, "name": "Other League"}}
+        ]}
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    with pytest.raises(HighlightlyError) as exc:
+        find_fixture("2026-11-07", "Leeds United", "Tottenham Hotspur", "Premier League", "England")
+    assert exc.value.status_code == 404
+    assert "Other League" in str(exc.value)
