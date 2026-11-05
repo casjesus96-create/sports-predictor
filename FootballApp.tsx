@@ -175,125 +175,6 @@ function HighlightlyAnalysisPanel({ match }: { match: Match }) {
 
 
 
-function CompletedMatchStatistics({ match }: { match: Match }) {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const finished = ["FINISHED", "AWARDED"].includes(String(match.status || "").toUpperCase());
-  const home = match.homeTeam?.name || "Local";
-  const away = match.awayTeam?.name || "Visitante";
-
-  async function loadStatistics() {
-    if (!finished || loading) return;
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch(`${API}/match-statistics/${match.id}`);
-      const body = await response.json();
-      if (!response.ok) {
-        const detail = typeof body.detail === "string" ? body.detail : "No se pudieron consultar las estadísticas.";
-        throw new Error(detail);
-      }
-      setData(body);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error consultando estadísticas del encuentro.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const groups: Array<{ title: string; metrics: Array<[string, string]> }> = [
-    { title: "Ataque", metrics: [
-      ["shots_total", "Tiros totales"], ["shots_on_target", "Tiros a puerta"],
-      ["shots_off_target", "Tiros fuera"], ["shots_blocked", "Tiros bloqueados"],
-    ] },
-    { title: "Posesión y distribución", metrics: [
-      ["possession", "Posesión"], ["passes_total", "Pases intentados"],
-      ["passes_accurate", "Pases acertados"], ["pass_accuracy", "Precisión de pase"],
-    ] },
-    { title: "Defensa y disciplina", metrics: [
-      ["corners", "Corners"], ["fouls", "Faltas"], ["offsides", "Fuera de juego"],
-      ["yellow_cards", "Tarjetas amarillas"], ["red_cards", "Tarjetas rojas"],
-      ["goalkeeper_saves", "Atajadas"],
-    ] },
-  ];
-
-  const homeStats = data?.home_team?.statistics || {};
-  const awayStats = data?.away_team?.statistics || {};
-  const availableMetrics = groups.flatMap(group => group.metrics).filter(([key]) =>
-    (typeof homeStats[key] === "number" && Number.isFinite(homeStats[key])) ||
-    (typeof awayStats[key] === "number" && Number.isFinite(awayStats[key]))
-  );
-  const totalMetrics = availableMetrics.length;
-  const formatValue = (key: string, value: unknown) => {
-    if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-    return `${Number.isInteger(value) ? value : value.toFixed(1)}${key === "possession" || key === "pass_accuracy" ? "%" : ""}`;
-  };
-  const comparisonRow = (key: string, label: string) => {
-    const h = typeof homeStats[key] === "number" ? homeStats[key] : null;
-    const a = typeof awayStats[key] === "number" ? awayStats[key] : null;
-    const max = Math.max(h ?? 0, a ?? 0);
-    const homeWidth = h === null || max === 0 ? 0 : Math.max(3, (h / max) * 100);
-    const awayWidth = a === null || max === 0 ? 0 : Math.max(3, (a / max) * 100);
-    return <div key={key} style={{ padding: "9px 0", borderBottom: "1px solid #263548" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "42px minmax(0,1fr) 42px", gap: 8, alignItems: "center", fontSize: 12 }}>
-        <strong style={{ textAlign: "left", color: "#e5e7eb" }}>{formatValue(key, h)}</strong>
-        <span style={{ textAlign: "center", color: "#cbd5e1" }}>{label}</span>
-        <strong style={{ textAlign: "right", color: "#e5e7eb" }}>{formatValue(key, a)}</strong>
-      </div>
-      <div aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 6 }}>
-        <div style={{ height: 6, borderRadius: 8, background: "#263548", display: "flex", justifyContent: "flex-end", overflow: "hidden" }}>
-          <div style={{ width: `${homeWidth}%`, background: "#38bdf8", borderRadius: 8 }} />
-        </div>
-        <div style={{ height: 6, borderRadius: 8, background: "#263548", overflow: "hidden" }}>
-          <div style={{ width: `${awayWidth}%`, background: "#f59e0b", borderRadius: 8 }} />
-        </div>
-      </div>
-    </div>;
-  };
-
-  return <section style={{ ...cardStyle, marginTop: 10, background: "#0b1724" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-      <div>
-        <strong>Estadísticas del encuentro</strong>
-        <div style={{ color: "#9ca3af", fontSize: 11 }}>Fuente: API-Football · Datos observados de partidos finalizados</div>
-      </div>
-      <button type="button" onClick={loadStatistics} disabled={!finished || loading} style={{ ...buttonStyle, background: finished ? "#0f766e" : "#374151", opacity: loading ? 0.7 : 1 }}>
-        {loading ? "Consultando…" : data ? "Actualizar datos" : "Consultar estadísticas"}
-      </button>
-    </div>
-    {!finished && <p style={{ color: "#fbbf24", fontSize: 12 }}>Disponible cuando el resultado final esté confirmado.</p>}
-    {error && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{error}</p>}
-    {data && totalMetrics > 0 && <>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginTop: 14, padding: "10px 12px", borderRadius: 9, background: "#111827" }}>
-        <div style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
-          <strong style={{ color: "#38bdf8", fontSize: 12 }}>{home}</strong>
-          <div style={{ color: "#64748b", fontSize: 10 }}>Local</div>
-        </div>
-        <span style={{ color: "#64748b", fontSize: 10 }}>COMPARATIVA</span>
-        <div style={{ minWidth: 0, flex: 1, textAlign: "right" }}>
-          <strong style={{ color: "#fbbf24", fontSize: 12 }}>{away}</strong>
-          <div style={{ color: "#64748b", fontSize: 10 }}>Visitante</div>
-        </div>
-      </div>
-      {groups.map(group => {
-        const metrics = group.metrics.filter(([key]) => availableMetrics.some(([availableKey]) => availableKey === key));
-        if (!metrics.length) return null;
-        return <div key={group.title} style={{ marginTop: 12 }}>
-          <strong style={{ color: "#cbd5e1", fontSize: 12 }}>{group.title}</strong>
-          {metrics.map(([key, label]) => comparisonRow(key, label))}
-        </div>;
-      })}
-      <p style={{ color: "#94a3b8", fontSize: 10, margin: "12px 0 0" }}>
-        {totalMetrics} indicadores disponibles · Las barras comparan ambos equipos dentro de cada indicador. Un guion significa que el proveedor no entregó ese dato.
-      </p>
-      <p style={{ color: "#64748b", fontSize: 10, margin: "5px 0 0" }}>
-        ID API-Football: {data.provider_fixture_id} · Consultado: {localDate(data.retrieved_at)} · No son probabilidades ni predicciones.
-      </p>
-    </>}
-    {data && totalMetrics === 0 && <p style={{ color: "#fbbf24", fontSize: 12 }}>El proveedor confirmó la consulta, pero no entregó indicadores comparables para este encuentro.</p>}
-  </section>;
-}
 function HeadToHeadPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
   const [experiment, setExperiment] = useState<any>(null);
@@ -765,7 +646,6 @@ export default function FootballApp() {
                 <div style={{ fontWeight: 700 }}>{away}</div><small style={{ color: "#9ca3af" }}>{match.awayTeam?.tla || ""}</small>
               </div>
             </div>
-            <CompletedMatchStatistics match={match} />
             <HighlightlyAnalysisPanel match={match} />
             <HeadToHeadPanel competition={competition} match={match} />
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
