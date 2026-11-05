@@ -14,6 +14,7 @@ from best_plays_api import router as best_plays_router
 from market_lab_api import router as market_lab_router
 from prediction_audit_api import router as prediction_audit_router
 from football_api import router as football_router
+from football_archive import router as football_archive_router
 from football_evaluation_api import router as football_evaluation_router
 
 from analyzer import analyze_mlb_game
@@ -51,6 +52,7 @@ app.include_router(best_plays_router)
 app.include_router(market_lab_router)
 app.include_router(prediction_audit_router)
 app.include_router(football_router)
+app.include_router(football_archive_router)
 app.include_router(football_evaluation_router)
 
 # =========================================================
