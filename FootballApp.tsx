@@ -425,7 +425,9 @@ function FootballMarketPatternsPanel({ competition, match }: { competition: stri
               ["BTTS", stats?.both_teams_scored, stats?.both_teams_scored_percentage],
             ].map(([label, count, pct]: any) => <div key={label} style={{ fontSize: 10, marginTop: 5 }}>{label}: <strong>{count ?? 0}</strong> · {pct == null ? "—" : `${pct}%`}</div>)}
             <div style={{ fontSize: 10, marginTop: 5 }}>GF: <strong>{stats?.average_goals_for ?? "—"}</strong> · GC: <strong>{stats?.average_goals_against ?? "—"}</strong></div>
-            <div style={{ fontSize: 10, marginTop: 4, color: "#cbd5e1" }}>Local {stats?.venue_split?.at_home?.matches ?? 0} · Fuera {stats?.venue_split?.away?.matches ?? 0}</div>
+            <div style={{ fontSize: 10, marginTop: 4, color: "#cbd5e1" }}>Local {stats?.venue_market_patterns?.at_home?.matches ?? 0}: O2.5 {stats?.venue_market_patterns?.at_home?.over_2_5 ?? 0} · BTTS {stats?.venue_market_patterns?.at_home?.both_teams_scored ?? 0}</div>
+            <div style={{ fontSize: 10, color: "#cbd5e1" }}>Fuera {stats?.venue_market_patterns?.away?.matches ?? 0}: O2.5 {stats?.venue_market_patterns?.away?.over_2_5 ?? 0} · BTTS {stats?.venue_market_patterns?.away?.both_teams_scored ?? 0}</div>
+            <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 4 }}>GF 0/1/2/3+: {["0", "1", "2", "3_plus"].map(key => stats?.goals_for_distribution?.[key]?.count ?? 0).join("/")}</div>
             {!stats?.sample_complete && <div style={{ color: "#fbbf24", fontSize: 9, marginTop: 4 }}>Muestra incompleta</div>}
           </div>;
         })}
