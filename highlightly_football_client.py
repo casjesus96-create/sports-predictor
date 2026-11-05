@@ -277,6 +277,7 @@ TEAM_NAME_ALIAS_GROUPS = (
     {"coventry", "coventry city"},
     {"leeds", "leeds united"},
     {"tottenham", "tottenham hotspur"},
+    {"hull", "hull city"},
     {"racing santander", "real racing club santander"},
     {"espanyol", "rcd espanyol barcelona"},
     {"deportivo la coruna", "rc deportivo la coruna"},
@@ -294,112 +295,83 @@ def _team_names_match(first: str, second: str) -> bool:
     )
 
 
-def _resolve_country_code(country_name: str) -> str:
-    """Resolve a Highlightly ISO country code from its canonical country list."""
-    payload = _get("/countries", {"name": str(country_name).strip()})
-    rows = payload.get("data", []) if isinstance(payload, dict) else payload
-    if not isinstance(rows, list):
-        raise HighlightlyError("Highlightly devolvió un formato inesperado al consultar los países.")
-    expected_country = normalize_name(country_name)
-    exact = [
-        row for row in rows
-        if isinstance(row, dict)
-        and normalize_name(row.get("name", "")) == expected_country
-        and isinstance(row.get("code"), str)
-        and row.get("code").strip()
-    ]
-    if len(exact) != 1:
-        candidates = [str(row.get("name", "?")) for row in rows if isinstance(row, dict)][:6]
-        detail = f" Países devueltos: {'; '.join(candidates)}." if candidates else ""
-        raise HighlightlyError(
-            f"No se pudo resolver un código de país único en Highlightly para '{country_name}'.{detail}",
-            404 if not exact else 409,
-        )
-    return exact[0]["code"].strip().upper()
-
-
 def _resolve_league_id(league_name: str, country_name: str | None = None) -> int:
-    """Resolve a league by exact normalized name and Highlightly ISO country code."""
-    params: dict[str, Any] = {"leagueName": str(league_name).strip(), "limit": 100, "offset": 0}
+    """Resolve a Highlightly-native league ID with bounded, targeted queries.
+
+    football-data.org and Highlightly use different competition labels in a few
+    cases. Query only the known Highlightly label(s); never scan the country-wide
+    catalogue, which can consume many quota units.
+    """
+    source_name = normalize_name(league_name)
     expected_country = normalize_name(country_name) if country_name else ""
-    country_code = _resolve_country_code(country_name) if expected_country else None
-    if country_code:
-        params["countryCode"] = country_code
-    payload = _get("/leagues", params)
-    rows = payload.get("data", []) if isinstance(payload, dict) else payload
-    if not isinstance(rows, list):
-        raise HighlightlyError("Highlightly devolvió un formato inesperado al consultar las competiciones.")
 
-    expected_name = normalize_name(league_name)
-    exact = []
-    for row in rows:
-        if not isinstance(row, dict) or not isinstance(row.get("id"), int):
-            continue
-        if normalize_name(row.get("name", "")) != expected_name:
-            continue
-        country = row.get("country") or {}
-        if expected_country and normalize_name(country.get("name", "")) != expected_country:
-            continue
-        if country_code and str(country.get("code", "")).strip().upper() != country_code:
-            continue
-        exact.append(row)
+    query_aliases = {
+        # football-data.org calls Spain's top division "Primera Division".
+        "primera division": ("La Liga",),
+        # Highlightly commonly indexes Brazil's top division as "Serie A".
+        "campeonato brasileiro serie a": ("Serie A", "Brasileirao Serie A"),
+        "brasileirao serie a": ("Serie A", "Campeonato Brasileiro Serie A"),
+    }
+    accepted_names = {
+        "primera division": {"la liga"},
+        "campeonato brasileiro serie a": {
+            "serie a", "campeonato brasileiro serie a", "brasileirao serie a",
+        },
+        "brasileirao serie a": {
+            "serie a", "campeonato brasileiro serie a", "brasileirao serie a",
+        },
+    }.get(source_name, {source_name})
+    queries = query_aliases.get(source_name, (str(league_name).strip(),))
 
-    # Highlightly may index a competition under a shorter/localized name
-    # (for example "Serie A") even when the primary provider calls it
-    # "Campeonato Brasileiro Série A". If the exact-name query returned no
-    # match, inspect the country catalog and resolve only a known alias.
-    if not exact and country_code:
-        aliases_by_source_name = {
-            "campeonato brasileiro serie a": {
-                "campeonato brasileiro serie a",
-                "brasileirao serie a",
-                "brasileiro serie a",
-                "serie a",
-            },
-            # The primary provider labels Spain's top men's division as
-            # "Primera Division"; Highlightly catalogs it as "La Liga".
-            # Country-code filtering below prevents collisions with other
-            # countries and excludes Spain's women's/second divisions.
-            "primera division": {"la liga"},
+    matches_by_id: dict[int, dict[str, Any]] = {}
+    candidate_rows: list[dict[str, Any]] = []
+    for query_name in queries:
+        params: dict[str, Any] = {
+            "leagueName": query_name,
+            "limit": 100,
+            "offset": 0,
         }
-        aliases = aliases_by_source_name.get(expected_name, {expected_name})
-        catalog_rows = []
-        offset = 0
-        while offset < 1000:
-            catalog_payload = _get(
-                "/leagues",
-                {"countryCode": country_code, "limit": 100, "offset": offset},
+        if country_name:
+            # The independent catalogue already uses this provider-supported
+            # filter; avoid an extra /countries request just to obtain an ISO code.
+            params["countryName"] = str(country_name).strip()
+        payload = _get("/leagues", params)
+        rows = payload.get("data", []) if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            raise HighlightlyError(
+                "Highlightly devolvió un formato inesperado al consultar las competiciones."
             )
-            page = catalog_payload.get("data", []) if isinstance(catalog_payload, dict) else catalog_payload
-            if not isinstance(page, list) or not page:
-                break
-            catalog_rows.extend(row for row in page if isinstance(row, dict))
-            pagination = catalog_payload.get("pagination", {}) if isinstance(catalog_payload, dict) else {}
-            total_count = pagination.get("totalCount")
-            offset += len(page)
-            if not isinstance(total_count, int) or offset >= total_count or len(page) < 100:
-                break
-        exact = [
-            row for row in catalog_rows
-            if isinstance(row.get("id"), int)
-            and normalize_name(row.get("name", "")) in aliases
-            and str((row.get("country") or {}).get("code", "")).strip().upper() == country_code
-        ]
-        rows = catalog_rows
+        candidate_rows.extend(row for row in rows if isinstance(row, dict))
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            league_id = row.get("id")
+            if not isinstance(league_id, int) or isinstance(league_id, bool) or league_id <= 0:
+                continue
+            if normalize_name(row.get("name", "")) not in accepted_names:
+                continue
+            country = row.get("country") or {}
+            if expected_country and normalize_name(country.get("name", "")) != expected_country:
+                continue
+            matches_by_id[league_id] = row
+        if matches_by_id:
+            # One exact, country-scoped match is sufficient; do not spend quota
+            # querying alternative spellings unnecessarily.
+            break
 
-    if len(exact) != 1:
+    if len(matches_by_id) != 1:
         candidates = [
             f"{row.get('name', '?')} ({(row.get('country') or {}).get('name', 'país no indicado')})"
-            for row in rows if isinstance(row, dict)
+            for row in candidate_rows
         ][:8]
         detail = f" Opciones devueltas: {'; '.join(candidates)}." if candidates else ""
         country_detail = f" País solicitado: '{country_name}'." if country_name else ""
         raise HighlightlyError(
             f"No se pudo identificar una competición única en Highlightly para '{league_name}'."
             f"{country_detail}{detail}",
-            404 if not exact else 409,
+            404 if not matches_by_id else 409,
         )
-    return exact[0]["id"]
+    return next(iter(matches_by_id))
 
 
 
