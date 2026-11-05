@@ -209,6 +209,7 @@ def football_health():
         "success": True,
         "provider": "football-data.org",
         "configured": bool(os.getenv("FOOTBALL_DATA_API_KEY", "").strip()),
+        "highlightly_configured": bool(os.getenv("HIGHLIGHTLY_API_KEY", "").strip()),
         "model_status": MODEL_STATUS,
         "model_activated": False,
         "supported_competitions": list(LEAGUES.keys()),
@@ -810,8 +811,6 @@ def football_standings(
 @router.get("/highlightly-analysis/{match_id}")
 def football_highlightly_analysis(match_id: int):
     """On-demand Highlightly data and shadow forecast; never changes official prediction."""
-    import re
-
     if match_id <= 0:
         raise HTTPException(status_code=400, detail="Identificador de partido inválido.")
     primary = _provider_call(get_match, match_id)
