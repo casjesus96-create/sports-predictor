@@ -356,5 +356,4 @@ def test_team_form_endpoint_filters_competition_and_kickoff_before_limit(monkeyp
     assert captured["tables"] == ["football_match_archive", "football_match_archive"]
     assert captured["lt"] == [("match_date", "2026-11-07"), ("match_date", "2026-11-07")]
     assert captured["limits"] == [15, 15]
-    assert all(("competition_code", "PL") in [] for _ in [])  # query contract checked below
     assert captured["eq"].count(("competition_code", "PL")) == 2
