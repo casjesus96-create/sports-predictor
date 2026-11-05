@@ -869,7 +869,10 @@ def highlightly_native_match_analysis(match_id: int):
             away_recent = get_highlightly_last_five(int(away["id"]))
             home_stats = get_highlightly_team_statistics(int(home["id"]), from_date)
             away_stats = get_highlightly_team_statistics(int(away["id"]), from_date)
-            h2h = get_highlightly_head_to_head(int(home["id"]), int(away["id"]))
+            # The shadow model does not use H2H rows to calculate probabilities;
+            # it only reports their count. Skip this extra provider request to
+            # conserve the Highlightly quota without changing the projection.
+            h2h = []
             result["experimental_prediction"] = predict_highlightly_shadow(
                 fixture, home_recent, away_recent, home_stats, away_stats, h2h, kickoff_at)
             result["recent_form"] = {"home": home_recent, "away": away_recent}
