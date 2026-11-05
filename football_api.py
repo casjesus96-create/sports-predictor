@@ -820,7 +820,23 @@ def football_highlightly_analysis(match_id: int):
     kickoff_at = match.get("utcDate")
     competition = match.get("competition") or {}
     competition_name = competition.get("name")
+    # Some football-data.org match payloads omit competition.area even though
+    # the competition code is canonical. Keep country-scoping for Highlightly
+    # league resolution instead of falling back to an ambiguous league name.
     competition_country = (competition.get("area") or {}).get("name")
+    if not competition_country:
+        competition_country_by_code = {
+            "PL": "England",
+            "PD": "Spain",
+            "BL1": "Germany",
+            "SA": "Italy",
+            "FL1": "France",
+            "PPL": "Portugal",
+            "DED": "Netherlands",
+            "BSA": "Brazil",
+        }
+        competition_code = str(competition.get("code") or "").strip().upper()
+        competition_country = competition_country_by_code.get(competition_code)
     if not home or not away or not kickoff_at or not competition_name:
         raise HTTPException(status_code=422, detail="El proveedor principal no devolvió equipos y fecha completos.")
     try:
