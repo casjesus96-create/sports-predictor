@@ -272,6 +272,100 @@ function HighlightlyLeagueExplorer() {
   </section>;
 }
 
+
+function TeamRecentFormPanel({ competition, match }: { competition: string; match: Match }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const homeName = match.homeTeam?.name || "";
+  const awayName = match.awayTeam?.name || "";
+  const kickoffAt = match.utcDate || "";
+
+  async function loadForm() {
+    if (!homeName || !awayName || !kickoffAt) {
+      setError("Faltan los nombres de los equipos o la fecha del encuentro.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({
+        competition,
+        home_team: homeName,
+        away_team: awayName,
+        kickoff_at: kickoffAt,
+      });
+      const response = await fetch(`${API}/archive/team-form?${params.toString()}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo consultar la forma reciente.");
+      setData(body);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error consultando la forma reciente.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const renderTeam = (side: "home" | "away", name: string) => {
+    const team = data?.teams?.[side];
+    if (!team) return null;
+    return <section key={side} style={{ background: "#111827", borderRadius: 8, padding: 10, minWidth: 0 }}>
+      <strong>{name}</strong>
+      <div style={{ color: "#94a3b8", fontSize: 10, margin: "3px 0 8px" }}>
+        {team.sample_size} partidos encontrados · identidad: {team.resolution === "verified_alias" ? "alias confirmado" : team.resolution === "exact" ? "coincidencia exacta" : "nombre aún no verificado"}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+        {(["5", "10", "15"] as const).map(windowSize => {
+          const stats = team.windows?.[windowSize];
+          return <div key={windowSize} style={{ background: "#0b1220", borderRadius: 7, padding: 7, minWidth: 0 }}>
+            <div style={{ color: "#cbd5e1", fontSize: 11, fontWeight: 700 }}>Últimos {windowSize}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, marginTop: 3 }}>{stats?.wins ?? 0}G · {stats?.draws ?? 0}E · {stats?.losses ?? 0}P</div>
+            <div style={{ color: "#94a3b8", fontSize: 10 }}>{stats?.matches ?? 0}/{windowSize} partidos</div>
+            <div style={{ fontSize: 11, marginTop: 6 }}>Puntos: <strong>{stats?.points ?? 0}</strong></div>
+            <div style={{ fontSize: 11 }}>GF/GC: <strong>{stats?.goals_for ?? 0}/{stats?.goals_against ?? 0}</strong></div>
+            <div style={{ fontSize: 11 }}>Promedio GF: <strong>{stats?.average_goals_for ?? "—"}</strong></div>
+            <div style={{ fontSize: 11 }}>Promedio GC: <strong>{stats?.average_goals_against ?? "—"}</strong></div>
+            <div style={{ fontSize: 11 }}>Porterías a cero: <strong>{stats?.clean_sheets ?? 0}</strong></div>
+            <div style={{ fontSize: 11 }}>No marcó: <strong>{stats?.failed_to_score ?? 0}</strong></div>
+            <div style={{ fontSize: 11 }}>Ambos marcan: <strong>{stats?.both_teams_scored ?? 0}</strong></div>
+            <div style={{ fontSize: 11 }}>Over 2.5: <strong>{stats?.over_2_5 ?? 0}</strong></div>
+            <div style={{ fontSize: 10, marginTop: 6, color: "#cbd5e1" }}>
+              Local: {stats?.venue_split?.at_home?.wins ?? 0}-{stats?.venue_split?.at_home?.draws ?? 0}-{stats?.venue_split?.at_home?.losses ?? 0}
+              {" · "}Fuera: {stats?.venue_split?.away?.wins ?? 0}-{stats?.venue_split?.away?.draws ?? 0}-{stats?.venue_split?.away?.losses ?? 0}
+            </div>
+            <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 6, overflowWrap: "anywhere" }}>
+              Forma (antiguo → reciente): {stats?.form_sequence?.join(" · ") || "—"}
+            </div>
+            {!stats?.sample_complete && <div style={{ color: "#fbbf24", fontSize: 10, marginTop: 5 }}>Muestra incompleta: no se inventaron partidos faltantes.</div>}
+          </div>;
+        })}
+      </div>
+    </section>;
+  };
+
+  return <section style={{ marginTop: 12, padding: 12, border: "1px solid #475569", borderRadius: 8, background: "#0b1220" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+      <div>
+        <strong>Rendimiento individual · Últimos 5, 10 y 15 partidos</strong>
+        <div style={{ color: "#94a3b8", fontSize: 11 }}>Histórico propio · solo {competition} · descriptivo, no altera el pronóstico oficial</div>
+      </div>
+      <button type="button" onClick={loadForm} disabled={loading || !homeName || !awayName} style={buttonStyle}>
+        {loading ? "Calculando forma…" : data ? "Actualizar rendimiento" : "Consultar rendimiento"}
+      </button>
+    </div>
+    {error && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{error}</p>}
+    {data && <>
+      <p style={{ color: "#94a3b8", fontSize: 11 }}>{data.history_scope} Los encuentros de la misma fecha del partido analizado se excluyen porque el archivo no conserva la hora de inicio de cada resultado.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 8 }}>
+        {renderTeam("home", homeName)}
+        {renderTeam("away", awayName)}
+      </div>
+      <p style={{ color: "#64748b", fontSize: 10, marginBottom: 0 }}>Fuente: football-data.co.uk · consultas locales: 0 llamadas a proveedores · resultados finalizados almacenados. Los porcentajes no se presentan como probabilidades de victoria.</p>
+    </>}
+  </section>;
+}
+
+
 function HeadToHeadPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
   const [historyScope, setHistoryScope] = useState<"all" | "competition">("all");
@@ -953,6 +1047,7 @@ export default function FootballApp() {
               </div>
             </div>
                 <HeadToHeadPanel competition={competition} match={match} />
+                {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <TeamRecentFormPanel competition={competition} match={match} />}
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
               <strong>Probabilidades 1X2</strong>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>
