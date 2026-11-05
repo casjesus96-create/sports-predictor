@@ -40,3 +40,28 @@ def test_missing_team_statistics_does_not_fabricate_prediction():
     result=predict_highlightly_shadow(fixture(),recent(1),recent(2),[],stats(2),[],
                                       "2026-11-04T20:00:00Z")
     assert result["available"] is False
+
+
+def test_fixture_resolution_requires_exact_teams_and_date(monkeypatch):
+    from highlightly_football_client import find_fixture
+    import highlightly_football_client as client
+
+    payload = {"data": [
+        {"id": 12, "date": "2026-11-04T20:00:00Z",
+         "homeTeam": {"name": "Atletico Madrid"}, "awayTeam": {"name": "Real Madrid"}},
+        {"id": 13, "date": "2026-11-04T20:00:00Z",
+         "homeTeam": {"name": "Atletico Madrid B"}, "awayTeam": {"name": "Real Madrid"}},
+    ]}
+    monkeypatch.setattr(client, "_get", lambda path, params=None: payload)
+    assert find_fixture("2026-11-04", "Atlético-Madrid", "Real Madrid")["id"] == 12
+
+
+def test_fixture_resolution_rejects_missing_exact_match(monkeypatch):
+    import pytest
+    import highlightly_football_client as client
+    from highlightly_football_client import HighlightlyError, find_fixture
+
+    monkeypatch.setattr(client, "_get", lambda path, params=None: {"data": []})
+    with pytest.raises(HighlightlyError) as exc:
+        find_fixture("2026-11-04", "Barcelona", "Aston Villa")
+    assert exc.value.status_code == 404
