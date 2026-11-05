@@ -1,0 +1,39 @@
+name: Football Historical Archive Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: "Primer año de temporada (por ejemplo 2000 = 2000/01)"
+        required: true
+        default: "2000"
+      end_year:
+        description: "Último año de inicio de temporada"
+        required: true
+        default: "2026"
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Import downloadable football results into Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FOOTBALL_ARCHIVE_START_YEAR: ${{ github.event.inputs.start_year || '2025' }}
+          FOOTBALL_ARCHIVE_END_YEAR: ${{ github.event.inputs.end_year || '2026' }}
+        run: python sync_football_archive.py

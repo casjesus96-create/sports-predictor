@@ -291,7 +291,8 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
     if (!homeId || !awayId) { setError("El proveedor no devolvió los identificadores de ambos equipos."); return; }
     setLoading(true); setError("");
     try {
-      const response = await fetch(`${API}/head-to-head?competition=${encodeURIComponent(competition)}&match_id=${match.id}&home_team_id=${homeId}&away_team_id=${awayId}&kickoff_at=${encodeURIComponent(kickoffAt)}&limit=10`);
+      const params = new URLSearchParams({ competition, home_team: homeName, away_team: awayName, kickoff_at: kickoffAt, limit: "20" });
+      const response = await fetch(`${API}/archive/head-to-head?${params.toString()}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo cargar el historial.");
       setData(body);
@@ -368,12 +369,12 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
 
   return <section style={{ marginTop: 12, padding: 12, border: "1px solid #475569", borderRadius: 8, background: "#0b1220" }}>
     <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-      <strong>Enfrentamientos históricos (H2H)</strong>
+      <strong>Enfrentamientos históricos (H2H) · Archivo propio</strong>
       <button type="button" onClick={loadHistory} disabled={loading || !homeId || !awayId} style={buttonStyle}>{loading ? "Consultando…" : data ? "Actualizar historial" : "Consultar historial"}</button>
     </div>
     {error && <p role="alert" style={{ color: "#fecaca" }}>{error}</p>}
     {data && <>
-      <p style={{ color: "#9ca3af", fontSize: 12 }}>Muestra: {data.sample_size} enfrentamientos directos finalizados encontrados. {data.history_scope}</p>
+      <p style={{ color: "#9ca3af", fontSize: 12 }}>Muestra: {data.sample_size} enfrentamientos directos almacenados. {data.history_scope}</p>
       {data.competitions_in_sample?.length > 0 && <p style={{ color: "#9ca3af", fontSize: 11 }}>Competiciones incluidas: {data.competitions_in_sample.join(", ")}</p>}
       {data.sample_size > 0 ? <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
@@ -393,7 +394,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
             <tbody>{data.meetings.map((item: any) => <tr key={item.id}><td style={cellStyle}>{item.date ? new Date(item.date).toLocaleDateString("es-ES") : "—"}</td><td style={cellStyle}>{item.home_team || "—"}</td><td style={cellStyle}><strong>{item.home_score}–{item.away_score}</strong></td><td style={cellStyle}>{item.away_team || "—"}</td><td style={cellStyle}>{item.total_goals}</td></tr>)}</tbody>
           </table>
         </div>
-      </> : <p>No se encontraron enfrentamientos finalizados en el historial que el proveedor tiene disponible para esta pareja. La consulta incluye competiciones distintas de {competition}; si la muestra sigue en cero, football-data.org no está exponiendo esos partidos en el plan o cobertura actuales. Esto no significa que los clubes nunca se hayan enfrentado.</p>}
+      </> : <p>Todavía no hay enfrentamientos de esta pareja en el archivo local para esta competición. Esto no significa que los clubes nunca se hayan enfrentado; puede faltar importar temporadas o normalizar algún nombre de equipo.</p>}
     </>}
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #334155" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
