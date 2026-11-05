@@ -87,7 +87,7 @@ def normalize_name(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     tokens = "".join(ch.lower() if ch.isalnum() else " " for ch in text).split()
-    ignored = {"fc", "cf", "afc", "sc", "ac", "cd", "ud", "sd", "fk", "sk", "de", "the"}
+    ignored = {"fc", "cf", "afc", "sc", "ac", "ec", "cd", "ud", "sd", "fk", "sk", "de", "the"}
     return " ".join(token for token in tokens if token not in ignored)
 
 
