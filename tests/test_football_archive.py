@@ -10,6 +10,9 @@ def test_team_key_normalizes_accents_and_club_suffixes():
     assert normalize_team_key("Arsenal FC") == "arsenal"
     assert normalize_team_key("Málaga CF") == "malaga"
     assert normalize_team_key("Hull City AFC") == "hull city"
+    assert normalize_team_key("Manchester Utd") == "manchester united"
+    assert normalize_team_key("Man City") == "manchester city"
+    assert normalize_team_key("Spurs") == "tottenham hotspur"
 
 
 def test_season_code_uses_two_digit_start_and_end_years():
