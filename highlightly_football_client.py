@@ -1,9 +1,11 @@
 """Highlightly direct Football API client with bounded cache and sanitized errors."""
 from __future__ import annotations
 
+import logging
 import os
 import time
 import unicodedata
+from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
 
@@ -26,6 +28,8 @@ _rate_limit_until = 0.0
 _rate_limit_message = "Highlightly ha limitado temporalmente las solicitudes."
 _request_locks: dict[tuple, Lock] = {}
 _provider_status: dict[str, Any] = {}
+_quota_state_loaded = False
+logger = logging.getLogger(__name__)
 
 
 class HighlightlyError(RuntimeError):
@@ -75,8 +79,65 @@ def _reset_seconds(headers: Any) -> int | None:
     return max(1, min(seconds, 86400)) if seconds > 0 else None
 
 
+def _quota_store_client():
+    """Get the existing Supabase service client lazily to avoid import cycles."""
+    from repository import get_supabase_client
+    return get_supabase_client()
+
+
+def _load_persisted_quota_state() -> None:
+    """Restore a provider cooldown after a Render process restart."""
+    global _quota_state_loaded, _rate_limit_until, _rate_limit_message
+    with _cache_lock:
+        if _quota_state_loaded:
+            return
+        _quota_state_loaded = True
+    try:
+        response = (
+            _quota_store_client()
+            .table("provider_quota_state")
+            .select("state")
+            .eq("provider", "Highlightly")
+            .limit(1)
+            .execute()
+        )
+        rows = getattr(response, "data", None) or []
+        if not rows or not isinstance(rows[0].get("state"), dict):
+            return
+        state = dict(rows[0]["state"])
+        blocked_until = int(state.get("blocked_until_epoch") or 0)
+        wait = max(0, blocked_until - int(time.time()))
+        with _cache_lock:
+            _provider_status.update({k: v for k, v in state.items() if k != "blocked_until_epoch"})
+            if wait:
+                _rate_limit_until = time.monotonic() + wait
+                _rate_limit_message = str(state.get("message") or "Highlightly ha limitado las solicitudes.")
+    except Exception as exc:
+        # Retry on a later status/provider request; this also lets an operator apply
+        # the migration after the service has already started.
+        with _cache_lock:
+            _quota_state_loaded = False
+        logger.warning("No se pudo restaurar el estado de cuota Highlightly desde Supabase: %s", exc)
+
+
+def _persist_quota_state(blocked_until_epoch: int = 0) -> None:
+    """Persist sanitized quota diagnostics; never store API credentials or response bodies."""
+    with _cache_lock:
+        state = dict(_provider_status)
+    state["blocked_until_epoch"] = int(blocked_until_epoch)
+    try:
+        _quota_store_client().table("provider_quota_state").upsert({
+            "provider": "Highlightly",
+            "state": state,
+            "updated_at": datetime.fromtimestamp(time.time(), timezone.utc).isoformat(),
+        }, on_conflict="provider").execute()
+    except Exception as exc:
+        logger.warning("No se pudo persistir el estado de cuota Highlightly en Supabase: %s", exc)
+
+
 def get_provider_status() -> dict[str, Any]:
     """Return last observed provider/quota diagnostics without making an API request."""
+    _load_persisted_quota_state()
     with _cache_lock:
         status = dict(_provider_status)
         wait = max(0, int(_rate_limit_until - time.monotonic()))
@@ -89,6 +150,7 @@ def get_provider_status() -> dict[str, Any]:
 
 def _get(path: str, params: dict[str, Any] | None = None) -> Any:
     token = _key()
+    _load_persisted_quota_state()
     clean = tuple(sorted((str(k), str(v)) for k, v in (params or {}).items() if v is not None))
     cache_key = (path, clean)
     now = time.monotonic()
@@ -152,6 +214,7 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
                     if exhausted else
                     "Highlightly aplicó un límite temporal de solicitudes."
                 )
+                blocked_until_epoch = int(time.time()) + cooldown_seconds
                 with _cache_lock:
                     _rate_limit_until = time.monotonic() + cooldown_seconds
                     _rate_limit_message = message
@@ -160,8 +223,11 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
                         "last_http_status": 429, "message": message,
                         "quota_remaining": remaining, "quota_limit": limit,
                         "quota_reset_seconds": reset_seconds,
+                        "retry_after_header_seconds": retry_after,
+                        "cooldown_source": "Retry-After" if retry_after else ("rate-limit-reset" if reset_seconds else "fallback"),
                         "observed_at": int(time.time()),
                     })
+                _persist_quota_state(blocked_until_epoch)
                 raise HighlightlyError(
                     f"{message} Se pausaron nuevas consultas durante aproximadamente {cooldown_seconds} segundos.",
                     429,
@@ -181,6 +247,7 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
             except ValueError as exc:
                 raise HighlightlyError("Highlightly devolvió una respuesta JSON no válida.") from exc
             with _cache_lock:
+                had_persisted_block = _provider_status.get("state") in {"quota_exhausted", "rate_limited"}
                 _cache[cache_key] = (time.monotonic() + _ttl(path), data)
                 _provider_status.update({
                     "provider": "Highlightly", "state": "available",
@@ -189,6 +256,8 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
                     "quota_reset_seconds": reset_seconds,
                     "observed_at": int(time.time()),
                 })
+            if had_persisted_block:
+                _persist_quota_state(0)
             return data
     finally:
         with _cache_lock:

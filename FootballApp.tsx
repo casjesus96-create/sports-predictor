@@ -110,7 +110,7 @@ function HighlightlyLeagueExplorer() {
   const [date, setDate] = useState(todayInput());
   const [matches, setMatches] = useState<any[]>([]);
   const [analysis, setAnalysis] = useState<Record<number, any>>({});
-  const [loadingCatalog, setLoadingCatalog] = useState(true);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [error, setError] = useState("");
@@ -120,33 +120,44 @@ function HighlightlyLeagueExplorer() {
     try {
       const response = await fetch(`${API}/highlightly/status`);
       const body = await response.json();
-      if (response.ok) setProviderStatus(body);
+      if (response.ok) {
+        setProviderStatus(body);
+        return body;
+      }
+      return null;
     } catch {
       // Status is diagnostic-only; never block the independent catalog UI.
+      return null;
+    }
+  }
+
+  async function loadCatalog() {
+    if (loadingCatalog) return;
+    setLoadingCatalog(true);
+    setError("");
+    try {
+      const status = await refreshProviderStatus();
+      if (status?.retry_after_seconds > 0) {
+        throw new Error(`Highlightly está en pausa. No se enviará otra solicitud al proveedor; quedan aproximadamente ${status.retry_after_seconds} segundos.`);
+      }
+      const response = await fetch(`${API}/highlightly/competitions`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo cargar el catálogo Highlightly.");
+      const rows = Array.isArray(body.competitions) ? body.competitions : [];
+      setCompetitions(rows);
+      setLeagueId(rows.length ? String(rows[0].id) : "");
+      if (!rows.length) setError("Highlightly respondió correctamente, pero no devolvió competiciones.");
+      await refreshProviderStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error consultando Highlightly.");
+      await refreshProviderStatus();
+    } finally {
+      setLoadingCatalog(false);
     }
   }
 
   useEffect(() => {
-    let active = true;
-    fetch(`${API}/highlightly/competitions`)
-      .then(async response => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.detail || "No se pudo cargar el catálogo Highlightly.");
-        return body;
-      })
-      .then(body => {
-        if (!active) return;
-        const rows = Array.isArray(body.competitions) ? body.competitions : [];
-        setCompetitions(rows);
-        if (rows.length) setLeagueId(String(rows[0].id));
-      })
-      .catch(err => { if (active) setError(err instanceof Error ? err.message : "Error consultando Highlightly."); })
-      .finally(() => { if (active) setLoadingCatalog(false); });
-    fetch(`${API}/highlightly/status`)
-      .then(async response => response.ok ? response.json() : null)
-      .then(body => { if (active && body) setProviderStatus(body); })
-      .catch(() => {});
-    return () => { active = false; };
+    refreshProviderStatus();
   }, []);
 
   const visibleCompetitions = competitions.filter(item =>
@@ -213,6 +224,7 @@ function HighlightlyLeagueExplorer() {
       <button type="button" onClick={refreshProviderStatus} style={{ ...buttonStyle, minHeight: 30, padding: "4px 8px", marginLeft: 8, background: "#334155", fontSize: 11 }}>Actualizar estado</button>
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8, marginTop: 10 }}>
+      <button type="button" onClick={loadCatalog} disabled={loadingCatalog || (providerStatus?.retry_after_seconds || 0) > 0} style={{ ...buttonStyle, background: "#155e75" }}>{loadingCatalog ? "Cargando competiciones…" : competitions.length ? "Actualizar catálogo de Highlightly" : "Cargar competiciones de Highlightly"}</button>
       <input aria-label="Buscar competición Highlightly" placeholder="Filtrar por liga o país" value={filter} onChange={event => setFilter(event.target.value)} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #475569", background: "#111827", color: "#fff" }} />
       <select aria-label="Competición Highlightly" value={leagueId} onChange={event => { setLeagueId(event.target.value); setMatches([]); setAnalysis({}); }} disabled={loadingCatalog || !visibleCompetitions.length} style={{ minHeight: 44, padding: 10, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff" }}>
         {visibleCompetitions.map(item => <option key={item.id} value={String(item.id)}>{item.name || "Competición"} · {item.country?.name || "País no indicado"} · ID {item.id}</option>)}
@@ -221,7 +233,7 @@ function HighlightlyLeagueExplorer() {
       <label style={{ display: "grid", gap: 5, fontSize: 13, fontWeight: 700 }}>Fecha de partidos
         <input type="date" value={date} onChange={event => { setDate(event.target.value); setMatches([]); setAnalysis({}); }} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff", colorScheme: "dark" }} />
       </label>
-      <button type="button" onClick={loadMatches} disabled={loadingCatalog || loadingMatches || !leagueId} style={{ ...buttonStyle, background: "#155e75" }}>{loadingMatches ? "Consultando Highlightly…" : "Buscar partidos de esta competición"}</button>
+      <button type="button" onClick={loadMatches} disabled={loadingCatalog || loadingMatches || !leagueId || (providerStatus?.retry_after_seconds || 0) > 0} style={{ ...buttonStyle, background: "#155e75" }}>{loadingMatches ? "Consultando Highlightly…" : "Buscar partidos de esta competición"}</button>
     </div>
     {error && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{error}</p>}
     {!loadingMatches && matches.length === 0 && !error && <p style={{ color: "#94a3b8", fontSize: 12 }}>Selecciona una competición y una fecha para consultar sus encuentros.</p>}
