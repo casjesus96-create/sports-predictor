@@ -103,3 +103,27 @@ def test_fixture_resolution_reports_date_feed_name_mismatch(monkeypatch):
         find_fixture("2026-11-07", "Leeds United FC", "Tottenham Hotspur FC")
     assert exc.value.status_code == 404
     assert "Leeds vs Tottenham" in str(exc.value)
+
+
+def test_fixture_resolution_scopes_date_query_to_league(monkeypatch):
+    import highlightly_football_client as client
+    from highlightly_football_client import find_fixture
+
+    calls = []
+    payload = {"data": [
+        {"id": 99, "date": "2026-11-07T12:30:00Z",
+         "homeTeam": {"name": "Leeds United"}, "awayTeam": {"name": "Tottenham Hotspur"},
+         "league": {"name": "Premier League"}},
+    ]}
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        return payload
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    result = find_fixture("2026-11-07", "Leeds United FC", "Tottenham Hotspur FC", "Premier League")
+
+    assert result["id"] == 99
+    assert calls == [("/matches", {
+        "date": "2026-11-07", "limit": 100, "offset": 0, "leagueName": "Premier League"
+    })]
