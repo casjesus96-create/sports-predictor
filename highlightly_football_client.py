@@ -135,9 +135,18 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
             reset_seconds = _reset_seconds(headers)
             if response.status_code == 429:
                 retry_after = _header_int(headers, "Retry-After", "retry-after")
-                cooldown_seconds = retry_after or reset_seconds or 60
+                try:
+                    error_payload = response.json()
+                    provider_error_text = str(error_payload).casefold()
+                except (ValueError, AttributeError):
+                    provider_error_text = ""
+                daily_quota_signal = any(
+                    marker in provider_error_text
+                    for marker in ("daily quota", "daily limit", "quota exceeded", "daily request")
+                )
+                exhausted = remaining == 0 or daily_quota_signal
+                cooldown_seconds = retry_after or reset_seconds or (3600 if exhausted else 60)
                 cooldown_seconds = max(30, min(cooldown_seconds, 86400))
-                exhausted = remaining == 0
                 message = (
                     "Highlightly indica que se agotó la cuota disponible."
                     if exhausted else
