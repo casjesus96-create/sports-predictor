@@ -449,6 +449,10 @@ def test_market_patterns_endpoint_applies_competition_and_cutoff_before_limits(m
     assert result["model_changed"] is False
     assert result["competition_sample"]["sample_size"] == 1
     assert result["competition_sample"]["markets"]["2_5"]["over"]["count"] == 1
+    assert result["competition_venue_advantage"]["home_teams"]["matches"] == 1
+    assert result["competition_venue_advantage"]["home_win_rate"] == 100.0
+    assert result["competition_venue_advantage"]["away_win_rate"] == 0.0
+    assert result["competition_venue_advantage"]["home_win_rate_minus_away_win_rate"] == 100.0
     assert captured["tables"] == ["football_match_archive"] * 3
     assert captured["eq"].count(("competition_code", "PL")) == 3
     assert captured["lt"] == [("match_date", "2026-11-07")] * 3
