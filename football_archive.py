@@ -712,12 +712,12 @@ def archive_team_recent_form(
     code = competition.strip().upper()
     if code not in COMPETITIONS:
         raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
-    cutoff = None
-    if kickoff_at:
-        try:
-            cutoff = datetime.fromisoformat(kickoff_at.replace("Z", "+00:00")).date().isoformat()
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="kickoff_at no es una fecha ISO 8601 válida.") from exc
+    if not kickoff_at:
+        raise HTTPException(status_code=400, detail="kickoff_at es obligatorio para evitar incluir resultados posteriores al partido.")
+    try:
+        cutoff = datetime.fromisoformat(kickoff_at.replace("Z", "+00:00")).date().isoformat()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="kickoff_at no es una fecha ISO 8601 válida.") from exc
 
     client = _client_or_503()
     resolved = {}
@@ -726,6 +726,8 @@ def archive_team_recent_form(
         if not key:
             raise HTTPException(status_code=400, detail=f"No se pudo resolver la identidad de {name}.")
         resolved[side] = {"name": name, "key": key, "resolution": resolution}
+    if resolved["home"]["key"] == resolved["away"]["key"]:
+        raise HTTPException(status_code=400, detail="Los equipos deben tener identidades distintas en el archivo.")
 
     teams = {}
     try:
