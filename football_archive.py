@@ -701,6 +701,156 @@ def _summarize_team_form(matches: list[dict[str, Any]]) -> dict[str, Any]:
     return windows
 
 
+
+
+def _goal_bucket_counts(values: list[int], count: int) -> dict[str, Any]:
+    buckets = {
+        "0": sum(value == 0 for value in values),
+        "1": sum(value == 1 for value in values),
+        "2": sum(value == 2 for value in values),
+        "3_plus": sum(value >= 3 for value in values),
+    }
+    return {
+        key: {"count": value, "percentage": _percentage(value, count)}
+        for key, value in buckets.items()
+    }
+
+
+def _summarize_market_sample(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Descriptive goal-market frequencies for a clearly bounded archived sample."""
+    valid = [
+        row for row in rows
+        if row.get("home_score") is not None and row.get("away_score") is not None
+    ]
+    count = len(valid)
+    totals = [int(row["home_score"]) + int(row["away_score"]) for row in valid]
+    home_goals = [int(row["home_score"]) for row in valid]
+    away_goals = [int(row["away_score"]) for row in valid]
+    over_counts = {
+        "1_5": sum(total >= 2 for total in totals),
+        "2_5": sum(total >= 3 for total in totals),
+        "3_5": sum(total >= 4 for total in totals),
+    }
+    markets = {}
+    for line, over_count in over_counts.items():
+        under_count = count - over_count
+        markets[line] = {
+            "over": {"count": over_count, "percentage": _percentage(over_count, count)},
+            "under": {"count": under_count, "percentage": _percentage(under_count, count)},
+        }
+    btts = sum(home > 0 and away > 0 for home, away in zip(home_goals, away_goals))
+    distribution = {
+        "0_1": sum(total <= 1 for total in totals),
+        "2": sum(total == 2 for total in totals),
+        "3": sum(total == 3 for total in totals),
+        "4_plus": sum(total >= 4 for total in totals),
+    }
+    return {
+        "sample_size": count,
+        "average_total_goals": round(sum(totals) / count, 3) if count else None,
+        "average_home_goals": round(sum(home_goals) / count, 3) if count else None,
+        "average_away_goals": round(sum(away_goals) / count, 3) if count else None,
+        "markets": markets,
+        "both_teams_scored": {
+            "count": btts,
+            "percentage": _percentage(btts, count),
+        },
+        "total_goals_distribution": {
+            key: {"count": value, "percentage": _percentage(value, count)}
+            for key, value in distribution.items()
+        },
+        "home_team_goals_distribution": _goal_bucket_counts(home_goals, count),
+        "away_team_goals_distribution": _goal_bucket_counts(away_goals, count),
+    }
+
+
+@router.get("/market-patterns")
+def archive_market_patterns(
+    competition: str = Query(...),
+    home_team: str = Query(..., min_length=2, max_length=100),
+    away_team: str = Query(..., min_length=2, max_length=100),
+    kickoff_at: str | None = None,
+):
+    """Compare recent league goal-market frequencies with each team's own recent sample."""
+    code = competition.strip().upper()
+    if code not in COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+    if not kickoff_at:
+        raise HTTPException(status_code=400, detail="kickoff_at es obligatorio para excluir resultados posteriores al partido.")
+    try:
+        cutoff = datetime.fromisoformat(kickoff_at.replace("Z", "+00:00")).date().isoformat()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="kickoff_at no es una fecha ISO 8601 válida.") from exc
+
+    client = _client_or_503()
+    resolved = {}
+    for side, name in (("home", home_team), ("away", away_team)):
+        key, resolution = _resolve_team_identity(client, code, name)
+        if not key:
+            raise HTTPException(status_code=400, detail=f"No se pudo resolver la identidad de {name}.")
+        resolved[side] = {"name": name, "key": key, "resolution": resolution}
+    if resolved["home"]["key"] == resolved["away"]["key"]:
+        raise HTTPException(status_code=400, detail="Los equipos deben tener identidades distintas en el archivo.")
+
+    try:
+        league_query = client.table("football_match_archive").select("*").eq(
+            "competition_code", code
+        ).lt("match_date", cutoff).order("match_date", desc=True).limit(1000)
+        league_rows = league_query.execute().data or []
+        teams = {}
+        for side, identity in resolved.items():
+            query = client.table("football_match_archive").select("*").eq(
+                "competition_code", code
+            ).or_(
+                f"home_team_key.eq.{identity['key']},away_team_key.eq.{identity['key']}"
+            ).lt("match_date", cutoff).order("match_date", desc=True).limit(15)
+            rows = query.execute().data or []
+            oriented = [
+                _team_form_match(row, identity["key"])
+                for row in rows
+                if identity["key"] in {row.get("home_team_key"), row.get("away_team_key")}
+                and row.get("home_score") is not None
+                and row.get("away_score") is not None
+            ]
+            teams[side] = {
+                **identity,
+                "sample_size": len(oriented),
+                "windows": _summarize_team_form(oriented),
+                "sample_start": min((item.get("date") for item in oriented if item.get("date")), default=None),
+                "sample_end": max((item.get("date") for item in oriented if item.get("date")), default=None),
+            }
+    except Exception as exc:
+        logger.exception("Could not query historical football market patterns")
+        raise HTTPException(status_code=503, detail="No se pudieron consultar los patrones del archivo propio.") from exc
+
+    league_rows = [
+        row for row in league_rows
+        if row.get("home_score") is not None and row.get("away_score") is not None
+        and str(row.get("match_date") or "") < cutoff
+    ]
+    dates = [str(row["match_date"]) for row in league_rows if row.get("match_date")]
+    return {
+        "success": True,
+        "provider": "Sports Predictor · Supabase archive",
+        "source": SOURCE_NAME,
+        "competition": code,
+        "competition_name": COMPETITIONS[code]["name"],
+        "history_scope": "Muestra de hasta 1.000 partidos finalizados más recientes de esta competición; equipos: hasta sus últimos 15 partidos.",
+        "cutoff_date_exclusive": cutoff,
+        "competition_sample": {
+            **_summarize_market_sample(league_rows),
+            "sample_start": min(dates) if dates else None,
+            "sample_end": max(dates) if dates else None,
+            "sample_limit": 1000,
+            "sample_complete": len(league_rows) == 1000,
+        },
+        "teams": teams,
+        "provider_calls": 0,
+        "model_changed": False,
+        "interpretation": "Frecuencias históricas descriptivas; no son probabilidades futuras ni recomendaciones de apuesta.",
+    }
+
+
 @router.get("/team-form")
 def archive_team_recent_form(
     competition: str = Query(...),
