@@ -531,8 +531,16 @@ def _summarize_head_to_head(meetings: list[dict[str, Any]]) -> dict[str, Any]:
         "under_1_5_count": count - over_1_5, "under_1_5_percentage": _percentage(count - over_1_5, count),
         "under_2_5_count": count - over_2_5, "under_2_5_percentage": _percentage(count - over_2_5, count),
         "under_3_5_count": count - over_3_5, "under_3_5_percentage": _percentage(count - over_3_5, count),
+        # Counts refer to the selected teams, not historical home/away venue.
+        # Legacy keys remain available for backward compatibility.
         "home_team_clean_sheets": home_clean, "away_team_clean_sheets": away_clean,
+        "home_team_clean_sheets_percentage": _percentage(home_clean, count),
+        "away_team_clean_sheets_percentage": _percentage(away_clean, count),
         "home_team_failed_to_score": away_clean, "away_team_failed_to_score": home_clean,
+        "home_team_failed_to_score_count": away_clean,
+        "away_team_failed_to_score_count": home_clean,
+        "home_team_failed_to_score_percentage": _percentage(away_clean, count),
+        "away_team_failed_to_score_percentage": _percentage(home_clean, count),
         "venue_split": {
             "home_team": {"at_home": _venue_record(meetings, "home", "home"), "away": _venue_record(meetings, "home", "away")},
             "away_team": {"at_home": _venue_record(meetings, "away", "home"), "away": _venue_record(meetings, "away", "away")},
@@ -547,8 +555,12 @@ def archive_head_to_head(
     away_team: str = Query(..., min_length=2, max_length=100),
     kickoff_at: str | None = None,
     limit: int = Query(20, ge=1, le=100),
+    scope: str = Query("all"),
 ):
     code = competition.strip().upper()
+    scope = scope.strip().lower()
+    if scope not in {"all", "competition"}:
+        raise HTTPException(status_code=400, detail="scope debe ser 'all' o 'competition'.")
     if code not in COMPETITIONS:
         raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
     client = _client_or_503()
@@ -571,11 +583,10 @@ def archive_head_to_head(
             f"and(home_team_key.eq.{home_key},away_team_key.eq.{away_key}),"
             f"and(home_team_key.eq.{away_key},away_team_key.eq.{home_key})"
         )
-        query = client.table("football_match_archive").select("*").or_(
-            pair_filter
-        ).order(
-            "match_date", desc=True
-        ).limit(1000)
+        query = client.table("football_match_archive").select("*").or_(pair_filter)
+        if scope == "competition":
+            query = query.eq("competition_code", code)
+        query = query.order("match_date", desc=True).limit(1000)
         rows = query.execute().data or []
     except Exception as exc:
         logger.exception("Could not query football archive H2H")
@@ -595,10 +606,15 @@ def archive_head_to_head(
         "provider": "Sports Predictor · Supabase archive",
         "source": SOURCE_NAME,
         "competition": code,
-        "history_scope": "Histórico propio almacenado en las cinco ligas cubiertas. Incluye enfrentamientos de cualquier liga importada; no representa necesariamente todos los torneos ni todos los partidos disputados.",
+        "history_scope": (
+            f"Solo {COMPETITIONS[code]['name']}."
+            if scope == "competition"
+            else "Todas las competiciones disponibles en el archivo propio de cinco ligas; no representa necesariamente todos los torneos ni todos los partidos disputados."
+        ),
+        "scope": scope,
         "availability": "available" if count else "no_data",
         "history_strategy": "owned_local_archive",
-        "competitions_in_sample": sorted({row["competition"] for row in clean_meetings}),
+        "competitions_in_sample": sorted({row["competition"] for row in meetings}),
         "teams": {
             "home": {"name": home_team, "key": home_key, "resolution": home_resolution},
             "away": {"name": away_team, "key": away_key, "resolution": away_resolution},
