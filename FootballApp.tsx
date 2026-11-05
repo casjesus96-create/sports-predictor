@@ -452,13 +452,92 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
   </section>;
 }
 
+
+function FootballArchiveBrowser() {
+  const [coverage, setCoverage] = useState<any[]>([]);
+  const [archiveCompetition, setArchiveCompetition] = useState("PL");
+  const [season, setSeason] = useState("");
+  const [matches, setMatches] = useState<any[]>([]);
+  const [loadingCoverage, setLoadingCoverage] = useState(true);
+  const [loadingMatches, setLoadingMatches] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API}/archive/competitions`)
+      .then(async response => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || "No se pudo cargar la cobertura del archivo.");
+        return body;
+      })
+      .then(body => { if (active) setCoverage(Array.isArray(body.competitions) ? body.competitions : []); })
+      .catch(err => { if (active) setError(err instanceof Error ? err.message : "Error consultando el archivo propio."); })
+      .finally(() => { if (active) setLoadingCoverage(false); });
+    return () => { active = false; };
+  }, []);
+
+  const selected = coverage.find(item => item.code === archiveCompetition);
+  const seasons: string[] = selected?.seasons || [];
+  const effectiveSeason = seasons.includes(season) ? season : seasons.length ? seasons[seasons.length - 1] : "";
+
+  useEffect(() => {
+    if (!effectiveSeason) { setMatches([]); return; }
+    let active = true;
+    setLoadingMatches(true);
+    setError("");
+    fetch(`${API}/archive/competition/${encodeURIComponent(archiveCompetition)}?season=${encodeURIComponent(effectiveSeason)}&limit=500`)
+      .then(async response => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || "No se pudo consultar esta temporada.");
+        return body;
+      })
+      .then(body => { if (active) setMatches(Array.isArray(body.matches) ? body.matches : []); })
+      .catch(err => { if (active) setError(err instanceof Error ? err.message : "Error leyendo los partidos históricos."); })
+      .finally(() => { if (active) setLoadingMatches(false); });
+    return () => { active = false; };
+  }, [archiveCompetition, effectiveSeason]);
+
+  return <section style={cardStyle}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <div><h2 style={{ margin: 0 }}>Archivo histórico propio de fútbol</h2><p style={{ color: "#9ca3af", fontSize: 12, margin: "5px 0 0" }}>Resultados descargados y conservados en nuestra base de datos. Consultas locales: 0 llamadas a proveedores externos.</p></div>
+      <span style={{ color: "#86efac", fontSize: 12 }}>Sports Predictor Archive</span>
+    </div>
+    {error && <p role="alert" style={{ color: "#fecaca" }}>{error}</p>}
+    {loadingCoverage ? <p style={{ color: "#9ca3af" }}>Leyendo cobertura del archivo…</p> : <>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 9, marginTop: 12 }}>
+        <label style={{ display: "grid", gap: 5, fontSize: 13, fontWeight: 700 }}>Liga
+          <select value={archiveCompetition} onChange={event => { setArchiveCompetition(event.target.value); setSeason(""); }} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff" }}>
+            {coverage.map(item => <option key={item.code} value={item.code}>{item.name} · {item.stored_matches || 0} partidos</option>)}
+          </select>
+        </label>
+        {selected && <div style={{ padding: 10, background: "#172033", borderRadius: 8, fontSize: 12 }}>
+          <strong>{selected.stored_matches || 0} partidos almacenados</strong>
+          <div style={{ color: "#9ca3af", marginTop: 4 }}>Temporadas disponibles: {seasons.length ? `${seasons[0]} a ${seasons[seasons.length - 1]}` : "Todavía ninguna temporada importada"}</div>
+        </div>}
+        <label style={{ display: "grid", gap: 5, fontSize: 13, fontWeight: 700 }}>Temporada
+          <select value={effectiveSeason} onChange={event => setSeason(event.target.value)} disabled={!seasons.length} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff" }}>
+            {seasons.slice().reverse().map(value => <option key={value} value={value}>{value.slice(0, 2)}/ {value.slice(2, 4)}</option>)}
+          </select>
+        </label>
+      </div>
+      {loadingMatches ? <p style={{ color: "#9ca3af" }}>Cargando resultados de {effectiveSeason}…</p> :
+        effectiveSeason ? <><p style={{ color: "#9ca3af", fontSize: 12 }}>Mostrando {matches.length} resultados de {selected?.name}, temporada {effectiveSeason}. Ordenados del más reciente al más antiguo.</p>
+          <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+            <thead><tr>{["Fecha", "Local", "Marcador", "Visitante"].map(label => <th key={label} style={cellStyle}>{label}</th>)}</tr></thead>
+            <tbody>{matches.map(item => <tr key={item.id}><td style={cellStyle}>{item.date ? new Date(item.date + "T12:00:00").toLocaleDateString("es-ES") : "—"}</td><td style={cellStyle}>{item.home_team}</td><td style={cellStyle}><strong>{item.home_score}–{item.away_score}</strong></td><td style={cellStyle}>{item.away_team}</td></tr>)}</tbody>
+          </table></div>
+        </> : <p style={{ color: "#fbbf24" }}>Esta liga todavía no tiene temporadas importadas. Primero hay que aplicar la migración y ejecutar la carga inicial desde GitHub Actions.</p>}
+    </>}
+  </section>;
+}
+
 export default function FootballApp() {
   const [competition, setCompetition] = useState("PL");
   const [selectedDate, setSelectedDate] = useState(todayInput());
   const [availability, setAvailability] = useState<CompetitionStatus[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
-  const [view, setView] = useState<"games" | "standings" | "history">("games");
+  const [view, setView] = useState<"games" | "standings" | "history" | "archive">("games");
   const [matchFilter, setMatchFilter] = useState<"upcoming" | "all" | "finished">("all");
   const [loading, setLoading] = useState(false);
   const [loadingCompetitions, setLoadingCompetitions] = useState(true);
@@ -594,7 +673,8 @@ export default function FootballApp() {
         <button type="button" onClick={() => loadData("games")} disabled={loading || loadingCompetitions || !selectedDate} style={buttonStyle}>{loading && view === "games" ? "Cargando…" : `Buscar partidos del ${selectedDate}`}</button>
         <button type="button" onClick={() => loadData("standings")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "standings" ? "Cargando…" : "Ver clasificación"}</button>
         <button type="button" aria-pressed={view === "history"} onClick={() => loadHistory()} disabled={historyLoading || loadingCompetitions} style={{ ...buttonStyle, background: view === "history" ? "#0f766e" : "#115e59", border: view === "history" ? "2px solid #5eead4" : "1px solid #5eead4", fontSize: 14 }}>{historyLoading ? "Cargando historial…" : "📚 Historial"}</button>
-        <button type="button" onClick={loadBacktest} disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
+        <button type="button" aria-pressed={view === "archive"} onClick={() => setView("archive")} style={{ ...buttonStyle, background: view === "archive" ? "#166534" : "#14532d", border: view === "archive" ? "2px solid #86efac" : "1px solid #86efac" }}>🗄️ Archivo histórico</button>
+        <button type="button" onClick={loadBacktest disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}><input type="checkbox" checked={includeExternalH2h} onChange={(event) => setIncludeExternalH2h(event.target.checked)} /> Consultar H2H externo (máx. 10 solicitudes)</label>
       </div>
       {error && <p role="alert" style={{ padding: 12, borderRadius: 8, background: "#451a1a", color: "#fecaca" }}>{error}</p>}
@@ -667,6 +747,8 @@ export default function FootballApp() {
           <p style={{ color: "#9ca3af", fontSize: 12, marginBottom: 0 }}>Solo lectura: no modifica snapshots ni las probabilidades oficiales. Para Brier Score y Log Loss, un cambio negativo favorece al candidato; para Accuracy, uno positivo. El diagnóstico distingue cuándo el candidato cambia probabilidades y cuándo usa H2H externo. Las consultas externas son opcionales y están limitadas a 10 por ejecución.</p>
         </section>;
       })()}
+
+      {view === "archive" && <FootballArchiveBrowser />}
 
       {view === "history" && <section style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
