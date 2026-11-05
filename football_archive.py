@@ -48,6 +48,7 @@ TEAM_ALIASES = {
     # Canonical keys match the names already persisted by Football-Data.co.uk.
     # Calendar/provider display names may include the club suffixes.
     "leeds united": "leeds",
+    "hull city": "hull",
     "tottenham hotspur": "tottenham",
     "spurs": "tottenham",
     "wolves": "wolverhampton wanderers",

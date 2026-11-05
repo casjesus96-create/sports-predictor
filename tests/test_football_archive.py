@@ -9,7 +9,8 @@ from football_archive import (
 def test_team_key_normalizes_accents_and_club_suffixes():
     assert normalize_team_key("Arsenal FC") == "arsenal"
     assert normalize_team_key("Málaga CF") == "malaga"
-    assert normalize_team_key("Hull City AFC") == "hull city"
+    assert normalize_team_key("Hull City AFC") == "hull"
+    assert normalize_team_key("Hull City") == "hull"
     assert normalize_team_key("Manchester Utd") == "manchester united"
     assert normalize_team_key("Man City") == "manchester city"
     assert normalize_team_key("Spurs") == "tottenham"
