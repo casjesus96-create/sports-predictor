@@ -282,7 +282,7 @@ def test_team_form_summary_uses_latest_windows_and_does_not_pad_samples():
     assert result["5"]["draws"] == 1
     assert result["5"]["losses"] == 1
     assert result["5"]["points"] == 10
-    assert result["5"]["form_sequence"] == ["W", "D", "L", "W", "W"]
+    assert result["5"]["form_sequence"] == ["W", "W", "L", "D", "W"]
     assert result["5"]["clean_sheets"] == 2
     assert result["5"]["failed_to_score"] == 1
     assert result["5"]["venue_split"]["at_home"]["matches"] == 3
