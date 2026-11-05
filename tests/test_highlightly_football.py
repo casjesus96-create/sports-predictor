@@ -223,3 +223,22 @@ def test_fixture_resolution_maps_spain_primera_division_to_la_liga(monkeypatch):
         "/matches",
         {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 140},
     )
+
+
+
+def test_fixture_resolution_matches_espanyol_and_deportivo_provider_short_names(monkeypatch):
+    import highlightly_football_client as client
+    from highlightly_football_client import find_fixture
+
+    monkeypatch.setattr(client, "_get", lambda path, params=None: {"data": [
+        {"id": 88002, "date": "2026-11-07T11:15:00Z",
+         "homeTeam": {"name": "Espanyol"}, "awayTeam": {"name": "Deportivo La Coruña"}}
+    ]})
+
+    result = find_fixture(
+        "2026-11-07",
+        "RCD Espanyol de Barcelona",
+        "RC Deportivo La Coruña",
+    )
+
+    assert result["id"] == 88002
