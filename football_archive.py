@@ -425,6 +425,8 @@ def _row_result(row: dict[str, Any], home_key: str) -> dict[str, Any]:
         ),
         "_selected_home_goals": home_score if row["home_team_key"] == home_key else away_score,
         "_selected_away_goals": away_score if row["home_team_key"] == home_key else home_score,
+        "_selected_home_venue": "home" if row["home_team_key"] == home_key else "away",
+        "_selected_away_venue": "away" if row["home_team_key"] == home_key else "home",
     }
 
 
@@ -468,6 +470,74 @@ def archive_competitions():
         logger.exception("Could not read football archive competition coverage")
         raise HTTPException(status_code=503, detail="No se pudo consultar la cobertura del histórico propio.") from exc
     return {"success": True, "source": SOURCE_NAME, "provider_calls": 0, "competitions": result}
+
+
+
+
+def _percentage(count: int, sample_size: int) -> float | None:
+    return round(count * 100 / sample_size, 1) if sample_size else None
+
+
+def _venue_record(meetings: list[dict[str, Any]], team_side: str, venue: str) -> dict[str, Any]:
+    goals_for_key = "_selected_home_goals" if team_side == "home" else "_selected_away_goals"
+    goals_against_key = "_selected_away_goals" if team_side == "home" else "_selected_home_goals"
+    venue_key = "_selected_home_venue" if team_side == "home" else "_selected_away_venue"
+    selected = [row for row in meetings if row.get(venue_key) == venue]
+    if team_side == "home":
+        wins = sum(row["_selected_home_result"] == "home" for row in selected)
+    else:
+        wins = sum(row["_selected_home_result"] == "away" for row in selected)
+    draws = sum(row["_selected_home_result"] == "draw" for row in selected)
+    losses = len(selected) - wins - draws
+    goals_for = sum(row[goals_for_key] for row in selected)
+    goals_against = sum(row[goals_against_key] for row in selected)
+    return {
+        "matches": len(selected), "wins": wins, "draws": draws, "losses": losses,
+        "goals_for": goals_for, "goals_against": goals_against,
+        "average_goals_for": round(goals_for / len(selected), 3) if selected else None,
+        "average_goals_against": round(goals_against / len(selected), 3) if selected else None,
+        "win_percentage": _percentage(wins, len(selected)),
+    }
+
+
+def _summarize_head_to_head(meetings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Calculate descriptive H2H frequencies from completed archived matches."""
+    count = len(meetings)
+    home_wins = sum(row["_selected_home_result"] == "home" for row in meetings)
+    draws = sum(row["_selected_home_result"] == "draw" for row in meetings)
+    away_wins = sum(row["_selected_home_result"] == "away" for row in meetings)
+    both_scored = sum(row["home_score"] > 0 and row["away_score"] > 0 for row in meetings)
+    over_1_5 = sum(row["total_goals"] >= 2 for row in meetings)
+    over_2_5 = sum(row["total_goals"] >= 3 for row in meetings)
+    over_3_5 = sum(row["total_goals"] >= 4 for row in meetings)
+    home_goals = sum(row["_selected_home_goals"] for row in meetings)
+    away_goals = sum(row["_selected_away_goals"] for row in meetings)
+    total_goals = sum(row["total_goals"] for row in meetings)
+    home_clean = sum(row["_selected_away_goals"] == 0 for row in meetings)
+    away_clean = sum(row["_selected_home_goals"] == 0 for row in meetings)
+    return {
+        "home_team_wins": home_wins, "home_team_wins_percentage": _percentage(home_wins, count),
+        "draws": draws, "draws_percentage": _percentage(draws, count),
+        "away_team_wins": away_wins, "away_team_wins_percentage": _percentage(away_wins, count),
+        "home_team_goals": home_goals, "away_team_goals": away_goals,
+        "average_home_team_goals": round(home_goals / count, 3) if count else None,
+        "average_away_team_goals": round(away_goals / count, 3) if count else None,
+        "average_total_goals": round(total_goals / count, 3) if count else None,
+        "both_teams_scored_count": both_scored,
+        "both_teams_scored_percentage": _percentage(both_scored, count),
+        "over_1_5_count": over_1_5, "over_1_5_percentage": _percentage(over_1_5, count),
+        "over_2_5_count": over_2_5, "over_2_5_percentage": _percentage(over_2_5, count),
+        "over_3_5_count": over_3_5, "over_3_5_percentage": _percentage(over_3_5, count),
+        "under_1_5_count": count - over_1_5, "under_1_5_percentage": _percentage(count - over_1_5, count),
+        "under_2_5_count": count - over_2_5, "under_2_5_percentage": _percentage(count - over_2_5, count),
+        "under_3_5_count": count - over_3_5, "under_3_5_percentage": _percentage(count - over_3_5, count),
+        "home_team_clean_sheets": home_clean, "away_team_clean_sheets": away_clean,
+        "home_team_failed_to_score": away_clean, "away_team_failed_to_score": home_clean,
+        "venue_split": {
+            "home_team": {"at_home": _venue_record(meetings, "home", "home"), "away": _venue_record(meetings, "home", "away")},
+            "away_team": {"at_home": _venue_record(meetings, "away", "home"), "away": _venue_record(meetings, "away", "away")},
+        },
+    }
 
 
 @router.get("/head-to-head")
@@ -518,19 +588,7 @@ def archive_head_to_head(
     ]
     meetings.sort(key=lambda row: row["date"], reverse=True)
     count = len(meetings)
-    summary = {
-        "home_team_wins": sum(row["_selected_home_result"] == "home" for row in meetings),
-        "draws": sum(row["_selected_home_result"] == "draw" for row in meetings),
-        "away_team_wins": sum(row["_selected_home_result"] == "away" for row in meetings),
-        "home_team_goals": sum(row["_selected_home_goals"] for row in meetings),
-        "away_team_goals": sum(row["_selected_away_goals"] for row in meetings),
-        "average_home_team_goals": round(sum(row["_selected_home_goals"] for row in meetings) / count, 3) if count else None,
-        "average_away_team_goals": round(sum(row["_selected_away_goals"] for row in meetings) / count, 3) if count else None,
-        "average_total_goals": round(sum(row["total_goals"] for row in meetings) / count, 3) if count else None,
-        "both_teams_scored_count": sum(row["home_score"] > 0 and row["away_score"] > 0 for row in meetings),
-        "over_2_5_count": sum(row["total_goals"] >= 3 for row in meetings),
-        "under_2_5_count": sum(row["total_goals"] <= 2 for row in meetings),
-    }
+    summary = _summarize_head_to_head(meetings)
     clean_meetings = [{key: value for key, value in row.items() if not key.startswith("_")} for row in meetings[:limit]]
     return {
         "success": True,
