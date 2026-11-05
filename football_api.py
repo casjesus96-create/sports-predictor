@@ -401,7 +401,7 @@ def football_head_to_head(
     home_team_id: int = Query(..., gt=0),
     away_team_id: int = Query(..., gt=0),
     match_id: int | None = Query(None, gt=0),
-    kickoff_at: str | None = Query(None, min_length=10, max_length=40),
+    kickoff_at: str | None = None,
     limit: int = Query(10, ge=1, le=50),
 ):
     """Return valid direct meetings, preferring the provider's dedicated H2H endpoint."""
@@ -411,9 +411,12 @@ def football_head_to_head(
     if code not in LEAGUES:
         raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa uno de estos códigos: {', '.join(LEAGUES)}.")
     kickoff = None
-    if kickoff_at:
+    if kickoff_at is not None:
+        kickoff_value = kickoff_at.strip()
+        if not 10 <= len(kickoff_value) <= 40:
+            raise HTTPException(status_code=400, detail="kickoff_at debe tener entre 10 y 40 caracteres.")
         try:
-            kickoff = datetime.fromisoformat(kickoff_at.strip().replace("Z", "+00:00"))
+            kickoff = datetime.fromisoformat(kickoff_value.replace("Z", "+00:00"))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="kickoff_at no es una fecha ISO 8601 válida.") from exc
         if kickoff.tzinfo is None:
