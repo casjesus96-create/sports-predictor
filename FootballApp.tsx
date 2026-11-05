@@ -420,8 +420,11 @@ function FootballMarketPatternsPanel({ competition, match }: { competition: stri
             <div style={{ fontSize: 10, color: "#94a3b8" }}>{stats?.matches ?? 0}/{size} partidos</div>
             {[
               ["Over 1.5", stats?.over_1_5, stats?.over_1_5_percentage],
+              ["Under 1.5", stats?.under_1_5, stats?.under_1_5_percentage],
               ["Over 2.5", stats?.over_2_5, stats?.over_2_5_percentage],
+              ["Under 2.5", stats?.under_2_5, stats?.under_2_5_percentage],
               ["Over 3.5", stats?.over_3_5, stats?.over_3_5_percentage],
+              ["Under 3.5", stats?.under_3_5, stats?.under_3_5_percentage],
               ["BTTS", stats?.both_teams_scored, stats?.both_teams_scored_percentage],
             ].map(([label, count, pct]: any) => <div key={label} style={{ fontSize: 10, marginTop: 5 }}>{label}: <strong>{count ?? 0}</strong> · {pct == null ? "—" : `${pct}%`}</div>)}
             <div style={{ fontSize: 10, marginTop: 5 }}>GF: <strong>{stats?.average_goals_for ?? "—"}</strong> · GC: <strong>{stats?.average_goals_against ?? "—"}</strong></div>
@@ -462,7 +465,11 @@ function FootballMarketPatternsPanel({ competition, match }: { competition: stri
           <div style={{ background: "#0b1220", padding: 8, borderRadius: 7, fontSize: 10 }}>Media visitante <strong>{data.competition_sample?.average_away_goals ?? "—"}</strong></div>
         </div>
         <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 8 }}>
-          Distribución de goles: 0–1 {data.competition_sample?.total_goals_distribution?.["0_1"]?.count ?? 0} · 2 {data.competition_sample?.total_goals_distribution?.["2"]?.count ?? 0} · 3 {data.competition_sample?.total_goals_distribution?.["3"]?.count ?? 0} · 4+ {data.competition_sample?.total_goals_distribution?.["4_plus"]?.count ?? 0}
+          Goles totales: 0–1 {data.competition_sample?.total_goals_distribution?.["0_1"]?.count ?? 0} · 2 {data.competition_sample?.total_goals_distribution?.["2"]?.count ?? 0} · 3 {data.competition_sample?.total_goals_distribution?.["3"]?.count ?? 0} · 4+ {data.competition_sample?.total_goals_distribution?.["4_plus"]?.count ?? 0}
+        </div>
+        <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 4 }}>
+          Goles local (0/1/2/3+): {["0", "1", "2", "3_plus"].map(key => data.competition_sample?.home_team_goals_distribution?.[key]?.count ?? 0).join("/")}
+          {" · "}visitante: {["0", "1", "2", "3_plus"].map(key => data.competition_sample?.away_team_goals_distribution?.[key]?.count ?? 0).join("/")}
         </div>
       </section>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 8, marginTop: 8 }}>
