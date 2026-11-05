@@ -287,6 +287,82 @@ def find_fixture(
         )
     return matches[0]
 
+
+def get_leagues(page_size: int = 100, max_pages: int = 20) -> list[dict[str, Any]]:
+    """Return Highlightly's own paginated league catalog, preserving provider IDs/names."""
+    safe_page_size = max(1, min(int(page_size), 100))
+    safe_max_pages = max(1, min(int(max_pages), 20))
+    leagues: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for page_number in range(safe_max_pages):
+        offset = page_number * safe_page_size
+        payload = _get("/leagues", {"limit": safe_page_size, "offset": offset})
+        rows = payload.get("data", []) if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            raise HighlightlyError("Highlightly devolvió un catálogo de competiciones con formato inesperado.")
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            league_id = row.get("id")
+            if isinstance(league_id, int) and not isinstance(league_id, bool) and league_id > 0 and league_id not in seen_ids:
+                leagues.append(row)
+                seen_ids.add(league_id)
+        pagination = payload.get("pagination", {}) if isinstance(payload, dict) else {}
+        total_count = pagination.get("totalCount")
+        if not rows or len(rows) < safe_page_size:
+            break
+        if isinstance(total_count, int) and offset + len(rows) >= total_count:
+            break
+    return leagues
+
+
+def get_league_matches(league_id: int, match_date: str, page_size: int = 100) -> list[dict[str, Any]]:
+    """Return fixtures for a Highlightly league ID and date; no team-name resolution."""
+    if isinstance(league_id, bool) or not isinstance(league_id, int) or league_id <= 0:
+        raise HighlightlyError("Identificador de competición Highlightly inválido.", 400)
+    try:
+        from datetime import date as _date
+        _date.fromisoformat(str(match_date))
+    except (TypeError, ValueError) as exc:
+        raise HighlightlyError("La fecha solicitada no es válida (YYYY-MM-DD).", 400) from exc
+    safe_page_size = max(1, min(int(page_size), 100))
+    rows_out: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for page_number in range(10):
+        offset = page_number * safe_page_size
+        payload = _get("/matches", {"leagueId": league_id, "date": match_date, "limit": safe_page_size, "offset": offset})
+        rows = payload.get("data", []) if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            raise HighlightlyError("Highlightly devolvió un calendario con formato inesperado.")
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            match_id = row.get("id")
+            league = row.get("league") or {}
+            if league.get("id") == league_id and isinstance(match_id, int) and not isinstance(match_id, bool) and match_id not in seen_ids and str(row.get("date") or "")[:10] == match_date:
+                rows_out.append(row)
+                seen_ids.add(match_id)
+        pagination = payload.get("pagination", {}) if isinstance(payload, dict) else {}
+        total_count = pagination.get("totalCount")
+        if not rows or len(rows) < safe_page_size:
+            break
+        if isinstance(total_count, int) and offset + len(rows) >= total_count:
+            break
+    return rows_out
+
+
+def get_fixture(match_id: int) -> dict[str, Any]:
+    """Fetch a Highlightly fixture by its own ID."""
+    if isinstance(match_id, bool) or not isinstance(match_id, int) or match_id <= 0:
+        raise HighlightlyError("Identificador de partido Highlightly inválido.", 400)
+    payload = _get(f"/matches/{match_id}")
+    if isinstance(payload, dict):
+        candidate = payload.get("match") or payload.get("data") or payload
+        if isinstance(candidate, dict) and candidate.get("id") == match_id:
+            return candidate
+    raise HighlightlyError("Highlightly no devolvió el encuentro solicitado.", 404)
+
+
 def get_match_statistics(match_id: int) -> Any:
     return _get(f"/statistics/{int(match_id)}")
 
