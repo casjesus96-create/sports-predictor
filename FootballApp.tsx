@@ -329,6 +329,10 @@ function TeamRecentFormPanel({ competition, match }: { competition: string; matc
             <div style={{ fontSize: 11 }}>No marcó: <strong>{stats?.failed_to_score ?? 0}</strong></div>
             <div style={{ fontSize: 11 }}>Ambos marcan: <strong>{stats?.both_teams_scored ?? 0}</strong></div>
             <div style={{ fontSize: 11 }}>Over 2.5: <strong>{stats?.over_2_5 ?? 0}</strong></div>
+            <div style={{ fontSize: 10, marginTop: 6, color: "#cbd5e1" }}>
+              Local: {stats?.venue_split?.at_home?.wins ?? 0}-{stats?.venue_split?.at_home?.draws ?? 0}-{stats?.venue_split?.at_home?.losses ?? 0}
+              {" · "}Fuera: {stats?.venue_split?.away?.wins ?? 0}-{stats?.venue_split?.away?.draws ?? 0}-{stats?.venue_split?.away?.losses ?? 0}
+            </div>
             <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 6, overflowWrap: "anywhere" }}>
               Forma (antiguo → reciente): {stats?.form_sequence?.join(" · ") || "—"}
             </div>
@@ -352,7 +356,7 @@ function TeamRecentFormPanel({ competition, match }: { competition: string; matc
     {error && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{error}</p>}
     {data && <>
       <p style={{ color: "#94a3b8", fontSize: 11 }}>{data.history_scope} Los encuentros de la misma fecha del partido analizado se excluyen porque el archivo no conserva la hora de inicio de cada resultado.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 8 }}>
         {renderTeam("home", homeName)}
         {renderTeam("away", awayName)}
       </div>
@@ -1043,7 +1047,7 @@ export default function FootballApp() {
               </div>
             </div>
                 <HeadToHeadPanel competition={competition} match={match} />
-                <TeamRecentFormPanel competition={competition} match={match} />
+                {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <TeamRecentFormPanel competition={competition} match={match} />}
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
               <strong>Probabilidades 1X2</strong>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>
