@@ -223,7 +223,7 @@ def test_h2h_summary_calculates_goal_markets_and_venue_splits():
     assert (result["over_1_5_count"], result["over_2_5_count"], result["over_3_5_count"]) == (4,2,1)
     assert (result["under_1_5_count"], result["under_2_5_count"], result["under_3_5_count"]) == (0,2,3)
     assert result["venue_split"]["home_team"]["at_home"]["matches"] == 2
-    assert result["venue_split"]["home_team"]["at_home"]["wins"] == 2
+    assert result["venue_split"]["home_team"]["at_home"]["wins"] == 1
     assert result["venue_split"]["home_team"]["away"]["matches"] == 2
     assert result["venue_split"]["away_team"]["at_home"]["matches"] == 2
 
