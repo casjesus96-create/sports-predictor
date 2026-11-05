@@ -179,3 +179,47 @@ def test_fixture_resolution_rejects_wrong_league_even_if_team_names_match(monkey
         find_fixture("2026-11-07", "Leeds United", "Tottenham Hotspur", "Premier League", "England")
     assert exc.value.status_code == 404
     assert "Other League" in str(exc.value)
+
+
+
+def test_fixture_resolution_maps_spain_primera_division_to_la_liga(monkeypatch):
+    import highlightly_football_client as client
+    from highlightly_football_client import find_fixture
+
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        if path == "/countries":
+            return [{"code": "ES", "name": "Spain"}]
+        if path == "/leagues" and "leagueName" in (params or {}):
+            # Search results are broad and contain several Spanish competitions.
+            return {"data": [
+                {"id": 141, "name": "Segunda División", "country": {"code": "ES", "name": "Spain"}},
+                {"id": 142, "name": "Primera División Femenina", "country": {"code": "ES", "name": "Spain"}},
+                {"id": 140, "name": "La Liga", "country": {"code": "ES", "name": "Spain"}},
+            ]}
+        if path == "/leagues":
+            return {"data": [
+                {"id": 141, "name": "Segunda División", "country": {"code": "ES", "name": "Spain"}},
+                {"id": 142, "name": "Primera División Femenina", "country": {"code": "ES", "name": "Spain"}},
+                {"id": 140, "name": "La Liga", "country": {"code": "ES", "name": "Spain"}},
+                {"id": 143, "name": "Copa del Rey", "country": {"code": "ES", "name": "Spain"}},
+            ]}
+        return {"data": [
+            {"id": 88001, "date": "2026-11-07T09:00:00Z",
+             "homeTeam": {"name": "Malaga"}, "awayTeam": {"name": "Real Racing Club de Santander"},
+             "league": {"id": 140, "name": "La Liga"}}
+        ]}
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    result = find_fixture(
+        "2026-11-07", "Málaga CF", "Real Racing Club de Santander",
+        "Primera Division", "Spain",
+    )
+
+    assert result["id"] == 88001
+    assert calls[-1] == (
+        "/matches",
+        {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 140},
+    )
