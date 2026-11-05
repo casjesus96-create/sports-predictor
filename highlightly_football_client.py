@@ -22,6 +22,8 @@ CACHE_TTLS = {
 }
 _cache: dict[tuple, tuple[float, Any]] = {}
 _cache_lock = Lock()
+_rate_limit_until = 0.0
+_rate_limit_message = "Highlightly ha limitado temporalmente las solicitudes."
 
 
 class HighlightlyError(RuntimeError):
@@ -49,10 +51,17 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
     clean = tuple(sorted((str(k), str(v)) for k, v in (params or {}).items() if v is not None))
     cache_key = (path, clean)
     now = time.monotonic()
+    global _rate_limit_until, _rate_limit_message
     with _cache_lock:
         cached = _cache.get(cache_key)
         if cached and cached[0] > now:
             return cached[1]
+        if _rate_limit_until > now:
+            wait_seconds = max(1, int(_rate_limit_until - now))
+            raise HighlightlyError(
+                f"{_rate_limit_message} Reintento bloqueado temporalmente; espera aproximadamente {wait_seconds} segundos.",
+                429,
+            )
     try:
         response = requests.get(
             f"{BASE_URL}{path}",
@@ -67,7 +76,19 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
     if response.status_code == 403:
         raise HighlightlyError("Highlightly rechazó la solicitud o el acceso al recurso (HTTP 403).", 502)
     if response.status_code == 429:
-        raise HighlightlyError("Se alcanzó el límite de solicitudes de Highlightly. Intenta más tarde.", 429)
+        retry_after = response.headers.get("Retry-After", "")
+        try:
+            cooldown_seconds = max(30, min(int(float(retry_after)), 3600))
+        except (TypeError, ValueError):
+            cooldown_seconds = 60
+        message = "Se alcanzó el límite de solicitudes de Highlightly."
+        with _cache_lock:
+            _rate_limit_until = time.monotonic() + cooldown_seconds
+            _rate_limit_message = message
+        raise HighlightlyError(
+            f"{message} Se pausaron nuevas consultas durante aproximadamente {cooldown_seconds} segundos para proteger la cuota.",
+            429,
+        )
     if response.status_code == 404:
         raise HighlightlyError("Highlightly no encontró datos para este encuentro o recurso.", 404)
     if response.status_code >= 500:
