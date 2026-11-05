@@ -89,7 +89,7 @@ def normalize_name(value: str) -> str:
     return " ".join(token for token in tokens if token not in ignored)
 
 
-def find_fixture(date: str, home_name: str, away_name: str) -> dict:
+def find_fixture(date: str, home_name: str, away_name: str, league_name: str | None = None) -> dict:
     """Resolve a fixture from the UTC date feed, then verify both teams locally.
 
     Do not send provider-specific team-name filters: their exact matching rules
@@ -97,11 +97,14 @@ def find_fixture(date: str, home_name: str, away_name: str) -> dict:
     A date-only request is bounded to one calendar day and keeps discovery to
     one quota unit; identity is verified against the returned records below.
     """
-    payload = _get("/matches", {
+    params = {
         "date": date,
         "limit": 100,
         "offset": 0,
-    })
+    }
+    if league_name and str(league_name).strip():
+        params["leagueName"] = str(league_name).strip()
+    payload = _get("/matches", params)
     rows = payload.get("data", []) if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
         raise HighlightlyError("Highlightly devolvió un formato inesperado al buscar el partido.")
