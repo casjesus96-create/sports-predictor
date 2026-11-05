@@ -45,7 +45,11 @@ TEAM_ALIASES = {
     "man city": "manchester city",
     "ath madrid": "atletico madrid",
     "atletico de madrid": "atletico madrid",
-    "spurs": "tottenham hotspur",
+    # Canonical keys match the names already persisted by Football-Data.co.uk.
+    # Calendar/provider display names may include the club suffixes.
+    "leeds united": "leeds",
+    "tottenham hotspur": "tottenham",
+    "spurs": "tottenham",
     "wolves": "wolverhampton wanderers",
     "newcastle": "newcastle united",
     "west ham": "west ham united",
@@ -317,10 +321,15 @@ def archive_head_to_head(
 
     client = _client_or_503()
     try:
-        # Search every imported league so direct meetings in another covered
-        # competition are retained, matching the previous cross-competition H2H intent.
+        # Query the exact unordered pair in one database request. This avoids
+        # scanning the first 1,000 matches for one club and then filtering in Python,
+        # which could silently hide older direct meetings.
+        pair_filter = (
+            f"and(home_team_key.eq.{home_key},away_team_key.eq.{away_key}),"
+            f"and(home_team_key.eq.{away_key},away_team_key.eq.{home_key})"
+        )
         query = client.table("football_match_archive").select("*").or_(
-            f"home_team_key.eq.{home_key},away_team_key.eq.{home_key}"
+            pair_filter
         ).order(
             "match_date", desc=True
         ).limit(1000)
