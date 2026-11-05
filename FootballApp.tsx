@@ -472,10 +472,61 @@ function FootballMarketPatternsPanel({ competition, match }: { competition: stri
           {" · "}visitante: {["0", "1", "2", "3_plus"].map(key => data.competition_sample?.away_team_goals_distribution?.[key]?.count ?? 0).join("/")}
         </div>
       </section>
+      <section style={{ marginTop: 9, background: "#111827", padding: 10, borderRadius: 8 }}>
+        <strong>Ventaja de localía · competición</strong>
+        <div style={{ color: "#94a3b8", fontSize: 10, margin: "4px 0 8px" }}>
+          Diferencia descriptiva entre el rendimiento de los equipos jugando en casa y fuera; misma muestra histórica de la competición.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+          {[
+            ["Equipos locales", data.competition_venue_advantage?.home_teams],
+            ["Equipos visitantes", data.competition_venue_advantage?.away_teams],
+          ].map(([label, stats]: any) => <div key={label} style={{ background: "#0b1220", padding: 8, borderRadius: 7 }}>
+            <strong style={{ fontSize: 11 }}>{label}</strong>
+            <div style={{ fontSize: 10, marginTop: 5 }}>Muestra: {stats?.matches ?? 0}</div>
+            <div style={{ fontSize: 10 }}>G / E / P: {stats?.wins ?? 0} / {stats?.draws ?? 0} / {stats?.losses ?? 0}</div>
+            <div style={{ fontSize: 10 }}>Victorias: <strong>{stats?.win_percentage == null ? "—" : `${stats.win_percentage}%`}</strong></div>
+            <div style={{ fontSize: 10 }}>GF/GC por partido: {stats?.average_goals_for ?? "—"} / {stats?.average_goals_against ?? "—"}</div>
+            <div style={{ fontSize: 10 }}>Over 2.5: {stats?.over_2_5 ?? 0} ({stats?.over_2_5_percentage == null ? "—" : `${stats.over_2_5_percentage}%`})</div>
+            <div style={{ fontSize: 10 }}>BTTS: {stats?.both_teams_scored ?? 0} ({stats?.both_teams_scored_percentage == null ? "—" : `${stats.both_teams_scored_percentage}%`})</div>
+          </div>)}
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: "#cbd5e1" }}>
+          Diferencia de victorias local − visitante: <strong>{data.competition_venue_advantage?.home_win_rate_minus_away_win_rate == null ? "—" : `${data.competition_venue_advantage.home_win_rate_minus_away_win_rate} puntos porcentuales`}</strong>
+        </div>
+      </section>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 8, marginTop: 8 }}>
         {renderTeam("home", homeName)}
         {renderTeam("away", awayName)}
       </div>
+      <section style={{ marginTop: 9, background: "#111827", padding: 10, borderRadius: 8 }}>
+        <strong>Localía de cada equipo · ventanas independientes</strong>
+        <div style={{ color: "#94a3b8", fontSize: 10, margin: "4px 0 8px" }}>Últimos 5, 10 y 15 partidos disputados específicamente en casa o fuera. Cada ventana usa su propio tamaño de muestra.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 9 }}>
+          {(["home", "away"] as const).map(side => {
+            const team = data.teams?.[side];
+            const name = side === "home" ? homeName : awayName;
+            return <div key={side}>
+              <strong style={{ fontSize: 12 }}>{name}</strong>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 5 }}>
+                {(["home", "away"] as const).map(venue => <div key={venue} style={{ background: "#0b1220", padding: 8, borderRadius: 7 }}>
+                  <strong style={{ fontSize: 10 }}>{venue === "home" ? "En casa" : "Como visitante"}</strong>
+                  {(["5", "10", "15"] as const).map(size => {
+                    const stats = team?.venue_windows?.[venue]?.[size];
+                    return <div key={size} style={{ fontSize: 10, marginTop: 5, borderTop: "1px solid #263244", paddingTop: 4 }}>
+                      <strong>Últimos {size}:</strong> {stats?.matches ?? 0}/{size}
+                      <div>G/E/P {stats?.wins ?? 0}/{stats?.draws ?? 0}/{stats?.losses ?? 0}</div>
+                      <div>GF/GC {stats?.average_goals_for ?? "—"}/{stats?.average_goals_against ?? "—"}</div>
+                      <div>O2.5 {stats?.over_2_5 ?? 0} · BTTS {stats?.both_teams_scored ?? 0}</div>
+                      {!stats?.sample_complete && <div style={{ color: "#fbbf24" }}>Muestra incompleta</div>}
+                    </div>;
+                  })}
+                </div>)}
+              </div>
+            </div>;
+          })}
+        </div>
+      </section>
       <p style={{ color: "#94a3b8", fontSize: 10, marginBottom: 0 }}>{data.history_scope} {data.interpretation} Los partidos de la fecha del encuentro se excluyen porque el archivo no conserva hora de inicio. Consultas locales: 0 llamadas a proveedores.</p>
     </>}
   </section>;
