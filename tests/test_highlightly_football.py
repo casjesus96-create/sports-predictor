@@ -242,3 +242,63 @@ def test_fixture_resolution_matches_espanyol_and_deportivo_provider_short_names(
     )
 
     assert result["id"] == 88002
+
+
+
+def test_highlightly_league_catalog_pages_and_preserves_native_names(monkeypatch):
+    import highlightly_football_client as client
+
+    calls = []
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        offset = (params or {}).get("offset", 0)
+        if offset == 0:
+            return {"data": [
+                {"id": 10, "name": "Premier League", "country": {"name": "England"}},
+                {"id": 11, "name": "Liga MX", "country": {"name": "Mexico"}},
+            ], "pagination": {"totalCount": 3}}
+        return {"data": [
+            {"id": 12, "name": "Primera División", "country": {"name": "Uruguay"}},
+            {"id": 11, "name": "Liga MX", "country": {"name": "Mexico"}},
+        ], "pagination": {"totalCount": 3}}
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    rows = client.get_leagues(page_size=2, max_pages=4)
+    assert [row["id"] for row in rows] == [10, 11, 12]
+    assert rows[1]["name"] == "Liga MX"
+    assert len(calls) == 2
+    assert calls[1][1]["offset"] == 2
+
+
+def test_highlightly_league_matches_use_native_league_id_and_exact_date(monkeypatch):
+    import highlightly_football_client as client
+
+    calls = []
+    payload = {"data": [
+        {"id": 77, "date": "2026-11-07T15:00:00Z", "league": {"id": 500},
+         "homeTeam": {"id": 1, "name": "Club Atlético"}, "awayTeam": {"id": 2, "name": "Deportivo"}},
+        {"id": 78, "date": "2026-11-08T15:00:00Z", "league": {"id": 500},
+         "homeTeam": {"id": 3, "name": "Another"}, "awayTeam": {"id": 4, "name": "Club"}},
+        {"id": 79, "date": "2026-11-07T15:00:00Z", "league": {"id": 501},
+         "homeTeam": {"id": 5, "name": "Wrong league"}, "awayTeam": {"id": 6, "name": "Other"}},
+    ]}
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        return payload
+    monkeypatch.setattr(client, "_get", fake_get)
+    rows = client.get_league_matches(500, "2026-11-07")
+    assert [row["id"] for row in rows] == [77]
+    assert calls == [("/matches", {"leagueId": 500, "date": "2026-11-07", "limit": 100, "offset": 0})]
+
+
+def test_highlightly_fixture_detail_uses_provider_native_match_id(monkeypatch):
+    import highlightly_football_client as client
+
+    monkeypatch.setattr(client, "_get", lambda path, params=None: {
+        "id": 991, "date": "2026-11-07T15:00:00Z",
+        "homeTeam": {"id": 1, "name": "Home"}, "awayTeam": {"id": 2, "name": "Away"},
+        "league": {"id": 44, "name": "Native League"},
+    })
+    row = client.get_fixture(991)
+    assert row["id"] == 991
+    assert row["league"]["id"] == 44
