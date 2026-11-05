@@ -110,8 +110,9 @@ def test_fixture_resolution_scopes_match_query_to_resolved_league_id(monkeypatch
     from highlightly_football_client import find_fixture
 
     calls = []
+    countries_payload = [{"code": "GB-ENG", "name": "England"}]
     league_payload = {"data": [
-        {"id": 39, "name": "Premier League", "country": {"name": "England"}}
+        {"id": 39, "name": "Premier League", "country": {"code": "GB-ENG", "name": "England"}}
     ]}
     match_payload = {"data": [
         {"id": 99, "date": "2026-11-07T12:30:00Z",
@@ -124,6 +125,8 @@ def test_fixture_resolution_scopes_match_query_to_resolved_league_id(monkeypatch
 
     def fake_get(path, params=None):
         calls.append((path, params))
+        if path == "/countries":
+            return countries_payload
         return league_payload if path == "/leagues" else match_payload
 
     monkeypatch.setattr(client, "_get", fake_get)
@@ -131,7 +134,8 @@ def test_fixture_resolution_scopes_match_query_to_resolved_league_id(monkeypatch
 
     assert result["id"] == 99
     assert calls == [
-        ("/leagues", {"leagueName": "Premier League", "limit": 100, "offset": 0, "countryName": "England"}),
+        ("/countries", {"name": "England"}),
+        ("/leagues", {"leagueName": "Premier League", "limit": 100, "offset": 0, "countryCode": "GB-ENG"}),
         ("/matches", {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 39}),
     ]
 
@@ -141,10 +145,14 @@ def test_fixture_resolution_rejects_ambiguous_same_name_leagues(monkeypatch):
     import highlightly_football_client as client
     from highlightly_football_client import HighlightlyError, find_fixture
 
-    monkeypatch.setattr(client, "_get", lambda path, params=None: {"data": [
-        {"id": 39, "name": "Premier League", "country": {"name": "England"}},
-        {"id": 40, "name": "Premier League", "country": {"name": "Country B"}},
-    ]})
+    def fake_get(path, params=None):
+        if path == "/countries":
+            return [{"code": "GB-ENG", "name": "England"}]
+        return {"data": [
+            {"id": 39, "name": "Premier League", "country": {"code": "GB-ENG", "name": "England"}},
+            {"id": 40, "name": "Premier League", "country": {"code": "XX", "name": "Country B"}},
+        ]}
+    monkeypatch.setattr(client, "_get", fake_get)
     with pytest.raises(HighlightlyError) as exc:
         find_fixture("2026-11-07", "Leeds United", "Tottenham Hotspur", "Premier League")
     assert exc.value.status_code == 409
@@ -156,8 +164,10 @@ def test_fixture_resolution_rejects_wrong_league_even_if_team_names_match(monkey
     from highlightly_football_client import HighlightlyError, find_fixture
 
     def fake_get(path, params=None):
+        if path == "/countries":
+            return [{"code": "GB-ENG", "name": "England"}]
         if path == "/leagues":
-            return {"data": [{"id": 39, "name": "Premier League", "country": {"name": "England"}}]}
+            return {"data": [{"id": 39, "name": "Premier League", "country": {"code": "GB-ENG", "name": "England"}}]}
         return {"data": [
             {"id": 99, "date": "2026-11-07T12:30:00Z",
              "homeTeam": {"name": "Leeds United"}, "awayTeam": {"name": "Tottenham Hotspur"},
