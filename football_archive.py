@@ -630,6 +630,150 @@ def archive_head_to_head(
     }
 
 
+def _team_form_match(row: dict[str, Any], team_key: str) -> dict[str, Any]:
+    """Orient one archived match from the selected team's perspective."""
+    is_home = row.get("home_team_key") == team_key
+    goals_for = int(row["home_score"] if is_home else row["away_score"])
+    goals_against = int(row["away_score"] if is_home else row["home_score"])
+    result = "W" if goals_for > goals_against else "L" if goals_for < goals_against else "D"
+    return {
+        "id": row.get("source_key"),
+        "date": row.get("match_date"),
+        "competition": row.get("competition_name"),
+        "opponent": row.get("away_team") if is_home else row.get("home_team"),
+        "venue": "home" if is_home else "away",
+        "goals_for": goals_for,
+        "goals_against": goals_against,
+        "result": result,
+        "points": 3 if result == "W" else 1 if result == "D" else 0,
+        "total_goals": goals_for + goals_against,
+    }
+
+
+def _team_form_venue_summary(matches: list[dict[str, Any]]) -> dict[str, Any]:
+    count = len(matches)
+    wins = sum(item["result"] == "W" for item in matches)
+    draws = sum(item["result"] == "D" for item in matches)
+    losses = sum(item["result"] == "L" for item in matches)
+    goals_for = sum(item["goals_for"] for item in matches)
+    goals_against = sum(item["goals_against"] for item in matches)
+    return {
+        "matches": count,
+        "wins": wins,
+        "draws": draws,
+        "losses": losses,
+        "points": sum(item["points"] for item in matches),
+        "goals_for": goals_for,
+        "goals_against": goals_against,
+        "average_goals_for": round(goals_for / count, 3) if count else None,
+        "average_goals_against": round(goals_against / count, 3) if count else None,
+        "win_percentage": _percentage(wins, count),
+        "clean_sheets": sum(item["goals_against"] == 0 for item in matches),
+        "failed_to_score": sum(item["goals_for"] == 0 for item in matches),
+    }
+
+
+def _summarize_team_form(matches: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return descriptive 5/10/15-match windows; never pad incomplete samples."""
+    windows: dict[str, Any] = {}
+    for size in (5, 10, 15):
+        selected = matches[:size]
+        count = len(selected)
+        record = _team_form_venue_summary(selected)
+        both_scored = sum(item["goals_for"] > 0 and item["goals_against"] > 0 for item in selected)
+        over_2_5 = sum(item["total_goals"] >= 3 for item in selected)
+        # The database rows arrive newest-first; show form oldest-to-newest.
+        sequence = [item["result"] for item in reversed(selected)]
+        windows[str(size)] = {
+            **record,
+            "requested_matches": size,
+            "sample_complete": count == size,
+            "form_sequence": sequence,
+            "both_teams_scored": both_scored,
+            "both_teams_scored_percentage": _percentage(both_scored, count),
+            "over_2_5": over_2_5,
+            "over_2_5_percentage": _percentage(over_2_5, count),
+            "venue_split": {
+                "at_home": _team_form_venue_summary([item for item in selected if item["venue"] == "home"]),
+                "away": _team_form_venue_summary([item for item in selected if item["venue"] == "away"]),
+            },
+        }
+    return windows
+
+
+@router.get("/team-form")
+def archive_team_recent_form(
+    competition: str = Query(...),
+    home_team: str = Query(..., min_length=2, max_length=100),
+    away_team: str = Query(..., min_length=2, max_length=100),
+    kickoff_at: str | None = None,
+):
+    """Compare both teams' last 5/10/15 completed league matches from our archive."""
+    code = competition.strip().upper()
+    if code not in COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+    cutoff = None
+    if kickoff_at:
+        try:
+            cutoff = datetime.fromisoformat(kickoff_at.replace("Z", "+00:00")).date().isoformat()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="kickoff_at no es una fecha ISO 8601 válida.") from exc
+
+    client = _client_or_503()
+    resolved = {}
+    for side, name in (("home", home_team), ("away", away_team)):
+        key, resolution = _resolve_team_identity(client, code, name)
+        if not key:
+            raise HTTPException(status_code=400, detail=f"No se pudo resolver la identidad de {name}.")
+        resolved[side] = {"name": name, "key": key, "resolution": resolution}
+
+    teams = {}
+    try:
+        for side, identity in resolved.items():
+            query = client.table("football_match_archive").select("*").eq(
+                "competition_code", code
+            ).or_(
+                f"home_team_key.eq.{identity['key']},away_team_key.eq.{identity['key']}"
+            )
+            # The cutoff is applied in the database before LIMIT so future fixtures
+            # cannot displace valid historical matches from the requested sample.
+            if cutoff:
+                query = query.lt("match_date", cutoff)
+            rows = query.order("match_date", desc=True).limit(15).execute().data or []
+            oriented = [
+                _team_form_match(row, identity["key"])
+                for row in rows
+                if identity["key"] in {row.get("home_team_key"), row.get("away_team_key")}
+                and row.get("home_score") is not None
+                and row.get("away_score") is not None
+            ]
+            teams[side] = {
+                **identity,
+                "sample_size": len(oriented),
+                "windows": _summarize_team_form(oriented),
+                "recent_matches": oriented,
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Could not query recent football team form")
+        raise HTTPException(status_code=503, detail="No se pudo consultar la forma reciente del archivo propio.") from exc
+
+    return {
+        "success": True,
+        "provider": "Sports Predictor · Supabase archive",
+        "source": SOURCE_NAME,
+        "competition": code,
+        "competition_name": COMPETITIONS[code]["name"],
+        "history_scope": "Solo partidos finalizados de esta competición almacenados en el archivo propio.",
+        "cutoff_date_exclusive": cutoff,
+        "teams": teams,
+        "windows": [5, 10, 15],
+        "provider_calls": 0,
+        "model_changed": False,
+    }
+
+
 @router.get("/competition/{competition}")
 def archive_competition_matches(
     competition: str,
