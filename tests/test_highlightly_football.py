@@ -265,7 +265,7 @@ def test_fixture_resolution_uses_no_country_catalog_scan_for_brazilian_alias(mon
 
     assert result["id"] == 88004
     assert calls == [
-        ("/leagues", {"leagueName": "serie a", "limit": 100, "offset": 0, "countryName": "Brazil"}),
+        ("/leagues", {"leagueName": "Serie A", "limit": 100, "offset": 0, "countryName": "Brazil"}),
         ("/matches", {"date": "2026-11-07", "limit": 100, "offset": 0, "leagueId": 71}),
     ]
 
