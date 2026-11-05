@@ -160,8 +160,17 @@ def test_h2h_queries_exact_pair_and_excludes_matches_after_kickoff(monkeypatch):
     assert result["summary"]["draws"] == 1
     assert result["scope"] == "all"
     assert result["summary"]["home_team_clean_sheets"] == 0
-    assert result["summary"]["away_team_clean_sheets"] == 1
-    assert result["summary"]["away_team_clean_sheets_percentage"] == 50.0
+    assert result["summary"]["away_team_clean_sheets"] == 0
+    assert result["summary"]["away_team_clean_sheets_percentage"] == 0.0
+
+    filtered = football_archive.archive_head_to_head(
+        competition="PL",
+        home_team="Leeds United FC",
+        away_team="Tottenham Hotspur FC",
+        scope="competition",
+    )
+    assert filtered["scope"] == "competition"
+    assert ("competition_code", "PL") in captured["eq_filters"]
 
 
 def test_safe_team_search_removes_postgrest_filter_syntax():
@@ -228,6 +237,11 @@ def test_h2h_summary_calculates_goal_markets_and_venue_splits():
     assert (result["home_team_wins"], result["draws"], result["away_team_wins"]) == (2,1,1)
     assert result["both_teams_scored_count"] == 3
     assert result["both_teams_scored_percentage"] == 75.0
+    assert result["home_team_clean_sheets"] == 0
+    assert result["away_team_clean_sheets"] == 1
+    assert result["away_team_clean_sheets_percentage"] == 25.0
+    assert result["home_team_failed_to_score_count"] == 1
+    assert result["away_team_failed_to_score_count"] == 0
     assert (result["over_1_5_count"], result["over_2_5_count"], result["over_3_5_count"]) == (4,2,1)
     assert (result["under_1_5_count"], result["under_2_5_count"], result["under_3_5_count"]) == (0,2,3)
     assert result["venue_split"]["home_team"]["at_home"]["matches"] == 2
