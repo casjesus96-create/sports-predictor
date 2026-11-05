@@ -96,6 +96,8 @@ TEAM_NAME_ALIAS_GROUPS = (
     {"leeds", "leeds united"},
     {"tottenham", "tottenham hotspur"},
     {"racing santander", "real racing club santander"},
+    {"espanyol", "rcd espanyol barcelona"},
+    {"deportivo la coruna", "rc deportivo la coruna"},
 )
 
 
