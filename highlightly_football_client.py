@@ -91,6 +91,22 @@ def normalize_name(value: str) -> str:
     return " ".join(token for token in tokens if token not in ignored)
 
 
+TEAM_NAME_ALIAS_GROUPS = (
+    {"coventry", "coventry city"},
+)
+
+
+def _team_names_match(first: str, second: str) -> bool:
+    first_normalized = normalize_name(first)
+    second_normalized = normalize_name(second)
+    if first_normalized == second_normalized:
+        return True
+    return any(
+        first_normalized in aliases and second_normalized in aliases
+        for aliases in TEAM_NAME_ALIAS_GROUPS
+    )
+
+
 def _resolve_country_code(country_name: str) -> str:
     """Resolve a Highlightly ISO country code from its canonical country list."""
     payload = _get("/countries", {"name": str(country_name).strip()})
@@ -225,14 +241,14 @@ def find_fixture(
             continue
         home_data = row.get("homeTeam") or {}
         away_data = row.get("awayTeam") or {}
-        home = normalize_name(home_data.get("name", ""))
-        away = normalize_name(away_data.get("name", ""))
+        highlightly_home = str(home_data.get("name", ""))
+        highlightly_away = str(away_data.get("name", ""))
         kickoff = str(row.get("date") or "")
         league = row.get("league") or {}
         league_matches = expected_league_id is None or league.get("id") == expected_league_id
         if (
-            home == expected_home
-            and away == expected_away
+            _team_names_match(home_name, highlightly_home)
+            and _team_names_match(away_name, highlightly_away)
             and kickoff[:10] == date
             and league_matches
             and isinstance(row.get("id"), int)
