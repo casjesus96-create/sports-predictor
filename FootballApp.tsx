@@ -1201,7 +1201,7 @@ export default function FootballApp() {
   const providerCompetition = availability.find((item) => item.code === competition);
   const available = providerCompetition?.available_in_plan;
 
-  async function loadData(nextView: "games" | "standings" | "history" = (view === "archive" ? "games" : view)) {
+  async function loadData(nextView: "games" | "standings" | "history" = (view === "archive" || view === "intelligence" ? "games" : view)) {
     setLoading(true); setError(""); setNotice(""); setView(nextView);
     try {
       const response = await fetch(nextView === "games"
