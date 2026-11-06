@@ -581,6 +581,7 @@ def test_archive_research_backtest_uses_only_owned_archive_and_excludes_same_day
         captured["target_limit"] = kwargs.get("target_limit")
         return {
             "status": "COMPLETED", "read_only": True, "scored_matches": 1,
+            "target_sample_size": 1,
             "per_match": [{"match_id": "match-2"}],
             "advanced_goals_shadow_per_match": [],
         }
