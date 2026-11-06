@@ -568,7 +568,7 @@ def test_archive_research_backtest_uses_only_owned_archive_and_excludes_same_day
         def select(self, columns): captured["columns"] = columns; return self
         def eq(self, column, value): captured["filter"] = (column, value); return self
         def order(self, column, desc=False): captured["order"] = (column, desc); return self
-        def limit(self, value): captured["limit"] = value; return self
+        def range(self, start, end): captured["range"] = (start, end); return self
         def execute(self): return type("Result", (), {"data": rows})()
 
     class Client:
@@ -592,7 +592,7 @@ def test_archive_research_backtest_uses_only_owned_archive_and_excludes_same_day
     assert captured["table"] == "football_match_archive"
     assert captured["filter"] == ("competition_code", "PL")
     assert captured["order"] == ("match_date", True)
-    assert captured["limit"] == 500
+    assert captured["range"] == (0, 999)
     assert [row["id"] for row in captured["matches"]] == ["match-1", "match-2"]
     assert [row["utcDate"] for row in captured["matches"]] == [
         "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"
@@ -601,6 +601,8 @@ def test_archive_research_backtest_uses_only_owned_archive_and_excludes_same_day
     assert result["model_changed"] is False
     assert result["snapshots_written"] == 0
     assert result["evaluation"]["per_match_count"] == 1
+    assert result["target_sample_size"] == 1
+    assert result["history_truncated"] is False
     assert "per_match" not in result["evaluation"]
 
 
