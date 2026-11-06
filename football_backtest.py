@@ -128,6 +128,8 @@ def _metrics(rows: list[dict[str, Any]], probability_key: str) -> dict[str, Any]
 def run_chronological_backtest(
     matches: list[dict[str, Any]],
     external_h2h_by_match_id: dict[int, list[dict[str, Any]]] | None = None,
+    *,
+    target_limit: int | None = None,
 ) -> dict[str, Any]:
     """Evaluate both 1X2 variants without look-ahead leakage or database writes.
 
