@@ -576,8 +576,9 @@ def test_archive_research_backtest_uses_only_owned_archive_and_excludes_same_day
             captured["table"] = name
             return Query()
 
-    def fake_backtest(matches):
+    def fake_backtest(matches, **kwargs):
         captured["matches"] = matches
+        captured["target_limit"] = kwargs.get("target_limit")
         return {
             "status": "COMPLETED", "read_only": True, "scored_matches": 1,
             "per_match": [{"match_id": "match-2"}],
@@ -593,6 +594,7 @@ def test_archive_research_backtest_uses_only_owned_archive_and_excludes_same_day
     assert captured["filter"] == ("competition_code", "PL")
     assert captured["order"] == ("match_date", True)
     assert captured["range"] == (0, 999)
+    assert captured["target_limit"] == 500
     assert [row["id"] for row in captured["matches"]] == ["match-1", "match-2"]
     assert [row["utcDate"] for row in captured["matches"]] == [
         "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"
