@@ -837,6 +837,201 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
 }
 
 
+function FootballHistoricalIntelligenceCenter() {
+  const [coverage, setCoverage] = useState<any[]>([]);
+  const [competition, setCompetition] = useState("PL");
+  const [season, setSeason] = useState("");
+  const [homeTeam, setHomeTeam] = useState("");
+  const [awayTeam, setAwayTeam] = useState("");
+  const [targetDate, setTargetDate] = useState(todayInput());
+  const [scope, setScope] = useState<"competition" | "all">("competition");
+  const [results, setResults] = useState<any>(null);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [coverageError, setCoverageError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API}/archive/competitions`)
+      .then(async response => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || "No se pudo cargar la cobertura del archivo.");
+        return body;
+      })
+      .then(body => {
+        if (!active) return;
+        const rows = Array.isArray(body.competitions) ? body.competitions : [];
+        setCoverage(rows);
+        const selected = rows.find((item: any) => item.code === "PL") || rows[0];
+        if (selected?.seasons?.length) setSeason(selected.seasons[selected.seasons.length - 1]);
+      })
+      .catch(err => { if (active) setCoverageError(err instanceof Error ? err.message : "Error consultando la cobertura."); });
+    return () => { active = false; };
+  }, []);
+
+  const selectedCompetition = coverage.find(item => item.code === competition);
+  const seasons: string[] = selectedCompetition?.seasons || [];
+
+  async function loadPanel(path: string, params: URLSearchParams) {
+    const response = await fetch(`${API}/archive/${path}?${params.toString()}`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || `No se pudo cargar ${path}.`);
+    return body;
+  }
+
+  async function analyze() {
+    if (!homeTeam.trim() || !awayTeam.trim() || homeTeam.trim().toLowerCase() === awayTeam.trim().toLowerCase()) {
+      setErrors(["Escribe dos equipos distintos."]);
+      return;
+    }
+    if (!targetDate) {
+      setErrors(["Selecciona la fecha del partido para aplicar el corte histórico."]);
+      return;
+    }
+    if (!season) {
+      setErrors(["Selecciona una temporada disponible para comparar ligas y temporadas."]);
+      return;
+    }
+    setLoading(true);
+    setErrors([]);
+    setResults(null);
+    const shared = new URLSearchParams({
+      competition,
+      home_team: homeTeam.trim(),
+      away_team: awayTeam.trim(),
+      kickoff_at: `${targetDate}T12:00:00Z`,
+    });
+    const h2hParams = new URLSearchParams(shared);
+    h2hParams.set("scope", scope);
+    h2hParams.set("limit", "100");
+    const seasonParams = new URLSearchParams({ competition, season });
+    const requests = [
+      ["h2h", () => loadPanel("head-to-head", h2hParams)],
+      ["form", () => loadPanel("team-form", shared)],
+      ["markets", () => loadPanel("market-patterns", shared)],
+      ["seasons", () => loadPanel("season-comparison", seasonParams)],
+    ] as const;
+    const settled = await Promise.allSettled(requests.map(([, request]) => request()));
+    const next: Record<string, any> = {};
+    const nextErrors: string[] = [];
+    settled.forEach((item, index) => {
+      const key = requests[index][0];
+      if (item.status === "fulfilled") next[key] = item.value;
+      else nextErrors.push(`${key}: ${item.reason instanceof Error ? item.reason.message : "consulta no disponible"}`);
+    });
+    setResults(next);
+    setErrors(nextErrors);
+    setLoading(false);
+  }
+
+  const panelStyle: React.CSSProperties = { background: "#111827", border: "1px solid #374151", borderRadius: 10, padding: 11, minWidth: 0 };
+  const metric = (label: string, value: any) => <div style={{ background: "#0b1220", borderRadius: 7, padding: 8, minWidth: 0 }}><div style={{ color: "#94a3b8", fontSize: 10 }}>{label}</div><strong style={{ fontSize: 15 }}>{value == null ? "—" : value}</strong></div>;
+  const pct = (value: any) => value == null ? "—" : `${value}%`;
+  const h2h = results?.h2h;
+  const h2hSummary = h2h?.summary || {};
+  const markets = results?.markets;
+  const leagueSample = markets?.competition_sample || {};
+  const advantage = markets?.competition_venue_advantage || {};
+  const seasonData = results?.seasons;
+
+  return <section style={{ ...cardStyle, borderColor: "#0e7490" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <div><h2 style={{ margin: 0 }}>Centro de Inteligencia Histórica</h2><p style={{ color: "#9ca3af", fontSize: 12, margin: "5px 0 0" }}>Una consulta reúne H2H, forma, mercados, localía y contexto de temporadas desde nuestro archivo propio.</p></div>
+      <span style={{ color: "#67e8f9", fontSize: 11 }}>Solo histórico · 0 llamadas a proveedores</span>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 9, marginTop: 12 }}>
+      <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 700 }}>Competición
+        <select value={competition} onChange={event => { const code = event.target.value; setCompetition(code); const row = coverage.find(item => item.code === code); setSeason(row?.seasons?.[row.seasons.length - 1] || ""); setResults(null); }} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff" }}>
+          {coverage.map(item => <option key={item.code} value={item.code}>{item.name} · {item.stored_matches || 0} partidos</option>)}
+        </select>
+      </label>
+      <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 700 }}>Temporada para comparar
+        <select value={season} onChange={event => { setSeason(event.target.value); setResults(null); }} disabled={!seasons.length} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff" }}>
+          {seasons.map(value => <option key={value} value={value}>{value.slice(0, 2)}–{value.slice(2)}</option>)}
+        </select>
+      </label>
+      <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 700 }}>Equipo local
+        <input value={homeTeam} onChange={event => setHomeTeam(event.target.value)} placeholder="Ej. Leeds United" style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff" }} />
+      </label>
+      <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 700 }}>Equipo visitante
+        <input value={awayTeam} onChange={event => setAwayTeam(event.target.value)} placeholder="Ej. Tottenham Hotspur" style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff" }} />
+      </label>
+      <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 700 }}>Fecha del partido (corte histórico)
+        <input type="date" value={targetDate} onChange={event => setTargetDate(event.target.value)} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff", colorScheme: "dark" }} />
+      </label>
+      <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 700 }}>Alcance de H2H
+        <select value={scope} onChange={event => { setScope(event.target.value as "competition" | "all"); setResults(null); }} style={{ minHeight: 42, padding: 9, borderRadius: 8, border: "1px solid #64748b", background: "#111827", color: "#fff" }}>
+          <option value="competition">Solo esta competición</option><option value="all">Todas las competiciones archivadas</option>
+        </select>
+      </label>
+    </div>
+    <button type="button" onClick={analyze} disabled={loading || !coverage.length || !season} style={{ ...buttonStyle, marginTop: 10, width: "100%", background: "#0e7490" }}>{loading ? "Consultando el archivo propio…" : "Generar informe histórico integrado"}</button>
+    {coverageError && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{coverageError}</p>}
+    {errors.map((message, index) => <p key={index} role="alert" style={{ color: "#fbbf24", fontSize: 12, margin: "5px 0" }}>{message}</p>)}
+    {results && <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+      <div style={{ padding: 9, borderRadius: 8, background: "#0c2430", color: "#bae6fd", fontSize: 11 }}>Muestra anterior al {targetDate} (fecha excluida porque el archivo histórico no conserva hora de inicio). Resultados descriptivos; no son probabilidades futuras ni recomendaciones de apuesta.</div>
+      {h2h && <section style={panelStyle}>
+        <strong>1 · Enfrentamientos directos</strong>
+        <div style={{ color: "#94a3b8", fontSize: 10, margin: "4px 0 8px" }}>{h2h.sample_size ?? h2h.returned_matches ?? 0} enfrentamientos · {scope === "all" ? "todas las competiciones archivadas" : selectedCompetition?.name || competition}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+          {metric(`${homeTeam} victorias`, pct(h2hSummary.home_team_wins_percentage))}
+          {metric("Empates", pct(h2hSummary.draws_percentage))}
+          {metric(`${awayTeam} victorias`, pct(h2hSummary.away_team_wins_percentage))}
+          {metric("Ambos marcan", pct(h2hSummary.both_teams_scored_percentage))}
+          {metric("Over 2.5", pct(h2hSummary.over_2_5_percentage))}
+          {metric("Promedio goles", h2hSummary.average_total_goals)}
+        </div>
+      </section>}
+      {results.form && <section style={panelStyle}>
+        <strong>2 · Forma reciente por equipo</strong>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
+          {(["home", "away"] as const).map(side => {
+            const team = results.form.teams?.[side];
+            return <div key={side} style={{ background: "#0b1220", borderRadius: 8, padding: 8, minWidth: 0 }}>
+              <strong style={{ fontSize: 12 }}>{team?.name || (side === "home" ? homeTeam : awayTeam)}</strong>
+              <div style={{ color: "#94a3b8", fontSize: 10 }}>{team?.sample_size ?? 0} partidos encontrados</div>
+              {(["5", "10", "15"] as const).map(size => {
+                const item = team?.windows?.[size];
+                return <div key={size} style={{ fontSize: 11, marginTop: 6, borderTop: "1px solid #334155", paddingTop: 5 }}>Últimos {size}: <strong>{item?.wins ?? 0}G · {item?.draws ?? 0}E · {item?.losses ?? 0}P</strong><div style={{ color: "#94a3b8" }}>GF/GC {item?.goals_for ?? "—"}/{item?.goals_against ?? "—"} · {item?.matches ?? 0}/{size}</div></div>;
+              })}
+            </div>;
+          })}
+        </div>
+      </section>}
+      {markets && <section style={panelStyle}>
+        <strong>3 · Patrones de mercados y localía</strong>
+        <div style={{ color: "#94a3b8", fontSize: 10, margin: "4px 0 8px" }}>Competición · {leagueSample.matches ?? 0} partidos · {leagueSample.sample_start || "—"} a {leagueSample.sample_end || "—"}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+          {metric("Over 1.5", pct(leagueSample.markets?.["1_5"]?.over?.percentage))}
+          {metric("Over 2.5", pct(leagueSample.markets?.["2_5"]?.over?.percentage))}
+          {metric("Over 3.5", pct(leagueSample.markets?.["3_5"]?.over?.percentage))}
+          {metric("Ambos marcan", pct(leagueSample.both_teams_scored?.percentage))}
+          {metric("Victorias locales", pct(advantage.home_win_rate))}
+          {metric("Victorias visitantes", pct(advantage.away_win_rate))}
+        </div>
+        <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 8 }}>Diferencia de victoria local menos visitante: <strong>{advantage.home_win_rate_minus_away_win_rate == null ? "—" : `${advantage.home_win_rate_minus_away_win_rate} puntos porcentuales`}</strong></div>
+        {(["home", "away"] as const).map(side => {
+          const team = markets.teams?.[side];
+          return <div key={side} style={{ marginTop: 8, fontSize: 11 }}><strong>{team?.name || (side === "home" ? homeTeam : awayTeam)}</strong> · muestra de {team?.sample_size ?? 0} partidos · Over 2.5 (últimos 5/10/15): {(["5", "10", "15"] as const).map(size => team?.windows?.[size]?.over_2_5_percentage == null ? "—" : `${team.windows[size].over_2_5_percentage}%`).join(" / ")}</div>;
+        })}
+      </section>}
+      {seasonData && <section style={panelStyle}>
+        <strong>4 · Comparación de temporadas y ligas</strong>
+        <div style={{ color: "#94a3b8", fontSize: 10, margin: "4px 0 8px" }}>Temporada {season} · tasas descriptivas; las muestras pueden estar incompletas.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+          {(seasonData.cross_competition || []).map((item: any) => <div key={item.competition} style={{ background: "#0b1220", borderRadius: 7, padding: 8, fontSize: 11 }}><strong>{item.competition_name}</strong><div>{item.matches ?? 0} partidos</div><div style={{ color: "#94a3b8" }}>Local {pct(item.home_win_percentage)} · Empate {pct(item.draw_percentage)} · Visitante {pct(item.away_win_percentage)}</div><div style={{ color: "#94a3b8" }}>Over 2.5 {pct(item.over_2_5?.percentage)} · BTTS {pct(item.both_teams_scored?.percentage)}</div></div>)}
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11 }}><strong>Evolución de {seasonData.selected_competition_name || competition}</strong></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 6 }}>
+          {(seasonData.season_trend || []).map((item: any) => <div key={item.season} style={{ background: "#0b1220", borderRadius: 7, padding: 7, fontSize: 10 }}><strong>{item.season}</strong><div>{item.matches ?? 0} partidos</div><div>Over 2.5 {pct(item.over_2_5?.percentage)}</div><div>BTTS {pct(item.both_teams_scored?.percentage)}</div></div>)}
+        </div>
+      </section>}
+      <p style={{ color: "#94a3b8", fontSize: 10, margin: 0 }}>Fuente: football_match_archive · consultas locales · {Object.keys(results).length}/4 módulos disponibles · provider_calls: 0 · model_changed: false.</p>
+    </div>}
+  </section>;
+}
+
+
 function FootballArchiveBrowser() {
   const [coverage, setCoverage] = useState<any[]>([]);
   const [archiveCompetition, setArchiveCompetition] = useState("PL");
@@ -970,7 +1165,7 @@ export default function FootballApp() {
   const [availability, setAvailability] = useState<CompetitionStatus[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
-  const [view, setView] = useState<"games" | "standings" | "history" | "archive">("games");
+  const [view, setView] = useState<"games" | "standings" | "history" | "archive" | "intelligence">("games");
   const [matchFilter, setMatchFilter] = useState<"upcoming" | "all" | "finished">("all");
   const [loading, setLoading] = useState(false);
   const [loadingCompetitions, setLoadingCompetitions] = useState(true);
@@ -1107,6 +1302,7 @@ export default function FootballApp() {
         <button type="button" onClick={() => loadData("standings")} disabled={loading || loadingCompetitions} style={buttonStyle}>{loading && view === "standings" ? "Cargando…" : "Ver clasificación"}</button>
         <button type="button" aria-pressed={view === "history"} onClick={() => loadHistory()} disabled={historyLoading || loadingCompetitions} style={{ ...buttonStyle, background: view === "history" ? "#0f766e" : "#115e59", border: view === "history" ? "2px solid #5eead4" : "1px solid #5eead4", fontSize: 14 }}>{historyLoading ? "Cargando historial…" : "📚 Historial"}</button>
         <button type="button" aria-pressed={view === "archive"} onClick={() => setView("archive")} style={{ ...buttonStyle, background: view === "archive" ? "#166534" : "#14532d", border: view === "archive" ? "2px solid #86efac" : "1px solid #86efac" }}>🗄️ Archivo histórico</button>
+        <button type="button" aria-pressed={view === "intelligence"} onClick={() => setView("intelligence")} style={{ ...buttonStyle, background: view === "intelligence" ? "#155e75" : "#164e63", border: view === "intelligence" ? "2px solid #67e8f9" : "1px solid #67e8f9" }}>🧠 Centro histórico</button>
         <button type="button" onClick={loadBacktest} disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}><input type="checkbox" checked={includeExternalH2h} onChange={(event) => setIncludeExternalH2h(event.target.checked)} /> Consultar H2H externo (máx. 10 solicitudes)</label>
       </div>
@@ -1182,6 +1378,7 @@ export default function FootballApp() {
       })()}
 
       {view === "archive" && <FootballArchiveBrowser />}
+      {view === "intelligence" && <FootballHistoricalIntelligenceCenter />}
 
       {view === "history" && <section style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
