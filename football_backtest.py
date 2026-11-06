@@ -149,11 +149,15 @@ def run_chronological_backtest(
         normalized.append((kickoff, match, score))
     normalized.sort(key=lambda item: (item[0], str(item[1].get("id", ""))))
 
+    if target_limit is not None and (isinstance(target_limit, bool) or target_limit < 1):
+        raise ValueError("target_limit debe ser un entero positivo o None.")
+    targets = normalized[-target_limit:] if target_limit is not None else normalized
+
     external_h2h_by_match_id = external_h2h_by_match_id or {}
     scored_rows: list[dict[str, Any]] = []
     advanced_rows: list[dict[str, Any]] = []
     skipped_unavailable = 0
-    for kickoff, target, score in normalized:
+    for kickoff, target, score in targets:
         history = [
             prior for prior in matches
             if (_date(prior.get("utcDate") or prior.get("date")) is not None
@@ -238,6 +242,7 @@ def run_chronological_backtest(
         "scoring_rule": "Ambas variantes se comparan sobre exactamente la misma muestra elegible.",
         "input_matches": len(matches),
         "eligible_finished_matches": len(normalized),
+        "target_sample_size": len(targets),
         "scored_matches": len(scored_rows),
         "excluded_invalid_or_unfinished_targets": excluded_targets,
         "skipped_base_unavailable_or_invalid": skipped_unavailable,
