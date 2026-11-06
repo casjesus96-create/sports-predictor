@@ -849,6 +849,10 @@ function FootballHistoricalIntelligenceCenter() {
   const [errors, setErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [coverageError, setCoverageError] = useState("");
+  const [research, setResearch] = useState<any>(null);
+  const [researchLoading, setResearchLoading] = useState(false);
+  const [researchError, setResearchError] = useState("");
+
 
   useEffect(() => {
     let active = true;
@@ -924,6 +928,23 @@ function FootballHistoricalIntelligenceCenter() {
     setLoading(false);
   }
 
+  async function runResearch() {
+    setResearchLoading(true);
+    setResearchError("");
+    setResearch(null);
+    try {
+      const params = new URLSearchParams({ competition, limit: "500" });
+      const response = await fetch(`${API}/archive/research-backtest?${params.toString()}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo ejecutar el laboratorio.");
+      setResearch(body);
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : "Error ejecutando la evaluación.");
+    } finally {
+      setResearchLoading(false);
+    }
+  }
+
   const panelStyle: React.CSSProperties = { background: "#111827", border: "1px solid #374151", borderRadius: 10, padding: 11, minWidth: 0 };
   const metric = (label: string, value: any) => <div style={{ background: "#0b1220", borderRadius: 7, padding: 8, minWidth: 0 }}><div style={{ color: "#94a3b8", fontSize: 10 }}>{label}</div><strong style={{ fontSize: 15 }}>{value == null ? "—" : value}</strong></div>;
   const pct = (value: any) => value == null ? "—" : `${value}%`;
@@ -967,6 +988,34 @@ function FootballHistoricalIntelligenceCenter() {
     </div>
     <button type="button" onClick={analyze} disabled={loading || !coverage.length || !season} style={{ ...buttonStyle, marginTop: 10, width: "100%", background: "#0e7490" }}>{loading ? "Consultando el archivo propio…" : "Generar informe histórico integrado"}</button>
     {coverageError && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{coverageError}</p>}
+    <section style={{ ...panelStyle, marginTop: 12, borderColor: "#7c3aed" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div><strong>Laboratorio de Investigación · Walk-forward</strong><div style={{ color: "#94a3b8", fontSize: 11, marginTop: 4 }}>Evalúa el modelo Poisson y variantes experimentales sobre hasta 500 partidos del archivo, siempre entrenando con fechas anteriores.</div></div>
+        <span style={{ color: "#c4b5fd", fontSize: 10 }}>Solo lectura · 0 proveedores</span>
+      </div>
+      <button type="button" onClick={runResearch} disabled={researchLoading || !coverage.length} style={{ ...buttonStyle, width: "100%", marginTop: 9, background: "#5b21b6" }}>{researchLoading ? "Evaluando muestra cronológicamente…" : "Ejecutar investigación para esta competición"}</button>
+      {researchError && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{researchError}</p>}
+      {research?.evaluation && (() => {
+        const evaluation = research.evaluation;
+        const metrics = evaluation.metrics || {};
+        const base = metrics.base || {};
+        const h2h = metrics.h2h_candidate || {};
+        const goals = metrics.advanced_goals_shadow || {};
+        const delta = metrics.delta_candidate_minus_base || {};
+        const goalsDelta = metrics.advanced_goals_shadow_delta_vs_base || {};
+        const score = (value: any) => value == null ? "—" : Number(value).toFixed(4);
+        return <div style={{ marginTop: 9, display: "grid", gap: 8 }}>
+          <div style={{ background: "#0c2430", borderRadius: 7, padding: 8, color: "#bae6fd", fontSize: 10 }}>Historial de entrenamiento consultado: {research.input_sample_size} partidos · ventana objetivo: {research.target_sample_size} partidos más recientes · evaluados: {evaluation.scored_matches} · {research.history_truncated ? "Historial truncado por el límite de seguridad." : "Historial completo disponible en el archivo."} · mismo día excluido del entrenamiento.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+            <div style={{ background: "#0b1220", borderRadius: 7, padding: 8 }}><strong style={{ fontSize: 11 }}>Poisson oficial · {evaluation.official_model_version}</strong><div style={{ fontSize: 11, marginTop: 5 }}>Brier: {score(base.brier_score)}</div><div style={{ fontSize: 11 }}>Log Loss: {score(base.log_loss)}</div><div style={{ fontSize: 11 }}>Precisión: {base.accuracy == null ? "—" : pct(Number((base.accuracy * 100).toFixed(2)))}</div><div style={{ color: "#94a3b8", fontSize: 10 }}>n={base.sample_size ?? 0}</div></div>
+            <div style={{ background: "#0b1220", borderRadius: 7, padding: 8 }}><strong style={{ fontSize: 11 }}>Candidato H2H</strong><div style={{ fontSize: 11, marginTop: 5 }}>Brier: {score(h2h.brier_score)}</div><div style={{ fontSize: 11 }}>Log Loss: {score(h2h.log_loss)}</div><div style={{ fontSize: 11 }}>Precisión: {h2h.accuracy == null ? "—" : pct(Number((h2h.accuracy * 100).toFixed(2)))}</div><div style={{ color: "#94a3b8", fontSize: 10 }}>n={h2h.sample_size ?? 0}</div></div>
+            <div style={{ background: "#0b1220", borderRadius: 7, padding: 8 }}><strong style={{ fontSize: 11 }}>Shadow de goles</strong><div style={{ fontSize: 11, marginTop: 5 }}>Brier: {score(goals.brier_score)}</div><div style={{ fontSize: 11 }}>Log Loss: {score(goals.log_loss)}</div><div style={{ fontSize: 11 }}>Precisión: {goals.accuracy == null ? "—" : pct(Number((goals.accuracy * 100).toFixed(2)))}</div><div style={{ color: "#94a3b8", fontSize: 10 }}>n={metrics.advanced_goals_shadow_sample_size ?? goals.sample_size ?? 0}</div></div>
+            <div style={{ background: "#0b1220", borderRadius: 7, padding: 8 }}><strong style={{ fontSize: 11 }}>Diferencia H2H − Poisson</strong><div style={{ fontSize: 11, marginTop: 5 }}>Δ Brier: {score(delta.brier_score)}</div><div style={{ fontSize: 11 }}>Δ Log Loss: {score(delta.log_loss)}</div><div style={{ fontSize: 11 }}>Δ precisión: {delta.accuracy == null ? "—" : score(delta.accuracy)}</div><div style={{ color: "#94a3b8", fontSize: 10 }}>Negativo favorece al candidato en Brier/Log Loss.</div></div>
+          </div>
+          <div style={{ color: "#c4b5fd", fontSize: 10 }}>Estado: {evaluation.status} · solo análisis retrospectivo; no activa candidatos ni cambia predicciones. provider_calls: {research.provider_calls} · model_changed: {research.model_changed ? "true" : "false"} · snapshots_written: {research.snapshots_written}.</div>
+        </div>;
+      })()}
+    </section>
     {errors.map((message, index) => <p key={index} role="alert" style={{ color: "#fbbf24", fontSize: 12, margin: "5px 0" }}>{message}</p>)}
     {results && <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
       <div style={{ padding: 9, borderRadius: 8, background: "#0c2430", color: "#bae6fd", fontSize: 11 }}>Muestra anterior al {targetDate} (fecha excluida porque el archivo histórico no conserva hora de inicio). Resultados descriptivos; no son probabilidades futuras ni recomendaciones de apuesta.</div>
