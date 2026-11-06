@@ -109,9 +109,6 @@ function HighlightlyLeagueExplorer() {
   const [filter, setFilter] = useState("");
   const [date, setDate] = useState(todayInput());
   const [matches, setMatches] = useState<any[]>([]);
-  const [seasonComparison, setSeasonComparison] = useState<any>(null);
-  const [loadingComparison, setLoadingComparison] = useState(false);
-  const [comparisonError, setComparisonError] = useState("");
   const [analysis, setAnalysis] = useState<Record<number, any>>({});
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [loadingMatches, setLoadingMatches] = useState(false);
@@ -845,6 +842,9 @@ function FootballArchiveBrowser() {
   const [archiveCompetition, setArchiveCompetition] = useState("PL");
   const [season, setSeason] = useState("");
   const [matches, setMatches] = useState<any[]>([]);
+  const [seasonComparison, setSeasonComparison] = useState<any>(null);
+  const [loadingComparison, setLoadingComparison] = useState(false);
+  const [comparisonError, setComparisonError] = useState("");
   const [loadingCoverage, setLoadingCoverage] = useState(true);
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [error, setError] = useState("");
