@@ -1142,16 +1142,25 @@ def archive_research_backtest(
 
     try:
         client = _client_or_503()
-        rows = client.table("football_match_archive").select(
+        rows = []
+        page_size = 1000
+        max_history_rows = 12000
+        query = client.table("football_match_archive").select(
             "source_key,match_date,home_team,away_team,home_score,away_score"
-        ).eq("competition_code", code).order("match_date", desc=True).limit(limit).execute().data or []
+        ).eq("competition_code", code).order("match_date", desc=True)
+        for offset in range(0, max_history_rows, page_size):
+            page = query.range(offset, offset + page_size - 1).execute().data or []
+            rows.extend(page)
+            if len(page) < page_size:
+                break
     except Exception as exc:
         logger.exception("Could not load archive rows for football research backtest")
-        raise HTTPException(status_code=503, detail="No se pudo cargar la muestra del archivo propio para investigación.") from exc
+        raise HTTPException(status_code=503, detail="No se pudo cargar el historial propio para investigación.") from exc
 
-    # Archive dates have no kickoff times. All matches on the same calendar date
-    # receive the same midnight timestamp, so the evaluator's strict '< kickoff'
-    # rule excludes every same-day result from training and prevents leakage.
+    history_truncated = len(rows) >= max_history_rows
+    # Use the full retrieved archive as training history and only the latest
+    # requested number of eligible fixtures as evaluation targets. Archive dates
+    # have no kickoff times, so all matches on each calendar day share midnight UTC.
     matches = []
     for row in reversed(rows):
         home_score, away_score = row.get("home_score"), row.get("away_score")
@@ -1171,7 +1180,7 @@ def archive_research_backtest(
         })
 
     try:
-        evaluation = run_chronological_backtest(matches)
+        evaluation = run_chronological_backtest(matches, target_limit=limit)
     except Exception as exc:
         logger.exception("Football archive chronological research evaluation failed")
         raise HTTPException(status_code=500, detail="No se pudo completar la evaluación cronológica del archivo.") from exc
@@ -1192,6 +1201,8 @@ def archive_research_backtest(
         "competition_name": COMPETITIONS[code]["name"],
         "sample_limit": limit,
         "input_sample_size": len(matches),
+        "target_sample_size": evaluation.get("target_sample_size", 0),
+        "history_truncated": history_truncated,
         "cutoff_policy": "Partidos del mismo día calendario quedan excluidos del entrenamiento; solo se usan fechas estrictamente anteriores porque el archivo no conserva hora de inicio.",
         "evaluation": evaluation,
         "provider_calls": 0,
