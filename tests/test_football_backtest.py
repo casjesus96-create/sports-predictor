@@ -65,3 +65,41 @@ def test_empty_input_returns_insufficient_data_without_errors():
     assert result["scored_matches"] == 0
     assert result["metrics"]["base"]["brier_score"] is None
     assert result["metrics"]["h2h_candidate"]["log_loss"] is None
+
+
+def test_backtest_can_score_latest_target_window_using_full_training_history(monkeypatch):
+    import football_backtest
+
+    rows = history_with_repeated_pair()
+    observed_history_sizes = []
+
+    def fake_predict(home, away, history):
+        observed_history_sizes.append(len(history))
+        return {"available": True, "probabilities": {"home": 0.6, "draw": 0.2, "away": 0.2}}
+
+    def fake_h2h(home, away, kickoff, base, history):
+        return {
+            "available": True,
+            "candidate_probabilities": {"home": 0.6, "draw": 0.2, "away": 0.2},
+            "h2h": {"valid_meetings": 0},
+            "status": "INSUFFICIENT_H2H",
+        }
+
+    monkeypatch.setattr(football_backtest, "predict_1x2", fake_predict)
+    monkeypatch.setattr(football_backtest, "evaluate_h2h_candidate", fake_h2h)
+    monkeypatch.setattr(football_backtest, "predict_advanced_shadow", lambda *_args: {"available": False})
+
+    result = run_chronological_backtest(rows, target_limit=2)
+
+    assert result["input_matches"] == 8
+    assert result["eligible_finished_matches"] == 8
+    assert result["target_sample_size"] == 2
+    assert result["scored_matches"] == 2
+    assert observed_history_sizes == [6, 7]
+
+
+def test_backtest_target_limit_must_be_positive():
+    import pytest
+
+    with pytest.raises(ValueError):
+        run_chronological_backtest(history_with_repeated_pair(), target_limit=0)
