@@ -1145,10 +1145,10 @@ def archive_research_backtest(
         rows = []
         page_size = 1000
         max_history_rows = 12000
-        query = client.table("football_match_archive").select(
-            "source_key,match_date,home_team,away_team,home_score,away_score"
-        ).eq("competition_code", code).order("match_date", desc=True)
         for offset in range(0, max_history_rows, page_size):
+            query = client.table("football_match_archive").select(
+                "source_key,match_date,home_team,away_team,home_score,away_score"
+            ).eq("competition_code", code).order("match_date", desc=True)
             page = query.range(offset, offset + page_size - 1).execute().data or []
             rows.extend(page)
             if len(page) < page_size:
