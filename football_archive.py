@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from repository import get_supabase_client
+from football_backtest import run_chronological_backtest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/football/archive", tags=["Football archive"])
@@ -1126,4 +1127,74 @@ def archive_competition_matches(
             "home_score": row["home_score"], "away_score": row["away_score"],
             "competition": row["competition_name"], "source": row["source"],
         } for row in rows],
+    }
+
+
+@router.get("/research-backtest")
+def archive_research_backtest(
+    competition: str = Query(..., min_length=2, max_length=8),
+    limit: int = Query(500, ge=100, le=500),
+):
+    """Run read-only chronological model research using only our owned archive."""
+    code = competition.strip().upper()
+    if code not in COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+
+    try:
+        client = _client_or_503()
+        rows = client.table("football_match_archive").select(
+            "source_key,match_date,home_team,away_team,home_score,away_score"
+        ).eq("competition_code", code).order("match_date", desc=True).limit(limit).execute().data or []
+    except Exception as exc:
+        logger.exception("Could not load archive rows for football research backtest")
+        raise HTTPException(status_code=503, detail="No se pudo cargar la muestra del archivo propio para investigación.") from exc
+
+    # Archive dates have no kickoff times. All matches on the same calendar date
+    # receive the same midnight timestamp, so the evaluator's strict '< kickoff'
+    # rule excludes every same-day result from training and prevents leakage.
+    matches = []
+    for row in reversed(rows):
+        home_score, away_score = row.get("home_score"), row.get("away_score")
+        match_date = str(row.get("match_date") or "")
+        home, away = row.get("home_team"), row.get("away_team")
+        if (not match_date or not home or not away
+                or not isinstance(home_score, int) or isinstance(home_score, bool) or home_score < 0
+                or not isinstance(away_score, int) or isinstance(away_score, bool) or away_score < 0):
+            continue
+        matches.append({
+            "id": row.get("source_key") or f"{code}-{match_date}-{len(matches)}",
+            "status": "FINISHED",
+            "utcDate": f"{match_date}T00:00:00Z",
+            "homeTeam": {"name": str(home)},
+            "awayTeam": {"name": str(away)},
+            "score": {"fullTime": {"home": home_score, "away": away_score}},
+        })
+
+    try:
+        evaluation = run_chronological_backtest(matches)
+    except Exception as exc:
+        logger.exception("Football archive chronological research evaluation failed")
+        raise HTTPException(status_code=500, detail="No se pudo completar la evaluación cronológica del archivo.") from exc
+
+    # Keep the API response compact; the summary metrics and diagnostics are
+    # sufficient for the research panel. Per-match payloads are not persisted.
+    evaluation["per_match_count"] = len(evaluation.get("per_match") or [])
+    evaluation["advanced_goals_shadow_per_match_count"] = len(
+        evaluation.get("advanced_goals_shadow_per_match") or []
+    )
+    evaluation.pop("per_match", None)
+    evaluation.pop("advanced_goals_shadow_per_match", None)
+    return {
+        "success": True,
+        "provider": "Sports Predictor · Supabase archive",
+        "source": SOURCE_NAME,
+        "competition": code,
+        "competition_name": COMPETITIONS[code]["name"],
+        "sample_limit": limit,
+        "input_sample_size": len(matches),
+        "cutoff_policy": "Partidos del mismo día calendario quedan excluidos del entrenamiento; solo se usan fechas estrictamente anteriores porque el archivo no conserva hora de inicio.",
+        "evaluation": evaluation,
+        "provider_calls": 0,
+        "model_changed": False,
+        "snapshots_written": 0,
     }
