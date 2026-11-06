@@ -552,3 +552,63 @@ def test_season_comparison_queries_selected_season_across_leagues_and_adjacent_s
     assert ("PL", "2425") in captured
     assert ("PL", "2627") in captured
     assert len(captured) == 8
+
+
+def test_archive_research_backtest_uses_only_owned_archive_and_excludes_same_day(monkeypatch):
+    import football_archive
+
+    captured = {}
+    rows = [
+        {"source_key": "match-2", "match_date": "2026-01-02", "home_team": "Beta", "away_team": "Alpha", "home_score": 1, "away_score": 0},
+        {"source_key": "match-1", "match_date": "2026-01-01", "home_team": "Alpha", "away_team": "Beta", "home_score": 2, "away_score": 1},
+        {"source_key": "invalid", "match_date": "2026-01-03", "home_team": "Alpha", "away_team": "Beta", "home_score": None, "away_score": 0},
+    ]
+
+    class Query:
+        def select(self, columns): captured["columns"] = columns; return self
+        def eq(self, column, value): captured["filter"] = (column, value); return self
+        def order(self, column, desc=False): captured["order"] = (column, desc); return self
+        def limit(self, value): captured["limit"] = value; return self
+        def execute(self): return type("Result", (), {"data": rows})()
+
+    class Client:
+        def table(self, name):
+            captured["table"] = name
+            return Query()
+
+    def fake_backtest(matches):
+        captured["matches"] = matches
+        return {
+            "status": "COMPLETED", "read_only": True, "scored_matches": 1,
+            "per_match": [{"match_id": "match-2"}],
+            "advanced_goals_shadow_per_match": [],
+        }
+
+    monkeypatch.setattr(football_archive, "_client_or_503", lambda: Client())
+    monkeypatch.setattr(football_archive, "run_chronological_backtest", fake_backtest)
+
+    result = football_archive.archive_research_backtest(competition="PL", limit=500)
+
+    assert captured["table"] == "football_match_archive"
+    assert captured["filter"] == ("competition_code", "PL")
+    assert captured["order"] == ("match_date", True)
+    assert captured["limit"] == 500
+    assert [row["id"] for row in captured["matches"]] == ["match-1", "match-2"]
+    assert [row["utcDate"] for row in captured["matches"]] == [
+        "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"
+    ]
+    assert result["provider_calls"] == 0
+    assert result["model_changed"] is False
+    assert result["snapshots_written"] == 0
+    assert result["evaluation"]["per_match_count"] == 1
+    assert "per_match" not in result["evaluation"]
+
+
+def test_archive_research_backtest_rejects_unsupported_competition():
+    import pytest
+    from fastapi import HTTPException
+    import football_archive
+
+    with pytest.raises(HTTPException) as error:
+        football_archive.archive_research_backtest(competition="XYZ", limit=500)
+    assert error.value.status_code == 400
