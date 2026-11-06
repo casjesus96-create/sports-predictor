@@ -927,7 +927,7 @@ function FootballArchiveBrowser() {
       </div>
       <section style={{ marginTop: 12, padding: 10, background: "#111827", borderRadius: 9 }}>
         <strong>Comparación histórica · temporadas y competiciones</strong>
-        <p style={{ color: "#94a3b8", fontSize: 11, margin: "4px 0 8px" }}>La temporada elegida se compara entre las cinco ligas del archivo; también se contrasta con la temporada anterior y posterior de la liga seleccionada. Solo resultados almacenados.</p>
+        <p style={{ color: "#94a3b8", fontSize: 11, margin: "4px 0 8px" }}>La temporada elegida se compara entre las cinco ligas del archivo y con las temporadas anterior y posterior de la liga seleccionada. Las temporadas en curso muestran solo resultados ya archivados.</p>
         {comparisonError && <p role="alert" style={{ color: "#fecaca" }}>{comparisonError}</p>}
         {loadingComparison ? <p style={{ color: "#9ca3af", fontSize: 12 }}>Calculando comparaciones históricas…</p> : seasonComparison && <>
           <strong style={{ fontSize: 12 }}>Misma temporada · comparación entre ligas ({effectiveSeason})</strong>
@@ -941,7 +941,7 @@ function FootballArchiveBrowser() {
             </div>)}
           </div>
           <strong style={{ display: "block", fontSize: 12, marginTop: 12 }}>Evolución por temporada · {selected?.name}</strong>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 7, marginTop: 7 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 7 }}>
             {(seasonComparison.season_trend || []).map((item: any) => <div key={item.season} style={{ background: "#0b1220", padding: 8, borderRadius: 7 }}>
               <strong style={{ fontSize: 11 }}>{item.season.slice(0, 2)}/{item.season.slice(2, 4)}</strong>
               <div style={{ fontSize: 10 }}>{item.matches} partidos</div>
