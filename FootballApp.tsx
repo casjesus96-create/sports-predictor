@@ -842,6 +842,9 @@ function FootballArchiveBrowser() {
   const [archiveCompetition, setArchiveCompetition] = useState("PL");
   const [season, setSeason] = useState("");
   const [matches, setMatches] = useState<any[]>([]);
+  const [seasonComparison, setSeasonComparison] = useState<any>(null);
+  const [loadingComparison, setLoadingComparison] = useState(false);
+  const [comparisonError, setComparisonError] = useState("");
   const [loadingCoverage, setLoadingCoverage] = useState(true);
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [error, setError] = useState("");
@@ -863,6 +866,24 @@ function FootballArchiveBrowser() {
   const selected = coverage.find(item => item.code === archiveCompetition);
   const seasons: string[] = selected?.seasons || [];
   const effectiveSeason = seasons.includes(season) ? season : seasons.length ? seasons[seasons.length - 1] : "";
+
+  useEffect(() => {
+    if (!effectiveSeason) { setSeasonComparison(null); return; }
+    let active = true;
+    setLoadingComparison(true);
+    setComparisonError("");
+    const params = new URLSearchParams({ competition: archiveCompetition, season: effectiveSeason });
+    fetch(`${API}/archive/season-comparison?${params.toString()}`)
+      .then(async response => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || "No se pudieron comparar las temporadas.");
+        return body;
+      })
+      .then(body => { if (active) setSeasonComparison(body); })
+      .catch(err => { if (active) setComparisonError(err instanceof Error ? err.message : "Error comparando temporadas."); })
+      .finally(() => { if (active) setLoadingComparison(false); });
+    return () => { active = false; };
+  }, [archiveCompetition, effectiveSeason]);
 
   useEffect(() => {
     if (!effectiveSeason) { setMatches([]); return; }
@@ -904,6 +925,34 @@ function FootballArchiveBrowser() {
           </select>
         </label>
       </div>
+      <section style={{ marginTop: 12, padding: 10, background: "#111827", borderRadius: 9 }}>
+        <strong>Comparación histórica · temporadas y competiciones</strong>
+        <p style={{ color: "#94a3b8", fontSize: 11, margin: "4px 0 8px" }}>La temporada elegida se compara entre las cinco ligas del archivo y con las temporadas anterior y posterior de la liga seleccionada. Las temporadas en curso muestran solo resultados ya archivados.</p>
+        {comparisonError && <p role="alert" style={{ color: "#fecaca" }}>{comparisonError}</p>}
+        {loadingComparison ? <p style={{ color: "#9ca3af", fontSize: 12 }}>Calculando comparaciones históricas…</p> : seasonComparison && <>
+          <strong style={{ fontSize: 12 }}>Misma temporada · comparación entre ligas ({effectiveSeason})</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 7 }}>
+            {(seasonComparison.cross_competition || []).map((item: any) => <div key={item.competition} style={{ background: "#0b1220", padding: 8, borderRadius: 7 }}>
+              <strong style={{ fontSize: 11 }}>{item.competition_name}</strong>
+              <div style={{ fontSize: 10, color: "#94a3b8" }}>{item.matches} partidos · {item.sample_start || "—"} a {item.sample_end || "—"}</div>
+              <div style={{ fontSize: 10 }}>Local/Empate/Visitante: {item.home_win_percentage == null ? "—" : `${item.home_win_percentage}%`} / {item.draw_percentage == null ? "—" : `${item.draw_percentage}%`} / {item.away_win_percentage == null ? "—" : `${item.away_win_percentage}%`}</div>
+              <div style={{ fontSize: 10 }}>Goles por partido: {item.average_total_goals ?? "—"} · O2.5: {item.over_2_5?.percentage == null ? "—" : `${item.over_2_5.percentage}%`}</div>
+              <div style={{ fontSize: 10 }}>BTTS: {item.both_teams_scored?.percentage == null ? "—" : `${item.both_teams_scored.percentage}%`}</div>
+            </div>)}
+          </div>
+          <strong style={{ display: "block", fontSize: 12, marginTop: 12 }}>Evolución por temporada · {selected?.name}</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7, marginTop: 7 }}>
+            {(seasonComparison.season_trend || []).map((item: any) => <div key={item.season} style={{ background: "#0b1220", padding: 8, borderRadius: 7 }}>
+              <strong style={{ fontSize: 11 }}>{item.season.slice(0, 2)}/{item.season.slice(2, 4)}</strong>
+              <div style={{ fontSize: 10 }}>{item.matches} partidos</div>
+              <div style={{ fontSize: 10 }}>L/E/V: {item.home_win_percentage == null ? "—" : `${item.home_win_percentage}%`} / {item.draw_percentage == null ? "—" : `${item.draw_percentage}%`} / {item.away_win_percentage == null ? "—" : `${item.away_win_percentage}%`}</div>
+              <div style={{ fontSize: 10 }}>Goles: {item.average_total_goals ?? "—"} · O2.5: {item.over_2_5?.percentage == null ? "—" : `${item.over_2_5.percentage}%`}</div>
+              <div style={{ fontSize: 10 }}>BTTS: {item.both_teams_scored?.percentage == null ? "—" : `${item.both_teams_scored.percentage}%`}</div>
+            </div>)}
+          </div>
+          <p style={{ color: "#94a3b8", fontSize: 10, marginBottom: 0 }}>{seasonComparison.interpretation} Consultas a proveedores externos: 0.</p>
+        </>}
+      </section>
       {loadingMatches ? <p style={{ color: "#9ca3af" }}>Cargando resultados de {effectiveSeason}…</p> :
         effectiveSeason ? <><p style={{ color: "#9ca3af", fontSize: 12 }}>Mostrando {matches.length} resultados de {selected?.name}, temporada {effectiveSeason}. Ordenados del más reciente al más antiguo.</p>
           <div style={{ overflowX: "auto" }}><table style={tableStyle}>

@@ -492,3 +492,63 @@ def test_venue_sample_empty_keeps_rates_and_averages_null():
     assert result["win_percentage"] is None
     assert result["over_2_5_percentage"] is None
     assert result["average_total_goals"] is None
+
+
+def test_season_summary_reports_descriptive_metrics_and_empty_values():
+    from football_archive import _summarize_season_results
+
+    rows = [
+        {"match_date": "2025-08-10", "home_score": 2, "away_score": 0},
+        {"match_date": "2025-08-17", "home_score": 1, "away_score": 1},
+        {"match_date": "2025-08-24", "home_score": 0, "away_score": 3},
+        {"match_date": "2025-08-31", "home_score": 2, "away_score": 2},
+    ]
+    result = _summarize_season_results(rows)
+    assert result["matches"] == 4
+    assert (result["home_wins"], result["draws"], result["away_wins"]) == (1, 2, 1)
+    assert result["home_win_percentage"] == 25.0
+    assert result["draw_percentage"] == 50.0
+    assert result["average_total_goals"] == 2.75
+    assert result["over_2_5"] == {"count": 2, "percentage": 50.0}
+    assert result["both_teams_scored"] == {"count": 2, "percentage": 50.0}
+    empty = _summarize_season_results([])
+    assert empty["matches"] == 0
+    assert empty["home_win_percentage"] is None
+    assert empty["average_total_goals"] is None
+
+
+def test_season_comparison_queries_selected_season_across_leagues_and_adjacent_seasons(monkeypatch):
+    import football_archive
+
+    captured = []
+    class Query:
+        def __init__(self):
+            self.filters = {}
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, column, value):
+            self.filters[column] = value
+            return self
+        def order(self, *_args, **_kwargs): return self
+        def limit(self, value):
+            assert value == 1000
+            return self
+        def execute(self):
+            captured.append((self.filters["competition_code"], self.filters["season"]))
+            row = {"match_date": "2025-08-10", "home_score": 2, "away_score": 0}
+            return type("Result", (), {"data": [row]})()
+
+    class Client:
+        def table(self, name):
+            assert name == "football_match_archive"
+            return Query()
+
+    monkeypatch.setattr(football_archive, "_client_or_503", lambda: Client())
+    result = football_archive.archive_season_comparison(competition="PL", season="2526")
+    assert result["provider_calls"] == 0
+    assert result["model_changed"] is False
+    assert len(result["cross_competition"]) == 5
+    assert [item["season"] for item in result["season_trend"]] == ["2425", "2526", "2627"]
+    assert ("PL", "2526") in captured
+    assert ("PL", "2425") in captured
+    assert ("PL", "2627") in captured
+    assert len(captured) == 8

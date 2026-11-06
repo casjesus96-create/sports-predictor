@@ -813,6 +813,99 @@ def _summarize_market_sample(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _summarize_season_results(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Descriptive season metrics; empty samples retain null rates."""
+    valid = [row for row in rows if row.get("home_score") is not None and row.get("away_score") is not None]
+    count = len(valid)
+    home_goals = [int(row["home_score"]) for row in valid]
+    away_goals = [int(row["away_score"]) for row in valid]
+    totals = [home + away for home, away in zip(home_goals, away_goals)]
+    home_wins = sum(home > away for home, away in zip(home_goals, away_goals))
+    draws = sum(home == away for home, away in zip(home_goals, away_goals))
+    away_wins = count - home_wins - draws
+    over_1_5 = sum(total >= 2 for total in totals)
+    over_2_5 = sum(total >= 3 for total in totals)
+    over_3_5 = sum(total >= 4 for total in totals)
+    btts = sum(home > 0 and away > 0 for home, away in zip(home_goals, away_goals))
+    dates = [str(row["match_date"]) for row in valid if row.get("match_date")]
+    return {
+        "matches": count, "sample_start": min(dates) if dates else None,
+        "sample_end": max(dates) if dates else None,
+        "home_wins": home_wins, "draws": draws, "away_wins": away_wins,
+        "home_win_percentage": _percentage(home_wins, count),
+        "draw_percentage": _percentage(draws, count),
+        "away_win_percentage": _percentage(away_wins, count),
+        "average_home_goals": round(sum(home_goals) / count, 3) if count else None,
+        "average_away_goals": round(sum(away_goals) / count, 3) if count else None,
+        "average_total_goals": round(sum(totals) / count, 3) if count else None,
+        "over_1_5": {"count": over_1_5, "percentage": _percentage(over_1_5, count)},
+        "over_2_5": {"count": over_2_5, "percentage": _percentage(over_2_5, count)},
+        "over_3_5": {"count": over_3_5, "percentage": _percentage(over_3_5, count)},
+        "both_teams_scored": {"count": btts, "percentage": _percentage(btts, count)},
+    }
+
+
+@router.get("/season-comparison")
+def archive_season_comparison(
+    competition: str = Query(...),
+    season: str = Query(..., min_length=4, max_length=4),
+):
+    """Compare one archived season across leagues and adjacent seasons in one league."""
+    code = competition.strip().upper()
+    selected_season = season.strip()
+    if code not in COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+    if not selected_season.isdigit():
+        raise HTTPException(status_code=400, detail="La temporada debe usar el código de cuatro dígitos, por ejemplo 2526.")
+
+    start_short = int(selected_season[:2])
+    start_year = 2000 + start_short if start_short < 90 else 1900 + start_short
+    season_codes = [
+        f"{(start_year + offset) % 100:02d}{(start_year + offset + 1) % 100:02d}"
+        for offset in (-1, 0, 1)
+    ]
+    client = _client_or_503()
+    try:
+        def read_sample(competition_code: str, season_code: str) -> list[dict[str, Any]]:
+            result = client.table("football_match_archive").select(
+                "match_date,home_score,away_score"
+            ).eq("competition_code", competition_code).eq(
+                "season", season_code
+            ).order("match_date").limit(1000).execute()
+            return [
+                row for row in (result.data or [])
+                if row.get("home_score") is not None and row.get("away_score") is not None
+            ]
+
+        cross_competition = []
+        for competition_code, config in COMPETITIONS.items():
+            rows = read_sample(competition_code, selected_season)
+            cross_competition.append({
+                "competition": competition_code, "competition_name": config["name"],
+                "season": selected_season, **_summarize_season_results(rows),
+            })
+        season_trend = []
+        for season_code in season_codes:
+            rows = read_sample(code, season_code)
+            season_trend.append({
+                "competition": code, "competition_name": COMPETITIONS[code]["name"],
+                "season": season_code, **_summarize_season_results(rows),
+            })
+    except Exception as exc:
+        logger.exception("Could not compare archived football seasons and competitions")
+        raise HTTPException(status_code=503, detail="No se pudieron comparar las temporadas del archivo propio.") from exc
+
+    return {
+        "success": True, "selected_competition": code,
+        "selected_competition_name": COMPETITIONS[code]["name"],
+        "selected_season": selected_season,
+        "cross_competition": cross_competition, "season_trend": season_trend,
+        "source": "Sports Predictor · Supabase archive", "provider_calls": 0,
+        "model_changed": False,
+        "interpretation": "Comparaciones descriptivas de resultados históricos completos; las frecuencias no son probabilidades futuras ni recomendaciones de apuesta.",
+    }
+
+
 @router.get("/market-patterns")
 def archive_market_patterns(
     competition: str = Query(...),
