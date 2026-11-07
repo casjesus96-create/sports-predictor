@@ -582,7 +582,7 @@ def test_archive_research_backtest_uses_only_owned_archive_and_excludes_same_day
         return {
             "status": "COMPLETED", "read_only": True, "scored_matches": 1,
             "target_sample_size": 1,
-            "per_match": [{"match_id": "match-2"}],
+            "per_match": [{"match_id": "match-2", "season": "2526", "kickoff_at": "2026-01-02T00:00:00+00:00", "actual_outcome": "home", "base": {"home": 0.5, "draw": 0.25, "away": 0.25}, "candidate": {"home": 0.5, "draw": 0.25, "away": 0.25}}],
             "advanced_goals_shadow_per_match": [],
         }
 

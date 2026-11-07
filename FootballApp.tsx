@@ -852,6 +852,10 @@ function FootballHistoricalIntelligenceCenter() {
   const [research, setResearch] = useState<any>(null);
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchError, setResearchError] = useState("");
+  const [leagueValidation, setLeagueValidation] = useState<any[]>([]);
+  const [leagueValidationLoading, setLeagueValidationLoading] = useState(false);
+  const [leagueValidationProgress, setLeagueValidationProgress] = useState("");
+  const [leagueValidationError, setLeagueValidationError] = useState("");
 
 
   useEffect(() => {
@@ -945,6 +949,30 @@ function FootballHistoricalIntelligenceCenter() {
     }
   }
 
+  async function runLeagueValidation() {
+    const codes = ["PL", "PD", "SA", "BL1", "FL1"];
+    setLeagueValidation([]);
+    setLeagueValidationError("");
+    setLeagueValidationLoading(true);
+    try {
+      const completed: any[] = [];
+      for (const code of codes) {
+        setLeagueValidationProgress(`Evaluando ${code} · ${completed.length + 1}/5`);
+        const params = new URLSearchParams({ competition: code, limit: "1500" });
+        const response = await fetch(`${API}/archive/research-backtest?${params.toString()}`);
+        const body = await response.json();
+        if (!response.ok) throw new Error(`${code}: ${body.detail || "validación no disponible"}`);
+        completed.push({ competition: code, name: body.competition_name, validation: body.validation });
+        setLeagueValidation([...completed]);
+      }
+    } catch (error) {
+      setLeagueValidationError(error instanceof Error ? error.message : "No se pudo completar la comparación entre ligas.");
+    } finally {
+      setLeagueValidationLoading(false);
+      setLeagueValidationProgress("");
+    }
+  }
+
   const panelStyle: React.CSSProperties = { background: "#111827", border: "1px solid #374151", borderRadius: 10, padding: 11, minWidth: 0 };
   const metric = (label: string, value: any) => <div style={{ background: "#0b1220", borderRadius: 7, padding: 8, minWidth: 0 }}><div style={{ color: "#94a3b8", fontSize: 10 }}>{label}</div><strong style={{ fontSize: 15 }}>{value == null ? "—" : value}</strong></div>;
   const pct = (value: any) => value == null ? "—" : `${value}%`;
@@ -995,6 +1023,54 @@ function FootballHistoricalIntelligenceCenter() {
       </div>
       <button type="button" onClick={runResearch} disabled={researchLoading || !coverage.length} style={{ ...buttonStyle, width: "100%", marginTop: 9, background: "#5b21b6" }}>{researchLoading ? "Evaluando muestra cronológicamente…" : "Ejecutar investigación para esta competición"}</button>
       {researchError && <p role="alert" style={{ color: "#fecaca", fontSize: 12 }}>{researchError}</p>}
+      {research?.validation && (() => {
+        const validation = research.validation;
+        const h2hGate = validation.candidates?.h2h?.gate || {};
+        const goalsGate = validation.candidates?.advanced_goals?.gate || {};
+        const h2hHoldout = validation.candidates?.h2h?.holdout || {};
+        const goalsHoldout = validation.candidates?.advanced_goals?.holdout || {};
+        const delta = (value: any) => value?.mean_delta == null ? "—" : Number(value.mean_delta).toFixed(4);
+        return <div style={{ marginTop: 10, padding: 9, border: "1px solid #475569", borderRadius: 8 }}>
+          <strong style={{ fontSize: 12 }}>Puertas de validación independiente</strong>
+          <p style={{ color: "#94a3b8", fontSize: 10, margin: "4px 0 8px" }}>Desarrollo: {validation.split?.development_matches ?? 0} · Holdout final: {validation.split?.holdout_matches ?? 0} · Inicio holdout: {validation.split?.holdout_start || "—"}. Bootstrap emparejado, IC 95%, 1000 réplicas.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+            <div style={{ background: "#0b1220", borderRadius: 7, padding: 8 }}>
+              <strong style={{ fontSize: 11 }}>Candidato H2H · {h2hGate.status || "—"}</strong>
+              <div style={{ fontSize: 10 }}>Holdout n={h2hHoldout.sample_size ?? 0}</div>
+              <div style={{ fontSize: 10 }}>Δ Brier: {delta(h2hHoldout.brier_delta)}</div>
+              <div style={{ fontSize: 10 }}>Δ Log Loss: {delta(h2hHoldout.log_loss_delta)}</div>
+              {(h2hGate.reasons || []).map((reason: string, index: number) => <div key={index} style={{ color: "#fbbf24", fontSize: 9, marginTop: 3 }}>• {reason}</div>)}
+            </div>
+            <div style={{ background: "#0b1220", borderRadius: 7, padding: 8 }}>
+              <strong style={{ fontSize: 11 }}>Shadow goles · {goalsGate.status || "—"}</strong>
+              <div style={{ fontSize: 10 }}>Holdout n={goalsHoldout.sample_size ?? 0}</div>
+              <div style={{ fontSize: 10 }}>Δ Brier: {delta(goalsHoldout.brier_delta)}</div>
+              <div style={{ fontSize: 10 }}>Δ Log Loss: {delta(goalsHoldout.log_loss_delta)}</div>
+              {(goalsGate.reasons || []).map((reason: string, index: number) => <div key={index} style={{ color: "#fbbf24", fontSize: 9, marginTop: 3 }}>• {reason}</div>)}
+            </div>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700 }}>Resultados H2H por temporada</div>
+          {(validation.season_breakdown || []).map((item: any) => <div key={item.season} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #334155", padding: "5px 0", fontSize: 10 }}>
+            <span>{item.season} · n={item.sample_size}</span><span>ΔB {delta(item.brier_delta)} · ΔLL {delta(item.log_loss_delta)}</span>
+          </div>)}
+          <p style={{ color: "#94a3b8", fontSize: 9, margin: "6px 0 0" }}>APTO_PARA_REVISION no activa el candidato. Se exige revisión humana y autorización explícita.</p>
+        </div>;
+      })()}
+      <div style={{ marginTop: 10, borderTop: "1px solid #334155", paddingTop: 9 }}>
+        <strong style={{ fontSize: 12 }}>Consistencia entre las cinco ligas</strong>
+        <p style={{ color: "#94a3b8", fontSize: 10, margin: "4px 0 7px" }}>Ejecuta el mismo walk-forward y protocolo de holdout en PL, LaLiga, Serie A, Bundesliga y Ligue 1. Puede tardar porque consulta el archivo de cada liga por separado.</p>
+        <button type="button" onClick={runLeagueValidation} disabled={leagueValidationLoading} style={{ ...buttonStyle, width: "100%", background: "#334155" }}>{leagueValidationLoading ? (leagueValidationProgress || "Comparando ligas…") : "Comparar elegibilidad en las cinco ligas"}</button>
+        {leagueValidationError && <p role="alert" style={{ color: "#fbbf24", fontSize: 10 }}>{leagueValidationError}</p>}
+        {leagueValidation.map((item: any) => {
+          const gate = item.validation?.candidates?.h2h?.gate || {};
+          const holdout = item.validation?.candidates?.h2h?.holdout || {};
+          const delta = (value: any) => value?.mean_delta == null ? "—" : Number(value.mean_delta).toFixed(4);
+          return <div key={item.competition} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #334155", padding: "6px 0", fontSize: 10 }}>
+            <span><strong>{item.name || item.competition}</strong><div style={{ color: "#94a3b8" }}>Holdout n={holdout.sample_size ?? 0}</div></span>
+            <span style={{ textAlign: "right" }}>{gate.status || "—"}<div style={{ color: "#94a3b8" }}>ΔB {delta(holdout.brier_delta)} · ΔLL {delta(holdout.log_loss_delta)}</div></span>
+          </div>;
+        })}
+      </div>
       {research?.evaluation && (() => {
         const evaluation = research.evaluation;
         const metrics = evaluation.metrics || {};
