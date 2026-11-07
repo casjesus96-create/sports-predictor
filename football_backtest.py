@@ -190,6 +190,7 @@ def run_chronological_backtest(
         actual = "home" if home_score > away_score else "away" if home_score < away_score else "draw"
         scored_rows.append({
             "match_id": target.get("id"),
+            "season": target.get("season"),
             "kickoff_at": kickoff.isoformat(),
             "home_team": home_name,
             "away_team": away_name,
@@ -203,7 +204,7 @@ def run_chronological_backtest(
         })
         if advanced_probs:
             advanced_rows.append({
-                "match_id": target.get("id"), "kickoff_at": kickoff.isoformat(),
+                "match_id": target.get("id"), "season": target.get("season"), "kickoff_at": kickoff.isoformat(),
                 "home_team": home_name, "away_team": away_name,
                 "actual_outcome": actual, "base": base_probs,
                 "advanced_shadow": advanced_probs,
