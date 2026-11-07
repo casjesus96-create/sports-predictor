@@ -228,7 +228,7 @@ def test_goal_market_temporal_windows_are_chronological_clustered_and_developmen
     goal_rows = []
     for index in range(500):
         row = _row(index, f"S{index // 125 + 1}")
-        row["kickoff_at"] = f"2024-{1 + index // 28:02d}-{1 + index % 28:02d}T12:00:00+00:00"
+        row["kickoff_at"] = _row(index, f"S{index // 125 + 1}")["kickoff_at"]
         actual = index % 2 == 0
         row["markets"] = {
             "btts_yes": {"base": 0.50, "candidate": 0.55, "actual": actual},
