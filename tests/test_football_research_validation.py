@@ -327,3 +327,44 @@ def test_1x2_temporal_drift_reports_insufficient_sample_without_windows():
     assert result["window_count"] == 0
     assert result["windows"] == []
     assert "insuficiente" in result["reason"].lower()
+
+def test_reliability_reports_deterministic_date_cluster_bootstrap_intervals():
+    from football_research_validation import _binary_reliability
+
+    probabilities = []
+    observed = []
+    dates = []
+    for day in range(30):
+        for match in range(4):
+            probabilities.append(0.2 + (match % 3) * 0.25)
+            observed.append(1.0 if (day + match) % 3 == 0 else 0.0)
+            dates.append(f"2025-01-{day + 1:02d}")
+
+    first = _binary_reliability(
+        probabilities, observed, cluster_keys=dates, seed=987
+    )
+    second = _binary_reliability(
+        probabilities, observed, cluster_keys=dates, seed=987
+    )
+    assert first == second
+    assert first["uncertainty_cluster_count"] == 30
+    assert first["bootstrap_replicates"] == 1000
+    assert first["ece_ci_95"] is not None
+    assert 0.0 <= first["ece_ci_95"][0] <= first["ece_ci_95"][1] <= 1.0
+    assert all(
+        bucket["observed_rate_ci_95"] is None
+        or 0.0 <= bucket["observed_rate_ci_95"][0] <= bucket["observed_rate_ci_95"][1] <= 1.0
+        for bucket in first["bins"]
+    )
+
+
+def test_reliability_with_one_independent_date_does_not_claim_confidence_interval():
+    from football_research_validation import _binary_reliability
+
+    result = _binary_reliability(
+        [0.2, 0.4, 0.6], [0.0, 1.0, 1.0],
+        cluster_keys=["2025-01-01"] * 3,
+    )
+    assert result["uncertainty_cluster_count"] == 1
+    assert result["ece_ci_95"] is None
+    assert result["bootstrap_replicates"] == 0

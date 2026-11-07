@@ -185,39 +185,105 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _binary_reliability(
-    probabilities: list[float], observed: list[float], *, bins: int = 5
+    probabilities: list[float],
+    observed: list[float],
+    *,
+    bins: int = 5,
+    cluster_keys: list[str] | None = None,
+    seed: int = 0,
 ) -> dict[str, Any]:
-    """Describe probability calibration without fitting or changing predictions."""
+    """Describe calibration and date-cluster uncertainty without fitting predictions."""
+    if len(probabilities) != len(observed):
+        raise ValueError("Probabilidades y resultados observados deben tener la misma longitud.")
     if not probabilities:
-        return {"sample_size": 0, "ece": None, "bins": []}
-    buckets = [
-        {"range": f"[{index / bins:.1f},{(index + 1) / bins:.1f}{']' if index == bins - 1 else ')'}",
-         "n": 0, "mean_predicted_probability": 0.0, "observed_rate": 0.0}
-        for index in range(bins)
-    ]
-    for probability, outcome in zip(probabilities, observed):
-        index = min(bins - 1, int(min(1.0, max(0.0, probability)) * bins))
-        buckets[index]["n"] += 1
-        buckets[index]["mean_predicted_probability"] += probability
-        buckets[index]["observed_rate"] += outcome
-    weighted_gap = 0.0
-    for bucket in buckets:
-        count = bucket["n"]
-        if count:
-            predicted = bucket["mean_predicted_probability"] / count
-            rate = bucket["observed_rate"] / count
-            bucket["mean_predicted_probability"] = round(predicted, 6)
-            bucket["observed_rate"] = round(rate, 6)
-            bucket["absolute_gap"] = round(abs(predicted - rate), 6)
-            weighted_gap += count * abs(predicted - rate)
-        else:
-            bucket["mean_predicted_probability"] = None
-            bucket["observed_rate"] = None
-            bucket["absolute_gap"] = None
+        return {"sample_size": 0, "ece": None, "ece_ci_95": None, "bins": [],
+                "uncertainty_cluster_count": 0, "bootstrap_replicates": 0}
+
+    def summarize(indices: list[int]) -> tuple[float, list[float | None]]:
+        counts = [0] * bins
+        predicted_sums = [0.0] * bins
+        observed_sums = [0.0] * bins
+        for item_index in indices:
+            probability = min(1.0, max(0.0, float(probabilities[item_index])))
+            outcome = float(observed[item_index])
+            bucket_index = min(bins - 1, int(probability * bins))
+            counts[bucket_index] += 1
+            predicted_sums[bucket_index] += probability
+            observed_sums[bucket_index] += outcome
+        ece = 0.0
+        rates: list[float | None] = []
+        total = len(indices)
+        for bucket_index, count in enumerate(counts):
+            if not count:
+                rates.append(None)
+                continue
+            predicted = predicted_sums[bucket_index] / count
+            rate = observed_sums[bucket_index] / count
+            rates.append(rate)
+            ece += count / total * abs(predicted - rate)
+        return ece, rates
+
+    indices = list(range(len(probabilities)))
+    point_ece, _ = summarize(indices)
+    buckets = []
+    for index in range(bins):
+        selected = [
+            item for item, probability in enumerate(probabilities)
+            if min(bins - 1, int(min(1.0, max(0.0, float(probability))) * bins)) == index
+        ]
+        count = len(selected)
+        predicted = sum(float(probabilities[item]) for item in selected) / count if count else None
+        rate = sum(float(observed[item]) for item in selected) / count if count else None
+        buckets.append({
+            "range": f"[{index / bins:.1f},{(index + 1) / bins:.1f}{']' if index == bins - 1 else ')'}",
+            "n": count,
+            "mean_predicted_probability": round(predicted, 6) if predicted is not None else None,
+            "observed_rate": round(rate, 6) if rate is not None else None,
+            "absolute_gap": round(abs(predicted - rate), 6) if count else None,
+            "observed_rate_ci_95": None,
+        })
+
+    if cluster_keys is not None and len(cluster_keys) != len(probabilities):
+        raise ValueError("Cada observación debe tener una clave de fecha/jornada.")
+    cluster_count = len(set(cluster_keys)) if cluster_keys is not None else 0
+    ece_samples: list[float] = []
+    rate_samples: list[list[float]] = [[] for _ in range(bins)]
+    if cluster_keys is not None and cluster_count >= 2:
+        grouped: dict[str, list[int]] = defaultdict(list)
+        for item_index, key in enumerate(cluster_keys):
+            grouped[str(key)].append(item_index)
+        cluster_values = list(grouped.values())
+        rng = random.Random(seed)
+        for _ in range(BOOTSTRAP_REPLICATES):
+            sampled_indices = [
+                item_index
+                for _ in range(len(cluster_values))
+                for item_index in cluster_values[rng.randrange(len(cluster_values))]
+            ]
+            ece_value, rates = summarize(sampled_indices)
+            ece_samples.append(ece_value)
+            for bucket_index, rate in enumerate(rates):
+                if rate is not None:
+                    rate_samples[bucket_index].append(rate)
+
+    def interval(values: list[float]) -> list[float] | None:
+        if len(values) < max(100, BOOTSTRAP_REPLICATES // 2):
+            return None
+        ordered = sorted(values)
+        lower = ordered[int(0.025 * (len(ordered) - 1))]
+        upper = ordered[int(0.975 * (len(ordered) - 1))]
+        return [round(lower, 6), round(upper, 6)]
+
+    for index, bucket in enumerate(buckets):
+        bucket["observed_rate_ci_95"] = interval(rate_samples[index])
     return {
         "sample_size": len(probabilities),
-        "ece": round(weighted_gap / len(probabilities), 6),
+        "ece": round(point_ece, 6),
+        "ece_ci_95": interval(ece_samples),
         "bins": buckets,
+        "uncertainty_cluster_count": cluster_count,
+        "bootstrap_replicates": len(ece_samples),
+        "uncertainty_method": "Bootstrap percentil por fecha/jornada completa; intervalo descriptivo, no recalibra probabilidades.",
         "interpretation": "ECE es el error de calibración esperado aproximado, ponderado por el tamaño de cada intervalo; no es una métrica de precisión ni una corrección de probabilidades.",
     }
 
@@ -272,11 +338,11 @@ def _binary_market_summary(rows: list[dict[str, Any]], market_key: str, seed: in
         "reliability": {
             "base": _binary_reliability(
                 [min(1.0, max(0.0, float(row["markets"][market_key]["base"]))) for row in selected],
-                observed,
+                observed, cluster_keys=cluster_keys, seed=seed + 2,
             ),
             "candidate": _binary_reliability(
                 [min(1.0, max(0.0, float(row["markets"][market_key]["candidate"]))) for row in selected],
-                observed,
+                observed, cluster_keys=cluster_keys, seed=seed + 3,
             ),
         },
     }
@@ -491,14 +557,20 @@ def _multiclass_window_summary(
         base_correct += max(OUTCOMES, key=lambda key: base[key]) == actual
         candidate_correct += max(OUTCOMES, key=lambda key: candidate[key]) == actual
 
+    cluster_keys = [
+        str(row.get("kickoff_at") or "")[:10] or f"row:{index}"
+        for index, row in enumerate(rows)
+    ]
     for index, outcome in enumerate(OUTCOMES):
         observed = [1.0 if row["actual_outcome"] == outcome else 0.0 for row in rows]
         outcomes[outcome] = {
             "base": _binary_reliability(
-                [float(row["base"][outcome]) for row in rows], observed
+                [float(row["base"][outcome]) for row in rows],
+                observed, cluster_keys=cluster_keys, seed=seed + index * 2,
             ),
             "candidate": _binary_reliability(
-                [float(row[candidate_key][outcome]) for row in rows], observed
+                [float(row[candidate_key][outcome]) for row in rows],
+                observed, cluster_keys=cluster_keys, seed=seed + index * 2 + 1,
             ),
         }
 
