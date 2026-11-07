@@ -374,7 +374,7 @@ def test_1x2_holdout_reports_one_vs_rest_reliability_with_date_cluster_intervals
     advanced_rows = []
     for index in range(600):
         actual = ("home", "draw", "away")[index % 3]
-        row = _row(index, f"S{index // 150 + 1}", actual)
+        row = _row(index, f"S{index // 200 + 1}", actual)
         rows.append(row)
         advanced_rows.append({
             **row,
@@ -408,3 +408,86 @@ def test_1x2_holdout_reports_one_vs_rest_reliability_with_date_cluster_intervals
             assert candidate["ece_ci_95"] is not None
             assert candidate["ece_ci_95"][0] <= candidate["ece_ci_95"][1]
     assert result["temporal_drift_1x2"]["scope"] == "development_only"
+
+
+def test_1x2_calibration_bias_is_development_only_and_identifies_over_underprediction():
+    rows = []
+    advanced_rows = []
+    for index in range(600):
+        actual = ("home", "draw", "away")[index % 3]
+        row = _row(index, f"S{index // 200 + 1}", actual)
+        row["base"] = {"home": 0.50, "draw": 0.25, "away": 0.25}
+        row["candidate"] = {"home": 0.45, "draw": 0.30, "away": 0.25}
+        rows.append(row)
+        advanced_rows.append({
+            **row,
+            "advanced_shadow": {"home": 0.40, "draw": 0.30, "away": 0.30},
+        })
+
+    result = build_candidate_validation({
+        "per_match": rows,
+        "advanced_goals_shadow_per_match": advanced_rows,
+    })
+    bias = result["calibration_bias_1x2"]
+    assert bias["scope"] == "development_only"
+    assert bias["automatic_recalibration"] is False
+    assert bias["overall"]["h2h"]["sample_size"] == 480
+    assert bias["overall"]["advanced_goals"]["sample_size"] == 480
+
+    home = bias["overall"]["h2h"]["outcomes"]["home"]
+    draw = bias["overall"]["h2h"]["outcomes"]["draw"]
+    assert home["base"]["bias"] > 0
+    assert home["base"]["interpretation"] == "SOBREESTIMACION"
+    assert home["base"]["bias_ci_95"][0] > 0
+    assert draw["base"]["bias"] < 0
+    assert draw["base"]["interpretation"] == "SUBESTIMACION"
+
+    assert sum(item["sample_size"] for item in bias["by_season"]) == 480
+    assert all(item["eligible_for_descriptive_comparison"] for item in bias["by_season"])
+    assert result["split"]["holdout_matches"] == 120
+    temporal_windows = result["temporal_drift_1x2"]["h2h"]["windows"]
+    assert temporal_windows
+    assert result["split"]["holdout_start"][:10] > max(
+        window["date_end"] for window in temporal_windows
+    )
+
+
+def test_1x2_calibration_bias_reports_insufficient_ci_and_empty_samples_safely():
+    from football_research_validation import _calibration_bias_summary
+
+    empty = _calibration_bias_summary([], "candidate", 10)
+    assert empty["sample_size"] == 0
+    assert empty["outcomes"] == {}
+
+    rows = [_row(index, "S1") for index in range(3)]
+    for row in rows:
+        row["kickoff_at"] = "2026-01-01T00:00:00Z"
+    result = _calibration_bias_summary(rows, "candidate", 11)
+    assert result["independent_dates"] == 1
+    assert result["outcomes"]["home"]["base"]["bias"] is not None
+    assert result["outcomes"]["home"]["base"]["bias_ci_95"] is None
+    assert result["outcomes"]["home"]["base"]["interpretation"] == "IC95_NO_ESTIMABLE"
+
+
+def test_1x2_calibration_bias_temporal_windows_match_development_dates_only():
+    rows = []
+    for index in range(700):
+        actual = ("home", "draw", "away")[index % 3]
+        row = _row(index, f"S{index // 175 + 1}", actual)
+        row["base"] = {"home": 0.50, "draw": 0.25, "away": 0.25}
+        row["candidate"] = {"home": 0.45, "draw": 0.30, "away": 0.25}
+        rows.append(row)
+
+    result = build_candidate_validation({"per_match": rows})
+    bias = result["calibration_bias_1x2"]
+    temporal = result["temporal_drift_1x2"]["h2h"]["windows"]
+    assert temporal
+    assert all(window["calibration_bias"]["scope"] == "development_only" for window in temporal)
+    assert all(
+        window["date_end"] < result["split"]["holdout_start"][:10]
+        for window in temporal
+    )
+    assert all(
+        set(window["calibration_bias"]["outcomes"]) == {"home", "draw", "away"}
+        for window in temporal
+    )
