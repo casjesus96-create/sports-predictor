@@ -466,6 +466,140 @@ def _expected_goals_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
+
+def _multiclass_window_summary(
+    rows: list[dict[str, Any]], candidate_key: str, seed: int
+) -> dict[str, Any]:
+    """Describe 1X2 performance and one-vs-rest reliability for a time window."""
+    comparison = _compare(rows, candidate_key, seed)
+    if not rows:
+        return {
+            **comparison,
+            "base_accuracy": None,
+            "candidate_accuracy": None,
+            "accuracy_delta": None,
+            "outcomes": {},
+        }
+
+    base_correct = 0
+    candidate_correct = 0
+    outcomes = {}
+    for row in rows:
+        actual = row["actual_outcome"]
+        base = row["base"]
+        candidate = row[candidate_key]
+        base_correct += max(OUTCOMES, key=lambda key: base[key]) == actual
+        candidate_correct += max(OUTCOMES, key=lambda key: candidate[key]) == actual
+
+    for index, outcome in enumerate(OUTCOMES):
+        observed = [1.0 if row["actual_outcome"] == outcome else 0.0 for row in rows]
+        outcomes[outcome] = {
+            "base": _binary_reliability(
+                [float(row["base"][outcome]) for row in rows], observed
+            ),
+            "candidate": _binary_reliability(
+                [float(row[candidate_key][outcome]) for row in rows], observed
+            ),
+        }
+
+    n = len(rows)
+    return {
+        **comparison,
+        "base_accuracy": round(base_correct / n, 6),
+        "candidate_accuracy": round(candidate_correct / n, 6),
+        "accuracy_delta": round((candidate_correct - base_correct) / n, 6),
+        "outcomes": outcomes,
+    }
+
+
+def _multiclass_temporal_breakdown(
+    rows: list[dict[str, Any]], candidate_key: str, seed: int
+) -> dict[str, Any]:
+    """Compare 1X2 calibration and losses in contiguous development-only windows."""
+    ordered = sorted(
+        rows,
+        key=lambda row: (str(row.get("kickoff_at") or ""), str(row.get("match_id") or "")),
+    )
+    date_groups: list[tuple[str, list[dict[str, Any]]]] = []
+    for index, row in enumerate(ordered):
+        date_key = str(row.get("kickoff_at") or "")[:10] or f"__unknown_{index}__"
+        if date_groups and date_groups[-1][0] == date_key:
+            date_groups[-1][1].append(row)
+        else:
+            date_groups.append((date_key, [row]))
+
+    window_count = min(
+        4,
+        len(ordered) // MIN_TEMPORAL_WINDOW_MATCHES,
+        len(date_groups) // MIN_TEMPORAL_WINDOW_DATES,
+    )
+    if window_count < 2:
+        return {
+            "scope": "development_only",
+            "candidate": candidate_key,
+            "window_count": 0,
+            "minimum_matches_per_window": MIN_TEMPORAL_WINDOW_MATCHES,
+            "minimum_independent_dates_per_window": MIN_TEMPORAL_WINDOW_DATES,
+            "windows": [],
+            "reason": "Muestra insuficiente para formar al menos dos ventanas 1X2 comparables.",
+        }
+
+    partitions: list[list[tuple[str, list[dict[str, Any]]]]] = []
+    cursor = 0
+    remaining_matches = len(ordered)
+    for window_index in range(window_count):
+        remaining_windows = window_count - window_index
+        target = remaining_matches / remaining_windows
+        selected_groups: list[tuple[str, list[dict[str, Any]]]] = []
+        selected_matches = 0
+        while cursor < len(date_groups):
+            groups_left = len(date_groups) - cursor
+            if selected_groups and selected_matches >= target:
+                break
+            if selected_groups and groups_left <= (remaining_windows - 1) * MIN_TEMPORAL_WINDOW_DATES:
+                break
+            group = date_groups[cursor]
+            selected_groups.append(group)
+            selected_matches += len(group[1])
+            cursor += 1
+        partitions.append(selected_groups)
+        remaining_matches -= selected_matches
+
+    windows = []
+    for index, groups in enumerate(partitions, start=1):
+        window_rows = [row for _, group_rows in groups for row in group_rows]
+        dates = [day for day, _ in groups]
+        summary = _multiclass_window_summary(
+            window_rows, candidate_key, seed + index * 100
+        )
+        windows.append({
+            "window": index,
+            "date_start": dates[0] if dates else None,
+            "date_end": dates[-1] if dates else None,
+            "sample_size": len(window_rows),
+            "independent_dates": len(dates),
+            **summary,
+            "eligible_for_descriptive_comparison": (
+                len(window_rows) >= MIN_TEMPORAL_WINDOW_MATCHES
+                and len(dates) >= MIN_TEMPORAL_WINDOW_DATES
+            ),
+        })
+
+    return {
+        "scope": "development_only",
+        "candidate": candidate_key,
+        "window_count": len(windows),
+        "minimum_matches_per_window": MIN_TEMPORAL_WINDOW_MATCHES,
+        "minimum_independent_dates_per_window": MIN_TEMPORAL_WINDOW_DATES,
+        "windows": windows,
+        "interpretation": (
+            "Ventanas 1X2 cronológicas del tramo de desarrollo. La calibración "
+            "se calcula por clase (local/empate/visitante) uno-contra-el-resto; "
+            "no incluye holdout ni modifica probabilidades."
+        ),
+    }
+
+
 def _goal_market_validation(
     rows: list[dict[str, Any]], holdout_start: str | None
 ) -> dict[str, Any]:
