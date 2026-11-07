@@ -221,3 +221,55 @@ def test_binary_reliability_handles_empty_and_boundary_probabilities():
     assert result["ece"] == 0
     assert result["bins"][0]["n"] == 1
     assert result["bins"][-1]["n"] == 1
+
+
+
+def test_goal_market_temporal_windows_are_chronological_clustered_and_development_only():
+    goal_rows = []
+    for index in range(500):
+        row = _row(index, f"S{index // 125 + 1}")
+        row["kickoff_at"] = _row(index, f"S{index // 125 + 1}")["kickoff_at"]
+        row["actual_home_goals"] = 1
+        row["actual_away_goals"] = 1
+        row["actual_total_goals"] = 2
+        row["base_expected_goals"] = {"home": 1.2, "away": 0.9, "total": 2.1}
+        row["candidate_expected_goals"] = {"home": 1.1, "away": 1.0, "total": 2.1}
+        actual = index % 2 == 0
+        row["markets"] = {
+            "btts_yes": {"base": 0.50, "candidate": 0.55, "actual": actual},
+            "over_2_5": {"base": 0.45, "candidate": 0.50, "actual": actual},
+        }
+        goal_rows.append(row)
+
+    duplicated_dates = []
+    for row in goal_rows[:12]:
+        duplicate = dict(row)
+        duplicate["match_id"] = f"duplicate-{row['match_id']}"
+        duplicated_dates.append(duplicate)
+    goal_rows.extend(duplicated_dates)
+
+    result = build_candidate_validation({
+        "per_match": [_row(index, f"S{index // 125 + 1}") for index in range(500)],
+        "goal_market_per_match": goal_rows,
+    })
+    temporal = result["goal_markets"]["temporal_drift"]
+    assert temporal["scope"] == "development_only"
+    assert temporal["window_count"] >= 2
+    windows = temporal["windows"]
+    assert all(windows[index]["date_end"] < windows[index + 1]["date_start"] for index in range(len(windows) - 1))
+    assert sum(window["sample_size"] for window in windows) == result["goal_markets"]["development_sample_size"]
+    assert all(window["independent_dates"] >= 10 for window in windows)
+    assert all(
+        window["markets"]["btts_yes"]["sample_size"] == window["sample_size"]
+        for window in windows
+    )
+    assert result["goal_markets"]["holdout_sample_size"] == 100
+
+
+def test_goal_market_temporal_windows_report_insufficient_sample_without_fabrication():
+    from football_research_validation import _goal_market_temporal_breakdown
+
+    result = _goal_market_temporal_breakdown([], ("btts_yes", "over_2_5"))
+    assert result["window_count"] == 0
+    assert result["windows"] == []
+    assert "insuficiente" in result["reason"].lower()
