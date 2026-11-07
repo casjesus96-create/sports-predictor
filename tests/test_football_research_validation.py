@@ -546,10 +546,7 @@ def test_1x2_bias_segments_use_development_only_and_mark_small_groups():
             for item in dimension["segments"]
         )
         assert all(
-            result["split"]["holdout_start"][:10] > max(
-                row["kickoff_at"][:10]
-                for row in rows[:560]
-            )
+            item["date_end"] < result["split"]["holdout_start"][:10]
             for item in dimension["segments"]
         )
     small = _calibration_bias_segments(
