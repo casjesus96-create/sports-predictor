@@ -374,7 +374,7 @@ def test_1x2_holdout_reports_one_vs_rest_reliability_with_date_cluster_intervals
     advanced_rows = []
     for index in range(600):
         actual = ("home", "draw", "away")[index % 3]
-        row = _row(index, f"S{index // 150 + 1}", actual)
+        row = _row(index, f"S{index // 200 + 1}", actual)
         rows.append(row)
         advanced_rows.append({
             **row,
@@ -445,9 +445,10 @@ def test_1x2_calibration_bias_is_development_only_and_identifies_over_underpredi
     assert sum(item["sample_size"] for item in bias["by_season"]) == 480
     assert all(item["eligible_for_descriptive_comparison"] for item in bias["by_season"])
     assert result["split"]["holdout_matches"] == 120
+    temporal_windows = result["temporal_drift_1x2"]["h2h"]["windows"]
+    assert temporal_windows
     assert result["split"]["holdout_start"][:10] > max(
-        window["date_end"]
-        for window in bias["temporal_windows"]["h2h"]
+        window["date_end"] for window in temporal_windows
     )
 
 
