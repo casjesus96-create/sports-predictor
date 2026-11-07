@@ -368,3 +368,43 @@ def test_reliability_with_one_independent_date_does_not_claim_confidence_interva
     assert result["uncertainty_cluster_count"] == 1
     assert result["ece_ci_95"] is None
     assert result["bootstrap_replicates"] == 0
+
+def test_1x2_holdout_reports_one_vs_rest_reliability_with_date_cluster_intervals():
+    rows = []
+    advanced_rows = []
+    for index in range(600):
+        actual = ("home", "draw", "away")[index % 3]
+        row = _row(index, f"S{index // 150 + 1}", actual)
+        rows.append(row)
+        advanced_rows.append({
+            **row,
+            "advanced_shadow": {
+                "home": 0.45, "draw": 0.30, "away": 0.25,
+            },
+        })
+
+    result = build_candidate_validation({
+        "per_match": rows,
+        "advanced_goals_shadow_per_match": advanced_rows,
+    })
+    assert result["split"]["holdout_matches"] == 120
+    for candidate_key in ("h2h", "advanced_goals"):
+        holdout = result["candidates"][candidate_key]["holdout"]
+        assert holdout["reliability_scope"] == "holdout_only"
+        assert holdout["sample_size"] == 120
+        assert holdout["base_accuracy"] is not None
+        assert holdout["candidate_accuracy"] is not None
+        assert set(holdout["outcomes"]) == {"home", "draw", "away"}
+        for outcome in ("home", "draw", "away"):
+            base = holdout["outcomes"][outcome]["base"]
+            candidate = holdout["outcomes"][outcome]["candidate"]
+            assert base["sample_size"] == 120
+            assert candidate["sample_size"] == 120
+            assert base["uncertainty_cluster_count"] >= 20
+            assert candidate["uncertainty_cluster_count"] >= 20
+            assert base["bootstrap_replicates"] == 1000
+            assert candidate["bootstrap_replicates"] == 1000
+            assert base["ece_ci_95"] is not None
+            assert candidate["ece_ci_95"] is not None
+            assert candidate["ece_ci_95"][0] <= candidate["ece_ci_95"][1]
+    assert result["temporal_drift_1x2"]["scope"] == "development_only"
