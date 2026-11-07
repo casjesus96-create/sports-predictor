@@ -183,6 +183,46 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, ...]:
 
 
 
+
+def _binary_reliability(
+    probabilities: list[float], observed: list[float], *, bins: int = 5
+) -> dict[str, Any]:
+    """Describe probability calibration without fitting or changing predictions."""
+    if not probabilities:
+        return {"sample_size": 0, "ece": None, "bins": []}
+    buckets = [
+        {"range": f"[{index / bins:.1f},{(index + 1) / bins:.1f}{']' if index == bins - 1 else ')'}",
+         "n": 0, "mean_predicted_probability": 0.0, "observed_rate": 0.0}
+        for index in range(bins)
+    ]
+    for probability, outcome in zip(probabilities, observed):
+        index = min(bins - 1, int(min(1.0, max(0.0, probability)) * bins))
+        buckets[index]["n"] += 1
+        buckets[index]["mean_predicted_probability"] += probability
+        buckets[index]["observed_rate"] += outcome
+    weighted_gap = 0.0
+    for bucket in buckets:
+        count = bucket["n"]
+        if count:
+            predicted = bucket["mean_predicted_probability"] / count
+            rate = bucket["observed_rate"] / count
+            bucket["mean_predicted_probability"] = round(predicted, 6)
+            bucket["observed_rate"] = round(rate, 6)
+            bucket["absolute_gap"] = round(abs(predicted - rate), 6)
+            weighted_gap += count * abs(predicted - rate)
+        else:
+            bucket["mean_predicted_probability"] = None
+            bucket["observed_rate"] = None
+            bucket["absolute_gap"] = None
+    return {
+        "sample_size": len(probabilities),
+        "ece": round(weighted_gap / len(probabilities), 6),
+        "bins": buckets,
+        "interpretation": "ECE es el error de calibración esperado aproximado, ponderado por el tamaño de cada intervalo; no es una métrica de precisión ni una corrección de probabilidades.",
+    }
+
+
+
 def _binary_market_summary(rows: list[dict[str, Any]], market_key: str, seed: int) -> dict[str, Any]:
     selected = [row for row in rows if market_key in (row.get("markets") or {})]
     if not selected:
@@ -192,6 +232,10 @@ def _binary_market_summary(rows: list[dict[str, Any]], market_key: str, seed: in
             "base_log_loss": None, "candidate_log_loss": None,
             "brier_delta": empty, "log_loss_delta": _paired_interval([], [], seed + 1),
             "observed_rate": None,
+            "reliability": {
+                "base": _binary_reliability([], []),
+                "candidate": _binary_reliability([], []),
+            },
         }
     base_brier = []
     candidate_brier = []
@@ -225,6 +269,16 @@ def _binary_market_summary(rows: list[dict[str, Any]], market_key: str, seed: in
         "log_loss_delta": _paired_interval(
             [candidate_log[i] - base_log[i] for i in range(n)], cluster_keys, seed + 1
         ),
+        "reliability": {
+            "base": _binary_reliability(
+                [min(1.0, max(0.0, float(row["markets"][market_key]["base"]))) for row in selected],
+                observed,
+            ),
+            "candidate": _binary_reliability(
+                [min(1.0, max(0.0, float(row["markets"][market_key]["candidate"]))) for row in selected],
+                observed,
+            ),
+        },
     }
 
 
