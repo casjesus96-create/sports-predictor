@@ -318,6 +318,129 @@ def _goal_market_season_breakdown(
 
 
 
+
+MIN_TEMPORAL_WINDOW_MATCHES = 50
+MIN_TEMPORAL_WINDOW_DATES = 10
+
+
+def _goal_market_temporal_breakdown(
+    rows: list[dict[str, Any]], market_keys: tuple[str, ...]
+) -> dict[str, Any]:
+    """Compare contiguous development-only time windows without splitting match dates."""
+    ordered = sorted(
+        rows,
+        key=lambda row: (str(row.get("kickoff_at") or ""), str(row.get("match_id") or "")),
+    )
+    date_groups: list[tuple[str, list[dict[str, Any]]]] = []
+    for index, row in enumerate(ordered):
+        date_key = str(row.get("kickoff_at") or "")[:10] or f"unknown:{index}"
+        if date_groups and date_groups[-1][0] == date_key:
+            date_groups[-1][1].append(row)
+        else:
+            date_groups.append((date_key, [row]))
+
+    window_count = min(
+        4,
+        len(ordered) // MIN_TEMPORAL_WINDOW_MATCHES,
+        len(date_groups) // MIN_TEMPORAL_WINDOW_DATES,
+    )
+    if window_count < 2:
+        return {
+            "scope": "development_only",
+            "window_count": 0,
+            "minimum_matches_per_window": MIN_TEMPORAL_WINDOW_MATCHES,
+            "minimum_independent_dates_per_window": MIN_TEMPORAL_WINDOW_DATES,
+            "windows": [],
+            "reason": "Muestra insuficiente para formar al menos dos ventanas temporales comparables.",
+        }
+
+    partitions: list[list[tuple[str, list[dict[str, Any]]]]] = []
+    cursor = 0
+    remaining_matches = len(ordered)
+    for window_index in range(window_count):
+        remaining_windows = window_count - window_index
+        target = remaining_matches / remaining_windows
+        selected_groups: list[tuple[str, list[dict[str, Any]]]] = []
+        selected_matches = 0
+        while cursor < len(date_groups):
+            groups_left = len(date_groups) - cursor
+            if selected_groups and selected_matches >= target:
+                break
+            if selected_groups and groups_left <= (remaining_windows - 1) * MIN_TEMPORAL_WINDOW_DATES:
+                break
+            group = date_groups[cursor]
+            selected_groups.append(group)
+            selected_matches += len(group[1])
+            cursor += 1
+        partitions.append(selected_groups)
+        remaining_matches -= selected_matches
+
+    windows = []
+    for index, groups in enumerate(partitions, start=1):
+        window_rows = [row for _, group_rows in groups for row in group_rows]
+        dates = [date for date, _ in groups]
+        markets = {}
+        for market_index, market_key in enumerate(market_keys):
+            selected = [
+                row for row in window_rows
+                if market_key in (row.get("markets") or {})
+            ]
+            summary = _binary_market_summary(
+                window_rows, market_key, 16000 + index * 100 + market_index
+            )
+            n = len(selected)
+            observed_rate = (
+                sum(1.0 if bool(row["markets"][market_key]["actual"]) else 0.0 for row in selected) / n
+                if n else None
+            )
+            base_mean = (
+                sum(float(row["markets"][market_key]["base"]) for row in selected) / n
+                if n else None
+            )
+            candidate_mean = (
+                sum(float(row["markets"][market_key]["candidate"]) for row in selected) / n
+                if n else None
+            )
+            markets[market_key] = {
+                "sample_size": n,
+                "observed_rate": round(observed_rate, 6) if observed_rate is not None else None,
+                "base_mean_probability": round(base_mean, 6) if base_mean is not None else None,
+                "candidate_mean_probability": round(candidate_mean, 6) if candidate_mean is not None else None,
+                "base_calibration_gap": round(abs(base_mean - observed_rate), 6) if n else None,
+                "candidate_calibration_gap": round(abs(candidate_mean - observed_rate), 6) if n else None,
+                "base_brier": summary["base_brier"],
+                "candidate_brier": summary["candidate_brier"],
+                "brier_delta": summary["brier_delta"],
+                "base_log_loss": summary["base_log_loss"],
+                "candidate_log_loss": summary["candidate_log_loss"],
+                "log_loss_delta": summary["log_loss_delta"],
+                "base_ece": summary["reliability"]["base"]["ece"],
+                "candidate_ece": summary["reliability"]["candidate"]["ece"],
+                "eligible_for_descriptive_comparison": (
+                    n >= MIN_TEMPORAL_WINDOW_MATCHES
+                    and len(dates) >= MIN_TEMPORAL_WINDOW_DATES
+                ),
+            }
+        windows.append({
+            "window": index,
+            "date_start": dates[0] if dates else None,
+            "date_end": dates[-1] if dates else None,
+            "sample_size": len(window_rows),
+            "independent_dates": len(dates),
+            "markets": markets,
+        })
+
+    return {
+        "scope": "development_only",
+        "window_count": len(windows),
+        "minimum_matches_per_window": MIN_TEMPORAL_WINDOW_MATCHES,
+        "minimum_independent_dates_per_window": MIN_TEMPORAL_WINDOW_DATES,
+        "windows": windows,
+        "interpretation": "Ventanas cronológicas contiguas; cada fecha calendario permanece completa. Las diferencias describen cambios temporales y no prueban causalidad ni rentabilidad.",
+    }
+
+
+
 def _expected_goals_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     fields = (
         ("home", "actual_home_goals"),
@@ -373,6 +496,7 @@ def _goal_market_validation(
             for i, key in enumerate(market_keys)
         },
         "development_season_breakdown": _goal_market_season_breakdown(development, market_keys),
+        "temporal_drift": _goal_market_temporal_breakdown(development, market_keys),
         "season_diagnostics_scope": "development_only",
         "minimum_matches_per_season_for_descriptive_comparison": MIN_SEASON_MATCHES,
         "expected_goals_mae": {
