@@ -333,7 +333,7 @@ def _goal_market_temporal_breakdown(
     )
     date_groups: list[tuple[str, list[dict[str, Any]]]] = []
     for index, row in enumerate(ordered):
-        date_key = str(row.get("kickoff_at") or "")[:10] or f"unknown:{index}"
+        date_key = str(row.get("kickoff_at") or "")[:10] or "__unknown_date__"
         if date_groups and date_groups[-1][0] == date_key:
             date_groups[-1][1].append(row)
         else:
