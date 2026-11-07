@@ -491,3 +491,69 @@ def test_1x2_calibration_bias_temporal_windows_match_development_dates_only():
         set(window["calibration_bias"]["outcomes"]) == {"home", "draw", "away"}
         for window in temporal
     )
+
+
+def test_1x2_bias_segments_explain_associations_without_claiming_causality():
+    from football_research_validation import _calibration_bias_segments
+
+    rows = []
+    for index in range(240):
+        row = _row(index, f"S{index // 60 + 1}", ("home", "draw", "away")[index % 3])
+        confidence_band = (index // 3) % 3
+        row["base"] = (
+            {"home": 0.40, "draw": 0.35, "away": 0.25}
+            if confidence_band == 0 else
+            {"home": 0.50, "draw": 0.30, "away": 0.20}
+            if confidence_band == 1 else
+            {"home": 0.70, "draw": 0.20, "away": 0.10}
+        )
+        row["candidate"] = dict(row["base"])
+        row["h2h_valid_meetings"] = (0, 2, 6, 12)[(index // 3) % 4]
+        row["h2h_adjusted"] = index % 2 == 0
+        rows.append(row)
+
+    result = _calibration_bias_segments(
+        rows, "candidate", 42,
+        ("base_confidence", "h2h_sample", "h2h_adjustment", "probability_shift"),
+    )
+    assert set(result) == {
+        "base_confidence", "h2h_sample", "h2h_adjustment", "probability_shift"
+    }
+    assert sum(item["sample_size"] for item in result["base_confidence"]["segments"]) == 240
+    assert len(result["base_confidence"]["segments"]) == 3
+    assert len(result["h2h_sample"]["segments"]) == 4
+    assert len(result["h2h_adjustment"]["segments"]) == 2
+    assert all(item["eligible_for_descriptive_comparison"] for group in result.values() for item in group["segments"])
+    assert all(item["bias"]["scope"] == "development_only" for group in result.values() for item in group["segments"])
+
+
+def test_1x2_bias_segments_use_development_only_and_mark_small_groups():
+    rows = []
+    for index in range(700):
+        row = _row(index, f"S{index // 175 + 1}", ("home", "draw", "away")[index % 3])
+        row["h2h_valid_meetings"] = 0 if index % 7 else 12
+        row["h2h_adjusted"] = index % 2 == 0
+        rows.append(row)
+
+    result = build_candidate_validation({"per_match": rows})
+    segments = result["calibration_bias_1x2"]["segments"]["h2h"]
+    assert result["split"]["development_matches"] == 560
+    assert result["split"]["holdout_matches"] == 140
+    for dimension in segments.values():
+        assert sum(item["sample_size"] for item in dimension["segments"]) == 560
+        assert all(
+            item["bias"]["scope"] == "development_only"
+            for item in dimension["segments"]
+        )
+        assert all(
+            result["split"]["holdout_start"][:10] > max(
+                row["kickoff_at"][:10]
+                for row in rows[:560]
+            )
+            for item in dimension["segments"]
+        )
+    small = _calibration_bias_segments(
+        rows[:20], "candidate", 5, ("h2h_sample",)
+    )["h2h_sample"]["segments"]
+    assert small
+    assert all(not item["eligible_for_descriptive_comparison"] for item in small)
