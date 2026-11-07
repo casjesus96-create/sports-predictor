@@ -150,7 +150,7 @@ def test_goal_market_reliability_is_descriptive_and_reports_empty_bins():
         actual = position < 4 or position == 5
         row["markets"] = {
             "btts_yes": {
-                "base": 0.50,
+                "base": 0.70,
                 "candidate": probability,
                 "actual": actual,
             }
