@@ -1089,6 +1089,23 @@ function FootballHistoricalIntelligenceCenter() {
               </div>;
             })}
           </div>
+          <div style={{ marginTop: 8, borderTop: "1px solid #334155", paddingTop: 7 }}>
+            <strong style={{ fontSize: 11 }}>Deriva temporal de mercados · ventanas cronológicas de desarrollo</strong>
+            <p style={{ color: "#94a3b8", fontSize: 9, margin: "3px 0 5px" }}>Solo desarrollo; no incluye holdout. Las fechas completas no se dividen. Brier/Log Loss: Δ negativo favorece al shadow. Diagnóstico descriptivo, no causal.</p>
+            {(validation.goal_markets?.temporal_drift?.windows || []).map((window: any) => {
+              const btts = window.markets?.btts_yes || {};
+              const over = window.markets?.over_2_5 || {};
+              return <div key={window.window} style={{ borderTop: "1px solid #253247", padding: "5px 0", fontSize: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <strong>Ventana {window.window} · n={window.sample_size}</strong>
+                  <span style={{ color: "#94a3b8" }}>{window.date_start || "—"} → {window.date_end || "—"}</span>
+                </div>
+                <div style={{ color: "#94a3b8" }}>BTTS ΔB {delta(btts.brier_delta)} · ΔLL {delta(btts.log_loss_delta)} · ECE {btts.base_ece == null ? "—" : Number(btts.base_ece).toFixed(3)}→{btts.candidate_ece == null ? "—" : Number(btts.candidate_ece).toFixed(3)}</div>
+                <div style={{ color: "#94a3b8" }}>O2.5 ΔB {delta(over.brier_delta)} · ΔLL {delta(over.log_loss_delta)} · tasa real {over.observed_rate == null ? "—" : (Number(over.observed_rate) * 100).toFixed(1) + "%"}</div>
+              </div>;
+            })}
+            {!(validation.goal_markets?.temporal_drift?.windows || []).length && <p style={{ color: "#94a3b8", fontSize: 9 }}>Muestra insuficiente para crear ventanas comparables.</p>}
+          </div>
           <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700 }}>Consistencia H2H en desarrollo por temporada</div>
           {(validation.season_breakdown || []).map((item: any) => <div key={item.season} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #334155", padding: "5px 0", fontSize: 10 }}>
             <span>{item.season} · n={item.sample_size}</span><span>ΔB {delta(item.brier_delta)} · ΔLL {delta(item.log_loss_delta)}</span>
