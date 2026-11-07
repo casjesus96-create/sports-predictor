@@ -533,6 +533,77 @@ def _expected_goals_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 
+
+def _calibration_bias_summary(
+    rows: list[dict[str, Any]], candidate_key: str, seed: int, *, include_ci: bool = True
+) -> dict[str, Any]:
+    """Measure one-vs-rest probability bias; positive means overprediction.
+
+    Confidence intervals resample complete calendar-date clusters. This is a
+    descriptive diagnostic only and never fits or changes model probabilities.
+    """
+    if not rows:
+        return {
+            "sample_size": 0, "independent_dates": 0, "outcomes": {},
+            "scope": "development_only",
+        }
+
+    cluster_keys = [
+        str(row.get("kickoff_at") or "")[:10] or f"row:{index}"
+        for index, row in enumerate(rows)
+    ]
+    outcomes: dict[str, Any] = {}
+    for outcome_index, outcome in enumerate(OUTCOMES):
+        observed = [
+            1.0 if row["actual_outcome"] == outcome else 0.0
+            for row in rows
+        ]
+        models: dict[str, Any] = {}
+        for model_index, model_key in enumerate(("base", candidate_key)):
+            predicted = [float(row[model_key][outcome]) for row in rows]
+            residuals = [
+                probability - actual
+                for probability, actual in zip(predicted, observed)
+            ]
+            bias = sum(residuals) / len(residuals)
+            interval = (
+                _paired_interval(
+                    residuals, cluster_keys,
+                    seed + outcome_index * 20 + model_index,
+                )
+                if include_ci else None
+            )
+            ci = interval.get("ci_95") if interval else None
+            if ci is None:
+                interpretation = "IC95_NO_ESTIMABLE"
+            elif ci[0] > 0:
+                interpretation = "SOBREESTIMACION"
+            elif ci[1] < 0:
+                interpretation = "SUBESTIMACION"
+            else:
+                interpretation = "SIN_EVIDENCIA_CONCLUYENTE"
+            models[model_key] = {
+                "mean_predicted_probability": round(sum(predicted) / len(predicted), 6),
+                "observed_rate": round(sum(observed) / len(observed), 6),
+                "bias": round(bias, 6),
+                "bias_ci_95": ci,
+                "interpretation": interpretation,
+                "bootstrap_replicates": BOOTSTRAP_REPLICATES if ci is not None else 0,
+            }
+        outcomes[outcome] = models
+
+    return {
+        "sample_size": len(rows),
+        "independent_dates": len(set(cluster_keys)),
+        "outcomes": outcomes,
+        "scope": "development_only",
+        "definition": "Sesgo = probabilidad media predicha menos frecuencia observada; positivo sobreestima y negativo subestima.",
+        "uncertainty_method": (
+            "IC percentil 95% mediante 1000 réplicas bootstrap de fechas completas."
+            if include_ci else "Estimación puntual descriptiva; sin IC por subgrupo."
+        ),
+    }
+
 def _multiclass_window_summary(
     rows: list[dict[str, Any]], candidate_key: str, seed: int
 ) -> dict[str, Any]:
@@ -651,6 +722,9 @@ def _multiclass_temporal_breakdown(
             "sample_size": len(window_rows),
             "independent_dates": len(dates),
             **summary,
+            "calibration_bias": _calibration_bias_summary(
+                window_rows, candidate_key, seed + index * 1000
+            ),
             "eligible_for_descriptive_comparison": (
                 len(window_rows) >= MIN_TEMPORAL_WINDOW_MATCHES
                 and len(dates) >= MIN_TEMPORAL_WINDOW_DATES
@@ -766,6 +840,66 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
     advanced_holdout_summary["reliability_scope"] = "holdout_only"
     advanced_gate = _gate(advanced_holdout_summary, advanced_development_seasons)
 
+    h2h_temporal = _multiclass_temporal_breakdown(
+        development, "candidate", 18000
+    )
+    advanced_temporal = _multiclass_temporal_breakdown(
+        advanced_development_rows, "advanced_shadow", 19000
+    )
+    development_seasons: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    advanced_seasons: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in development:
+        development_seasons[str(row.get("season") or "SIN_TEMPORADA")].append(row)
+    for row in advanced_development_rows:
+        advanced_seasons[str(row.get("season") or "SIN_TEMPORADA")].append(row)
+    bias_by_season = []
+    for season in sorted(set(development_seasons) | set(advanced_seasons)):
+        h2h_season_rows = development_seasons.get(season, [])
+        advanced_season_rows = advanced_seasons.get(season, [])
+        season_dates = {
+            str(row.get("kickoff_at") or "")[:10]
+            for row in h2h_season_rows if str(row.get("kickoff_at") or "")
+        }
+        bias_by_season.append({
+            "season": season,
+            "sample_size": len(h2h_season_rows),
+            "independent_dates": len(season_dates),
+            "eligible_for_descriptive_comparison": (
+                len(h2h_season_rows) >= MIN_SEASON_MATCHES
+                and len(season_dates) >= MIN_TEMPORAL_WINDOW_DATES
+            ),
+            "h2h": _calibration_bias_summary(
+                h2h_season_rows, "candidate", 24000 + len(bias_by_season) * 10,
+                include_ci=False,
+            ),
+            "advanced_goals": _calibration_bias_summary(
+                advanced_season_rows, "advanced_shadow",
+                25000 + len(bias_by_season) * 10, include_ci=False,
+            ),
+        })
+
+    calibration_bias = {
+        "scope": "development_only",
+        "minimum_matches_per_season": MIN_SEASON_MATCHES,
+        "minimum_independent_dates_per_season": MIN_TEMPORAL_WINDOW_DATES,
+        "overall": {
+            "h2h": _calibration_bias_summary(development, "candidate", 22000),
+            "advanced_goals": _calibration_bias_summary(
+                advanced_development_rows, "advanced_shadow", 23000
+            ),
+        },
+        "by_season": bias_by_season,
+        "temporal_windows": {
+            "h2h": h2h_temporal.get("windows", []),
+            "advanced_goals": advanced_temporal.get("windows", []),
+        },
+        "automatic_recalibration": False,
+        "interpretation": (
+            "Diagnóstico de sesgo por clase calculado exclusivamente en desarrollo. "
+            "No inspecciona el holdout, no ajusta probabilidades y no activa candidatos."
+        ),
+    }
+
     return {
         "protocol": "chronological_holdout_cluster_bootstrap_v2",
         "goal_markets": _goal_market_validation(
@@ -773,13 +907,10 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
         ),
         "temporal_drift_1x2": {
             "scope": "development_only",
-            "h2h": _multiclass_temporal_breakdown(
-                development, "candidate", 18000
-            ),
-            "advanced_goals": _multiclass_temporal_breakdown(
-                advanced_development_rows, "advanced_shadow", 19000
-            ),
+            "h2h": h2h_temporal,
+            "advanced_goals": advanced_temporal,
         },
+        "calibration_bias_1x2": calibration_bias,
         "split": {
             "development_share": 0.8,
             "holdout_share": 0.2,
