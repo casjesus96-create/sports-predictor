@@ -1079,7 +1079,7 @@ function FootballHistoricalIntelligenceCenter() {
               {(validation.calibration_bias_1x2?.by_season || []).map((season: any) => {
                 const fmt = (value: any) => value == null ? "—" : (value > 0 ? "+" : "") + (Number(value) * 100).toFixed(1) + " pp";
                 return <div key={season.season} style={{ color: season.eligible_for_descriptive_comparison ? "#cbd5e1" : "#94a3b8", fontSize: 9, padding: "3px 0" }}>
-                  {season.season} · n={season.sample_size} · {season.eligible_for_descriptive_comparison ? "muestra descriptiva suficiente" : "muestra pequeña"} · Poisson L/E/V {(["home", "draw", "away"] as const).map(key => fmt(season.h2h?.outcomes?.[key]?.base?.bias)).join(" / ")} pp
+                  {season.season} · n={season.sample_size} · {season.eligible_for_descriptive_comparison ? "muestra descriptiva suficiente" : "muestra pequeña"} · Poisson L/E/V {(["home", "draw", "away"] as const).map(key => fmt(season.h2h?.outcomes?.[key]?.base?.bias)).join(" / ")}
                 </div>;
               })}
             </div>
@@ -1125,10 +1125,13 @@ function FootballHistoricalIntelligenceCenter() {
                   </div>
                   <div style={{ color: "#cbd5e1" }}>Accuracy Poisson {pct(window.base_accuracy == null ? null : Number((window.base_accuracy * 100).toFixed(1)))} · candidato {pct(window.candidate_accuracy == null ? null : Number((window.candidate_accuracy * 100).toFixed(1)))} · Δ {pct(window.accuracy_delta == null ? null : Number((window.accuracy_delta * 100).toFixed(1)))}</div>
                   <div style={{ color: "#94a3b8" }}>Δ Brier {delta(window.brier_delta)} · Δ Log Loss {delta(window.log_loss_delta)}</div>
-                  <div style={{ color: "#94a3b8" }}>Sesgo Poisson → candidato L/E/V: {(["home", "draw", "away"] as const).map(key => {
+                  <div style={{ color: "#94a3b8" }}>Sesgo Poisson → candidato L/E/V: {(() => {
+                    const shadowKey = key === "h2h" ? "candidate" : "advanced_shadow";
                     const fmt = (value: any) => value == null ? "—" : (value > 0 ? "+" : "") + (Number(value) * 100).toFixed(1) + " pp";
-                    return fmt(window.calibration_bias?.outcomes?.[key]?.base?.bias) + "→" + fmt(window.calibration_bias?.outcomes?.[key]?.[key === "h2h" ? "candidate" : "advanced_shadow"]?.bias);
-                  }).join(" / ")}</div>
+                    return (["home", "draw", "away"] as const).map(outcomeKey =>
+                      fmt(window.calibration_bias?.outcomes?.[outcomeKey]?.base?.bias) + "→" + fmt(window.calibration_bias?.outcomes?.[outcomeKey]?.[shadowKey]?.bias)
+                    ).join(" / ");
+                  })()}</div>
                   <div style={{ color: "#94a3b8" }}>{([
                     ["Local", "home"], ["Empate", "draw"], ["Visitante", "away"],
                   ] as const).map(([outcomeLabel, outcomeKey]) => {
