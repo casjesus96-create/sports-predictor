@@ -1134,7 +1134,7 @@ def archive_competition_matches(
 @router.get("/research-backtest")
 def archive_research_backtest(
     competition: str = Query(..., min_length=2, max_length=8),
-    limit: int = Query(500, ge=100, le=500),
+    limit: int = Query(500, ge=100, le=1500),
 ):
     """Run read-only chronological model research using only our owned archive."""
     code = competition.strip().upper()
