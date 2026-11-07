@@ -1061,7 +1061,13 @@ function FootballHistoricalIntelligenceCenter() {
               const item = validation.goal_markets?.markets?.[key]?.holdout || {};
               return <div key={key} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #253247", padding: "5px 0", fontSize: 10 }}>
                 <span>{label} · n={item.sample_size ?? 0}</span>
-                <span style={{ textAlign: "right" }}>ΔB {delta(item.brier_delta)} · ΔLL {delta(item.log_loss_delta)}</span>
+                <span style={{ textAlign: "right" }}>
+                  ΔB {delta(item.brier_delta)} · ΔLL {delta(item.log_loss_delta)}
+                  <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 2 }}>
+                    ECE Poisson {item.reliability?.base?.ece == null ? "—" : Number(item.reliability.base.ece).toFixed(3)}
+                    {" · "}Shadow {item.reliability?.candidate?.ece == null ? "—" : Number(item.reliability.candidate.ece).toFixed(3)}
+                  </div>
+                </span>
               </div>;
             })}
             <div style={{ fontSize: 10, marginTop: 5 }}>
