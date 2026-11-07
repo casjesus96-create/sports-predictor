@@ -180,6 +180,13 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
         key=lambda row: (str(row.get("kickoff_at") or ""), str(row.get("match_id") or "")),
     )
     split = max(1, int(len(rows) * 0.8)) if rows else 0
+    # Never divide one calendar matchday between development and holdout.
+    while 0 < split < len(rows):
+        previous_day = str(rows[split - 1].get("kickoff_at") or "")[:10]
+        next_day = str(rows[split].get("kickoff_at") or "")[:10]
+        if not previous_day or previous_day != next_day:
+            break
+        split += 1
     development, holdout_rows = rows[:split], rows[split:]
 
     h2h_development_seasons = _season_breakdown(development, "candidate", 7000)
