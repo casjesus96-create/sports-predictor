@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import random
 from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Query
 
@@ -17,6 +18,77 @@ def _number(value):
     except (TypeError, ValueError):
         return None
     return value if math.isfinite(value) else None
+
+
+BOOTSTRAP_REPLICATES = 1000
+MIN_CROSS_LEAGUE_MATCHES = 50
+MIN_CROSS_LEAGUE_DATES = 10
+CROSS_LEAGUE_CODES = ("BL1", "FL1", "PD", "PL", "SA")
+
+
+def _competition_calibration(items: list[tuple], seed: int = 0) -> dict:
+    """One-vs-rest calibration bias with date-cluster uncertainty."""
+    n = len(items)
+    dates = sorted({
+        str(item[0].get("kickoff_at") or "")[:10]
+        for item in items if str(item[0].get("kickoff_at") or "")[:10]
+    })
+    grouped: dict[str, list[tuple]] = defaultdict(list)
+    for item in items:
+        day = str(item[0].get("kickoff_at") or "")[:10]
+        if day:
+            grouped[day].append(item)
+
+    outcomes = {}
+    for outcome_index, outcome in enumerate(("home", "draw", "away")):
+        predicted = [item[1][outcome_index] for item in items]
+        observed = [1.0 if item[2] == outcome else 0.0 for item in items]
+        bias = (sum(predicted) - sum(observed)) / n if n else None
+        samples = []
+        clusters = list(grouped.values())
+        if len(clusters) >= 2:
+            rng = random.Random(seed + outcome_index)
+            for _ in range(BOOTSTRAP_REPLICATES):
+                sampled = [clusters[rng.randrange(len(clusters))] for _ in range(len(clusters))]
+                sampled_n = sum(len(cluster) for cluster in sampled)
+                predicted_sum = sum(item[1][outcome_index] for cluster in sampled for item in cluster)
+                observed_sum = sum(
+                    1.0 if item[2] == outcome else 0.0
+                    for cluster in sampled for item in cluster
+                )
+                samples.append((predicted_sum - observed_sum) / sampled_n)
+        samples.sort()
+        ci = None
+        if len(samples) >= 500:
+            ci = [
+                round(samples[int(0.025 * (len(samples) - 1))], 6),
+                round(samples[int(0.975 * (len(samples) - 1))], 6),
+            ]
+        outcomes[outcome] = {
+            "mean_predicted_probability": round(sum(predicted) / n, 6) if n else None,
+            "observed_frequency": round(sum(observed) / n, 6) if n else None,
+            "bias": round(bias, 6) if bias is not None else None,
+            "bias_ci_95": ci,
+            "interpretation": (
+                "SOBREESTIMACION" if ci and ci[0] > 0 else
+                "SUBESTIMACION" if ci and ci[1] < 0 else
+                "SIN_EVIDENCIA_CONCLUYENTE" if ci else "IC95_NO_ESTIMABLE"
+            ),
+        }
+    eligible = n >= MIN_CROSS_LEAGUE_MATCHES and len(dates) >= MIN_CROSS_LEAGUE_DATES
+    return {
+        "sample_size": n,
+        "independent_dates": len(dates),
+        "date_start": dates[0] if dates else None,
+        "date_end": dates[-1] if dates else None,
+        "eligible_for_descriptive_comparison": eligible,
+        "minimum_matches": MIN_CROSS_LEAGUE_MATCHES,
+        "minimum_independent_dates": MIN_CROSS_LEAGUE_DATES,
+        "outcomes": outcomes,
+        "scope": "official_model_settled_snapshots_only",
+        "uncertainty_method": "Bootstrap percentil por fecha completa; 1000 réplicas deterministas.",
+    }
+
 
 
 def evaluate_rows(rows: list[dict]) -> dict:
@@ -92,6 +164,10 @@ def evaluate_rows(rows: list[dict]) -> dict:
         },
         "by_outcome": outcomes,
         "by_competition": {key: group_summary(items) for key, items in sorted(competitions.items())},
+        "by_competition_calibration": {
+            key: _competition_calibration(items, seed=sum(ord(char) for char in key))
+            for key, items in sorted(competitions.items())
+        },
         "calibration": calibration,
         "status": "insufficient_data" if len(valid) < 30 else "descriptive_only",
         "minimum_sample_guidance": "Menos de 30 partidos: evidencia insuficiente; incluso con 30, interpretar con cautela.",
@@ -186,4 +262,97 @@ def football_prediction_history(
         raise HTTPException(
             status_code=503,
             detail="No fue posible consultar el historial persistente de fútbol.",
+        ) from exc
+
+@router.get("/evaluation/cross-league")
+def football_cross_league_evaluation(
+    limit_per_competition: int = Query(5000, ge=100, le=5000),
+):
+    """Compare official-model calibration across the five archived leagues."""
+    try:
+        client = get_supabase_client()
+        rows_by_competition = {}
+        for code in CROSS_LEAGUE_CODES:
+            rows_by_competition[code] = (
+                client.table("football_prediction_snapshots")
+                .select("provider_match_id,competition_code,model_version,kickoff_at,home_probability,draw_probability,away_probability,actual_home_score,actual_away_score,actual_outcome,result_status,settled_at")
+                .eq("result_status", "SETTLED")
+                .eq("model_version", MODEL_VERSION)
+                .eq("competition_code", code)
+                .order("kickoff_at", desc=True)
+                .limit(limit_per_competition)
+                .execute().data or []
+            )
+        date_ranges = {
+            code: sorted(
+                str(row.get("kickoff_at") or "")[:10]
+                for row in rows if str(row.get("kickoff_at") or "")[:10]
+            )
+            for code, rows in rows_by_competition.items()
+        }
+        populated_ranges = [dates for dates in date_ranges.values() if dates]
+        common_start = max((dates[0] for dates in populated_ranges), default=None) if len(populated_ranges) == len(CROSS_LEAGUE_CODES) else None
+        common_end = min((dates[-1] for dates in populated_ranges), default=None) if len(populated_ranges) == len(CROSS_LEAGUE_CODES) else None
+        comparisons = {}
+        for code in CROSS_LEAGUE_CODES:
+            rows = rows_by_competition[code]
+            if common_start and common_end and common_start <= common_end:
+                rows = [
+                    row for row in rows
+                    if common_start <= str(row.get("kickoff_at") or "")[:10] <= common_end
+                ]
+            else:
+                rows = []
+            evaluated = evaluate_rows(rows)
+            valid_items = []
+            for row in rows:
+                probabilities = [_number(row.get(key)) for key in (
+                    "home_probability", "draw_probability", "away_probability"
+                )]
+                home_score = _number(row.get("actual_home_score"))
+                away_score = _number(row.get("actual_away_score"))
+                if (
+                    any(value is None or value < 0 or value > 1 for value in probabilities)
+                    or abs(sum(probabilities) - 1.0) > 0.02
+                    or home_score is None or away_score is None
+                    or home_score < 0 or away_score < 0
+                ):
+                    continue
+                total = sum(probabilities)
+                normalized = [value / total for value in probabilities]
+                actual = "home" if home_score > away_score else "away" if home_score < away_score else "draw"
+                valid_items.append((row, normalized, actual, 0))
+            comparisons[code] = {
+                "sample_size": evaluated["sample_size"],
+                "skipped_rows": evaluated["skipped_rows"],
+                "metrics": evaluated["metrics"],
+                "calibration": _competition_calibration(
+                    valid_items, seed=sum(ord(char) for char in code)
+                ),
+            }
+        return {
+            "success": True,
+            "read_only": True,
+            "source": "football_prediction_snapshots",
+            "model_version": MODEL_VERSION,
+            "competitions": comparisons,
+            "common_date_window": {
+                "date_start": common_start,
+                "date_end": common_end,
+                "aligned_across_all_five": bool(common_start and common_end and common_start <= common_end),
+                "policy": "Las cinco ligas se filtran al intervalo calendario común dentro del límite recuperado por competición.",
+            },
+            "comparison_policy": {
+                "scope": "Modelo oficial único; snapshots SETTLED; cada liga se evalúa por separado.",
+                "minimum_matches": MIN_CROSS_LEAGUE_MATCHES,
+                "minimum_independent_dates": MIN_CROSS_LEAGUE_DATES,
+                "interpretation": "No ordenar ligas como mejores/peores. Comparar sesgo por resultado solo cuando cada muestra sea elegible; IC95 que cruza cero no demuestra sesgo direccional.",
+                "automatic_recalibration": False,
+            },
+            "limit_per_competition": limit_per_competition,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible comparar la calibración 1X2 entre las cinco ligas.",
         ) from exc

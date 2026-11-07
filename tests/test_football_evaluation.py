@@ -39,3 +39,46 @@ def test_evaluation_normalizes_small_probability_rounding_difference():
     result = evaluate_rows([row(0.6, 0.2, 0.21, 1, 0)])
     assert result["sample_size"] == 1
     assert result["metrics"]["accuracy"] == 1
+
+
+
+def test_competition_calibration_reports_date_cluster_uncertainty_and_eligibility():
+    from football_evaluation_api import _competition_calibration
+
+    items = []
+    for day in range(20):
+        for match in range(3):
+            actual = ("home", "draw", "away")[(day + match) % 3]
+            probabilities = [0.50, 0.25, 0.25]
+            items.append((
+                {"kickoff_at": f"2026-01-{day + 1:02d}T12:00:00Z"},
+                probabilities,
+                actual,
+                0,
+            ))
+
+    result = _competition_calibration(items, seed=77)
+    assert result["sample_size"] == 60
+    assert result["independent_dates"] == 20
+    assert result["eligible_for_descriptive_comparison"] is True
+    assert result["scope"] == "official_model_settled_snapshots_only"
+    assert set(result["outcomes"]) == {"home", "draw", "away"}
+    assert result["outcomes"]["home"]["bias_ci_95"] is not None
+    assert result["outcomes"]["home"]["interpretation"] in {
+        "SOBREESTIMACION", "SUBESTIMACION", "SIN_EVIDENCIA_CONCLUYENTE"
+    }
+
+
+def test_competition_calibration_marks_small_samples_and_missing_dates():
+    from football_evaluation_api import _competition_calibration
+
+    items = [
+        ({"kickoff_at": None}, [0.5, 0.25, 0.25], "home", 0)
+        for _ in range(60)
+    ]
+    result = _competition_calibration(items, seed=3)
+    assert result["sample_size"] == 60
+    assert result["independent_dates"] == 0
+    assert result["eligible_for_descriptive_comparison"] is False
+    assert result["outcomes"]["home"]["bias_ci_95"] is None
+    assert result["outcomes"]["home"]["interpretation"] == "IC95_NO_ESTIMABLE"
