@@ -224,7 +224,7 @@ def _binary_reliability(
         return ece, rates
 
     indices = list(range(len(probabilities)))
-    point_ece, point_rates = summarize(indices)
+    point_ece, _ = summarize(indices)
     buckets = []
     for index in range(bins):
         selected = [
