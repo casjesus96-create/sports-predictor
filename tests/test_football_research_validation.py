@@ -15,7 +15,7 @@ def _row(index, season, actual="home"):
     return {
         "match_id": str(index),
         "season": season,
-        "kickoff_at": f"{date(2000, 1, 1) + timedelta(days=index // 3)}T00:00:00+00:00",
+        "kickoff_at": f"{date(2000, 1, 1) + timedelta(days=index // 2)}T00:00:00+00:00",
         "home_team": f"Home {index}",
         "away_team": f"Away {index}",
         "actual_outcome": actual,
