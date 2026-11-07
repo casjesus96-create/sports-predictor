@@ -1127,7 +1127,7 @@ function FootballHistoricalIntelligenceCenter() {
                   <div style={{ color: "#94a3b8" }}>Δ Brier {delta(window.brier_delta)} · Δ Log Loss {delta(window.log_loss_delta)}</div>
                   <div style={{ color: "#94a3b8" }}>Sesgo Poisson → candidato L/E/V: {(["home", "draw", "away"] as const).map(key => {
                     const fmt = (value: any) => value == null ? "—" : (value > 0 ? "+" : "") + (Number(value) * 100).toFixed(1) + " pp";
-                    return fmt(window.calibration_bias?.outcomes?.[key]?.base?.bias) + "→" + fmt(window.calibration_bias?.outcomes?.[key]?.candidate?.bias);
+                    return fmt(window.calibration_bias?.outcomes?.[key]?.base?.bias) + "→" + fmt(window.calibration_bias?.outcomes?.[key]?.[key === "h2h" ? "candidate" : "advanced_shadow"]?.bias);
                   }).join(" / ")}</div>
                   <div style={{ color: "#94a3b8" }}>{([
                     ["Local", "home"], ["Empate", "draw"], ["Visitante", "away"],
