@@ -145,8 +145,9 @@ def test_goal_market_reliability_is_descriptive_and_reports_empty_bins():
     rows = []
     for index in range(500):
         row = _row(index, f"S{index // 125}")
-        actual = index % 2 == 0
-        probability = 0.80 if actual else 0.20
+        position = index % 10
+        probability = 0.80 if position < 5 else 0.20
+        actual = position < 4 or position == 5
         row["markets"] = {
             "btts_yes": {
                 "base": 0.50,
