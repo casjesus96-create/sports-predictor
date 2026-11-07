@@ -958,7 +958,7 @@ function FootballHistoricalIntelligenceCenter() {
       const completed: any[] = [];
       for (const code of codes) {
         setLeagueValidationProgress(`Evaluando ${code} · ${completed.length + 1}/5`);
-        const params = new URLSearchParams({ competition: code, limit: "500" });
+        const params = new URLSearchParams({ competition: code, limit: "1500" });
         const response = await fetch(`${API}/archive/research-backtest?${params.toString()}`);
         const body = await response.json();
         if (!response.ok) throw new Error(`${code}: ${body.detail || "validación no disponible"}`);
