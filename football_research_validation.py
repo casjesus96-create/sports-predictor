@@ -695,6 +695,15 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
         "goal_markets": _goal_market_validation(
             goal_market_rows, holdout_rows[0].get("kickoff_at") if holdout_rows else None
         ),
+        "temporal_drift_1x2": {
+            "scope": "development_only",
+            "h2h": _multiclass_temporal_breakdown(
+                development, "candidate", 18000
+            ),
+            "advanced_goals": _multiclass_temporal_breakdown(
+                advanced_development_rows, "advanced_shadow", 19000
+            ),
+        },
         "split": {
             "development_share": 0.8,
             "holdout_share": 0.2,
