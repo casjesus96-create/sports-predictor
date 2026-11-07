@@ -178,6 +178,39 @@ def test_goal_market_reliability_is_descriptive_and_reports_empty_bins():
     )
 
 
+
+def test_goal_market_season_breakdown_uses_development_only_and_marks_small_samples():
+    rows = []
+    for index in range(500):
+        row = _row(index, f"S{index // 125 + 1}")
+        actual = index % 2 == 0
+        row["markets"] = {
+            "btts_yes": {"base": 0.50, "candidate": 0.60, "actual": actual},
+            "over_2_5": {"base": 0.45, "candidate": 0.55, "actual": actual},
+        }
+        row["actual_home_goals"] = 1
+        row["actual_away_goals"] = 1 if actual else 0
+        row["actual_total_goals"] = 2 if actual else 1
+        row["base_expected_goals"] = {"home": 1.0, "away": 1.0, "total": 2.0}
+        row["candidate_expected_goals"] = {"home": 1.0, "away": 1.0, "total": 2.0}
+        rows.append(row)
+
+    result = build_candidate_validation({
+        "per_match": [_row(index, f"S{index // 125 + 1}") for index in range(500)],
+        "goal_market_per_match": rows,
+    })
+    goals = result["goal_markets"]
+    breakdown = goals["development_season_breakdown"]
+    assert goals["season_diagnostics_scope"] == "development_only"
+    assert sum(item["sample_size"] for item in breakdown) == goals["development_sample_size"] == 400
+    assert [item["season"] for item in breakdown] == ["S1", "S2", "S3", "S4"]
+    assert breakdown[-1]["sample_size"] == 25
+    assert breakdown[-1]["markets"]["btts_yes"]["eligible_for_descriptive_comparison"] is False
+    assert breakdown[0]["markets"]["btts_yes"]["eligible_for_descriptive_comparison"] is True
+    assert goals["holdout_sample_size"] == 100
+
+
+
 def test_binary_reliability_handles_empty_and_boundary_probabilities():
     from football_research_validation import _binary_reliability
 
