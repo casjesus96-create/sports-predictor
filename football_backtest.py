@@ -158,6 +158,7 @@ def run_chronological_backtest(
     external_h2h_by_match_id = external_h2h_by_match_id or {}
     scored_rows: list[dict[str, Any]] = []
     advanced_rows: list[dict[str, Any]] = []
+    goal_market_rows: list[dict[str, Any]] = []
     skipped_unavailable = 0
     history_pool: list[dict[str, Any]] = []
     history_cursor = 0
@@ -210,6 +211,38 @@ def run_chronological_backtest(
                 "home_team": home_name, "away_team": away_name,
                 "actual_outcome": actual, "base": base_probs,
                 "advanced_shadow": advanced_probs,
+            })
+
+        base_markets = base.get("goal_markets") or {}
+        shadow_markets = advanced.get("goal_markets") or {}
+        base_btts = (((base_markets.get("both_teams_to_score") or {}).get("yes") or {}).get("probability"))
+        shadow_btts = (((shadow_markets.get("both_teams_to_score") or {}).get("yes")))
+        base_totals = base_markets.get("total_goals") or {}
+        shadow_totals = shadow_markets.get("total_goals") or {}
+        market_pairs = {}
+        for line in ("1_5", "2_5", "3_5"):
+            base_entry = base_totals.get(f"over_{line}") or {}
+            base_value = base_entry.get("probability") if isinstance(base_entry, dict) else None
+            shadow_value = shadow_totals.get(f"over_{line}")
+            if base_value is not None and shadow_value is not None:
+                market_pairs[f"over_{line}"] = {
+                    "base": float(base_value), "candidate": float(shadow_value),
+                    "actual": home_score + away_score >= int(line[0]) + 1,
+                }
+        if base_btts is not None and shadow_btts is not None:
+            market_pairs["btts_yes"] = {
+                "base": float(base_btts), "candidate": float(shadow_btts),
+                "actual": home_score > 0 and away_score > 0,
+            }
+        base_expected = base.get("expected_goals") or {}
+        shadow_expected = advanced.get("expected_goals") or {}
+        if market_pairs and all(k in base_expected and k in shadow_expected for k in ("home", "away", "total")):
+            goal_market_rows.append({
+                "match_id": target.get("id"), "season": target.get("season"),
+                "kickoff_at": kickoff.isoformat(), "home_team": home_name, "away_team": away_name,
+                "actual_home_goals": home_score, "actual_away_goals": away_score,
+                "actual_total_goals": home_score + away_score, "markets": market_pairs,
+                "base_expected_goals": base_expected, "candidate_expected_goals": shadow_expected,
             })
 
     base_metrics = _metrics(scored_rows, "base")
@@ -273,6 +306,7 @@ def run_chronological_backtest(
             "h2h_candidate": candidate_metrics,
             "advanced_goals_shadow": advanced_metrics,
             "advanced_goals_shadow_sample_size": len(advanced_rows),
+            "goal_market_sample_size": len(goal_market_rows),
             "advanced_goals_shadow_delta_vs_base": {
                 "accuracy": round(advanced_metrics["accuracy"] - advanced_base_metrics["accuracy"], 6) if advanced_rows else None,
                 "brier_score": round(advanced_metrics["brier_score"] - advanced_base_metrics["brier_score"], 6) if advanced_rows else None,
@@ -290,6 +324,7 @@ def run_chronological_backtest(
         },
         "per_match": scored_rows,
         "advanced_goals_shadow_per_match": advanced_rows,
+        "goal_market_per_match": goal_market_rows,
         "limitations": [
             "Backtest sobre el conjunto de partidos suministrado; no descarga datos ni escribe en Supabase.",
             "Por defecto, la variante H2H usa solo enfrentamientos presentes en el mismo conjunto de entrada y anteriores al kickoff; si se suministra H2H externo por partido, se usa únicamente para esos objetivos y siempre con filtro cronológico.",
