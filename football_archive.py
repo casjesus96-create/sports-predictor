@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from repository import get_supabase_client
 from football_backtest import run_chronological_backtest
+from football_research_validation import build_candidate_validation
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/football/archive", tags=["Football archive"])
@@ -1147,7 +1148,7 @@ def archive_research_backtest(
         max_history_rows = 12000
         for offset in range(0, max_history_rows, page_size):
             query = client.table("football_match_archive").select(
-                "source_key,match_date,home_team,away_team,home_score,away_score"
+                "source_key,match_date,season,home_team,away_team,home_score,away_score"
             ).eq("competition_code", code).order("match_date", desc=True)
             page = query.range(offset, offset + page_size - 1).execute().data or []
             rows.extend(page)
@@ -1172,6 +1173,7 @@ def archive_research_backtest(
             continue
         matches.append({
             "id": row.get("source_key") or f"{code}-{match_date}-{len(matches)}",
+            "season": row.get("season"),
             "status": "FINISHED",
             "utcDate": f"{match_date}T00:00:00Z",
             "homeTeam": {"name": str(home)},
@@ -1181,6 +1183,7 @@ def archive_research_backtest(
 
     try:
         evaluation = run_chronological_backtest(matches, target_limit=limit)
+        validation = build_candidate_validation(evaluation)
     except Exception as exc:
         logger.exception("Football archive chronological research evaluation failed")
         raise HTTPException(status_code=500, detail="No se pudo completar la evaluación cronológica del archivo.") from exc
@@ -1205,6 +1208,7 @@ def archive_research_backtest(
         "history_truncated": history_truncated,
         "cutoff_policy": "Partidos del mismo día calendario quedan excluidos del entrenamiento; solo se usan fechas estrictamente anteriores porque el archivo no conserva hora de inicio.",
         "evaluation": evaluation,
+        "validation": validation,
         "provider_calls": 0,
         "model_changed": False,
         "snapshots_written": 0,
