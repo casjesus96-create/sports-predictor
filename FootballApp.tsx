@@ -1072,7 +1072,11 @@ function FootballHistoricalIntelligenceCenter() {
                     const outcome = window.outcomes?.[outcomeKey] || {};
                     const baseEce = outcome.base?.ece;
                     const candidateEce = outcome.candidate?.ece;
-                    return <span key={outcomeKey}>{outcomeLabel}: ECE {baseEce == null ? "—" : Number(baseEce).toFixed(3)}→{candidateEce == null ? "—" : Number(candidateEce).toFixed(3)}{outcomeKey !== "away" ? " · " : ""}</span>;
+                    const candidateCi = outcome.candidate?.ece_ci_95;
+                    const ciLabel = Array.isArray(candidateCi)
+                      ? `[${Number(candidateCi[0]).toFixed(3)}, ${Number(candidateCi[1]).toFixed(3)}]`
+                      : "IC95 no estimable";
+                    return <span key={outcomeKey}>{outcomeLabel}: ECE {baseEce == null ? "—" : Number(baseEce).toFixed(3)}→{candidateEce == null ? "—" : Number(candidateEce).toFixed(3)} (IC95 {ciLabel}){outcomeKey !== "away" ? " · " : ""}</span>;
                   })}</div>
                 </div>)}
                 {!(diagnostic.windows || []).length && <p style={{ color: "#fbbf24", fontSize: 9 }}>Muestra insuficiente para comparar ventanas 1X2.</p>}
