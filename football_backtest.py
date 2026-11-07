@@ -159,13 +159,15 @@ def run_chronological_backtest(
     scored_rows: list[dict[str, Any]] = []
     advanced_rows: list[dict[str, Any]] = []
     skipped_unavailable = 0
+    history_pool: list[dict[str, Any]] = []
+    history_cursor = 0
     for kickoff, target, score in targets:
-        history = [
-            prior for prior in matches
-            if (_date(prior.get("utcDate") or prior.get("date")) is not None
-                and _date(prior.get("utcDate") or prior.get("date")) < kickoff
-                and _score(prior) is not None)
-        ]
+        # Advance once through the chronological archive; same-kickoff fixtures
+        # remain excluded from one another's training history.
+        while history_cursor < len(normalized) and normalized[history_cursor][0] < kickoff:
+            history_pool.append(normalized[history_cursor][1])
+            history_cursor += 1
+        history = list(history_pool)
         home_name = str((target.get("homeTeam") or {}).get("name"))
         away_name = str((target.get("awayTeam") or {}).get("name"))
         base = predict_1x2(home_name, away_name, history)
