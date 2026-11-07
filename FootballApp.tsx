@@ -1049,7 +1049,7 @@ function FootballHistoricalIntelligenceCenter() {
               {(goalsGate.reasons || []).map((reason: string, index: number) => <div key={index} style={{ color: "#fbbf24", fontSize: 9, marginTop: 3 }}>• {reason}</div>)}
             </div>
           </div>
-          <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700 }}>Resultados H2H por temporada</div>
+          <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700 }}>Consistencia H2H en desarrollo por temporada</div>
           {(validation.season_breakdown || []).map((item: any) => <div key={item.season} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #334155", padding: "5px 0", fontSize: 10 }}>
             <span>{item.season} · n={item.sample_size}</span><span>ΔB {delta(item.brier_delta)} · ΔLL {delta(item.log_loss_delta)}</span>
           </div>)}
