@@ -1050,6 +1050,41 @@ function FootballHistoricalIntelligenceCenter() {
             </div>
           </div>
           <div style={{ marginTop: 9, borderTop: "1px solid #334155", paddingTop: 8 }}>
+            <strong style={{ fontSize: 11 }}>Sesgo de calibración 1X2 · desarrollo únicamente</strong>
+            <p style={{ color: "#94a3b8", fontSize: 9, margin: "3px 0 6px" }}>Sesgo = probabilidad media − frecuencia real. Positivo: sobreestima; negativo: subestima. IC95 por bootstrap de fechas; el holdout queda excluido.</p>
+            {([
+              ["Candidato H2H", "h2h"],
+              ["Shadow avanzado", "advanced_goals"],
+            ] as const).map(([label, key]) => {
+              const summary = validation.calibration_bias_1x2?.overall?.[key] || {};
+              return <div key={key} style={{ marginTop: 5 }}>
+                <strong style={{ fontSize: 10 }}>{label} · n={summary.sample_size ?? 0} · fechas={summary.independent_dates ?? 0}</strong>
+                <div style={{ color: "#cbd5e1", fontSize: 9 }}>
+                  {([
+                    ["Local", "home"], ["Empate", "draw"], ["Visitante", "away"],
+                  ] as const).map(([outcomeLabel, outcomeKey]) => {
+                    const outcome = summary.outcomes?.[outcomeKey] || {};
+                    const base = outcome.base || {};
+                    const candidate = outcome[key === "h2h" ? "candidate" : "advanced_shadow"] || {};
+                    const fmt = (value: any) => value == null ? "—" : (value > 0 ? "+" : "") + (Number(value) * 100).toFixed(1) + " pp";
+                    const ci = candidate.bias_ci_95;
+                    const ciText = Array.isArray(ci) ? "[" + fmt(ci[0]) + ", " + fmt(ci[1]) + "]" : "IC95 no estimable";
+                    return <div key={outcomeKey}>{outcomeLabel}: Poisson {fmt(base.bias)} → sombra {fmt(candidate.bias)} · {candidate.interpretation || "—"} · IC95 {ciText}</div>;
+                  })}
+                </div>
+              </div>;
+            })}
+            <div style={{ marginTop: 6, borderTop: "1px solid #253247", paddingTop: 5 }}>
+              <strong style={{ fontSize: 10 }}>Sesgo por temporada · estimación puntual</strong>
+              {(validation.calibration_bias_1x2?.by_season || []).map((season: any) => {
+                const fmt = (value: any) => value == null ? "—" : (value > 0 ? "+" : "") + (Number(value) * 100).toFixed(1) + " pp";
+                return <div key={season.season} style={{ color: season.eligible_for_descriptive_comparison ? "#cbd5e1" : "#94a3b8", fontSize: 9, padding: "3px 0" }}>
+                  {season.season} · n={season.sample_size} · {season.eligible_for_descriptive_comparison ? "muestra descriptiva suficiente" : "muestra pequeña"} · Poisson L/E/V {(["home", "draw", "away"] as const).map(key => fmt(season.h2h?.outcomes?.[key]?.base?.bias)).join(" / ")} pp
+                </div>;
+              })}
+            </div>
+          </div>
+          <div style={{ marginTop: 9, borderTop: "1px solid #334155", paddingTop: 8 }}>
             <strong style={{ fontSize: 11 }}>Calibración 1X2 · holdout reservado</strong>
             <p style={{ color: "#94a3b8", fontSize: 9, margin: "3px 0 6px" }}>Evaluación final descriptiva, separada del desarrollo. ECE uno-contra-el-resto con IC95 por bootstrap de fechas; no se usa para ajustar probabilidades.</p>
             {([
@@ -1090,6 +1125,10 @@ function FootballHistoricalIntelligenceCenter() {
                   </div>
                   <div style={{ color: "#cbd5e1" }}>Accuracy Poisson {pct(window.base_accuracy == null ? null : Number((window.base_accuracy * 100).toFixed(1)))} · candidato {pct(window.candidate_accuracy == null ? null : Number((window.candidate_accuracy * 100).toFixed(1)))} · Δ {pct(window.accuracy_delta == null ? null : Number((window.accuracy_delta * 100).toFixed(1)))}</div>
                   <div style={{ color: "#94a3b8" }}>Δ Brier {delta(window.brier_delta)} · Δ Log Loss {delta(window.log_loss_delta)}</div>
+                  <div style={{ color: "#94a3b8" }}>Sesgo Poisson → candidato L/E/V: {(["home", "draw", "away"] as const).map(key => {
+                    const fmt = (value: any) => value == null ? "—" : (value > 0 ? "+" : "") + (Number(value) * 100).toFixed(1) + " pp";
+                    return fmt(window.calibration_bias?.outcomes?.[key]?.base?.bias) + "→" + fmt(window.calibration_bias?.outcomes?.[key]?.candidate?.bias);
+                  }).join(" / ")}</div>
                   <div style={{ color: "#94a3b8" }}>{([
                     ["Local", "home"], ["Empate", "draw"], ["Visitante", "away"],
                   ] as const).map(([outcomeLabel, outcomeKey]) => {
@@ -1179,12 +1218,15 @@ function FootballHistoricalIntelligenceCenter() {
         {leagueValidation.map((item: any) => {
           const gate = item.validation?.candidates?.h2h?.gate || {};
           const holdout = item.validation?.candidates?.h2h?.holdout || {};
+          const leagueBias = item.validation?.calibration_bias_1x2?.overall?.h2h?.outcomes || {};
           const delta = (value: any) => value?.mean_delta == null ? "—" : Number(value.mean_delta).toFixed(4);
+          const biasPp = (value: any) => value == null ? "—" : (value > 0 ? "+" : "") + (Number(value) * 100).toFixed(1);
           return <div key={item.competition} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #334155", padding: "6px 0", fontSize: 10 }}>
             <span><strong>{item.name || item.competition}</strong><div style={{ color: "#94a3b8" }}>Holdout n={holdout.sample_size ?? 0}</div></span>
             <span style={{ textAlign: "right" }}>
               {gate.status || "—"}
               <div style={{ color: "#94a3b8" }}>1X2 ΔB {delta(holdout.brier_delta)} · ΔLL {delta(holdout.log_loss_delta)}</div>
+              <div style={{ color: "#94a3b8" }}>Sesgo Poisson L/E/V: {(["home", "draw", "away"] as const).map(key => biasPp(leagueBias[key]?.base?.bias)).join(" / ")} pp</div>
               <div style={{ color: "#94a3b8" }}>
                 BTTS ΔB {delta(item.validation?.goal_markets?.markets?.btts_yes?.holdout?.brier_delta)}
                 {" · "}O2.5 ΔB {delta(item.validation?.goal_markets?.markets?.over_2_5?.holdout?.brier_delta)}
