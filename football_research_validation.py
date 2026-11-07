@@ -604,6 +604,90 @@ def _calibration_bias_summary(
         ),
     }
 
+
+def _calibration_bias_segments(
+    rows: list[dict[str, Any]],
+    candidate_key: str,
+    seed: int,
+    dimensions: tuple[str, ...],
+) -> dict[str, Any]:
+    """Describe where 1X2 bias concentrates, using development rows only.
+
+    Segments are associations, not causal explanations. Small groups are
+    retained for visibility but explicitly marked ineligible for comparison.
+    """
+    def confidence_segment(row: dict[str, Any]) -> str:
+        confidence = max(float(row["base"][key]) for key in OUTCOMES)
+        if confidence < 0.45:
+            return "Equilibrado · <45%"
+        if confidence < 0.60:
+            return "Favorito moderado · 45–60%"
+        return "Favorito marcado · ≥60%"
+
+    def h2h_sample_segment(row: dict[str, Any]) -> str:
+        meetings = max(0, int(row.get("h2h_valid_meetings") or 0))
+        if meetings == 0:
+            return "Sin H2H válido"
+        if meetings <= 4:
+            return "H2H corto · 1–4"
+        if meetings <= 9:
+            return "H2H medio · 5–9"
+        return "H2H amplio · 10+"
+
+    def h2h_adjustment_segment(row: dict[str, Any]) -> str:
+        return "H2H modificó probabilidades" if row.get("h2h_adjusted") else "H2H no modificó probabilidades"
+
+    def probability_shift_segment(row: dict[str, Any]) -> str:
+        shift = sum(
+            abs(float(row[candidate_key][key]) - float(row["base"][key]))
+            for key in OUTCOMES
+        ) / 2.0
+        if shift < 0.01:
+            return "Cambio mínimo · <1 pp"
+        if shift < 0.03:
+            return "Cambio moderado · 1–3 pp"
+        return "Cambio amplio · ≥3 pp"
+
+    segmenters = {
+        "base_confidence": confidence_segment,
+        "h2h_sample": h2h_sample_segment,
+        "h2h_adjustment": h2h_adjustment_segment,
+        "probability_shift": probability_shift_segment,
+    }
+    output: dict[str, Any] = {}
+    for dimension_index, dimension in enumerate(dimensions):
+        segmenter = segmenters[dimension]
+        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            groups[segmenter(row)].append(row)
+        segments = []
+        for segment_index, label in enumerate(segmenters[dimension](row) for row in []):
+            pass
+        for segment_index, (label, segment_rows) in enumerate(sorted(groups.items())):
+            dates = {
+                str(row.get("kickoff_at") or "")[:10]
+                for row in segment_rows if str(row.get("kickoff_at") or "")
+            }
+            eligible = len(segment_rows) >= MIN_SEASON_MATCHES and len(dates) >= MIN_TEMPORAL_WINDOW_DATES
+            segments.append({
+                "label": label,
+                "sample_size": len(segment_rows),
+                "independent_dates": len(dates),
+                "eligible_for_descriptive_comparison": eligible,
+                "bias": _calibration_bias_summary(
+                    segment_rows, candidate_key,
+                    seed + dimension_index * 1000 + segment_index * 10,
+                    include_ci=False,
+                ),
+            })
+        output[dimension] = {
+            "segments": segments,
+            "scope": "development_only",
+            "minimum_matches": MIN_SEASON_MATCHES,
+            "minimum_independent_dates": MIN_TEMPORAL_WINDOW_DATES,
+        }
+    return output
+
 def _multiclass_window_summary(
     rows: list[dict[str, Any]], candidate_key: str, seed: int
 ) -> dict[str, Any]:
@@ -889,6 +973,16 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
             ),
         },
         "by_season": bias_by_season,
+        "segments": {
+            "h2h": _calibration_bias_segments(
+                development, "candidate", 26000,
+                ("base_confidence", "h2h_sample", "h2h_adjustment", "probability_shift"),
+            ),
+            "advanced_goals": _calibration_bias_segments(
+                advanced_development_rows, "advanced_shadow", 30000,
+                ("base_confidence",),
+            ),
+        },
         "automatic_recalibration": False,
         "interpretation": (
             "Diagnóstico de sesgo por clase calculado exclusivamente en desarrollo. "
