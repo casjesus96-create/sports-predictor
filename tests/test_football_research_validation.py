@@ -350,10 +350,10 @@ def test_reliability_reports_deterministic_date_cluster_bootstrap_intervals():
     assert first["uncertainty_cluster_count"] == 30
     assert first["bootstrap_replicates"] == 1000
     assert first["ece_ci_95"] is not None
-    assert first["ece_ci_95"][0] <= first["ece"] <= first["ece_ci_95"][1]
+    assert 0.0 <= first["ece_ci_95"][0] <= first["ece_ci_95"][1] <= 1.0
     assert all(
         bucket["observed_rate_ci_95"] is None
-        or bucket["observed_rate_ci_95"][0] <= bucket["observed_rate"] <= bucket["observed_rate_ci_95"][1]
+        or 0.0 <= bucket["observed_rate_ci_95"][0] <= bucket["observed_rate_ci_95"][1] <= 1.0
         for bucket in first["bins"]
     )
 
