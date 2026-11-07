@@ -138,3 +138,53 @@ def test_goal_markets_use_same_chronological_holdout_and_paired_losses():
     assert btts["brier_delta"]["ci_95"][1] < 0
     assert markets["expected_goals_mae"]["holdout"]["total"]["delta_mae"] < 0
     assert markets["automatic_activation"] is False
+
+
+
+def test_goal_market_reliability_is_descriptive_and_reports_empty_bins():
+    rows = []
+    for index in range(500):
+        row = _row(index, f"S{index // 125}")
+        position = index % 10
+        probability = 0.80 if position < 5 else 0.20
+        actual = position < 4 or position == 5
+        row["markets"] = {
+            "btts_yes": {
+                "base": 0.70,
+                "candidate": probability,
+                "actual": actual,
+            }
+        }
+        row["actual_home_goals"] = 1
+        row["actual_away_goals"] = 1 if actual else 0
+        row["actual_total_goals"] = 2 if actual else 1
+        row["base_expected_goals"] = {"home": 1.0, "away": 1.0, "total": 2.0}
+        row["candidate_expected_goals"] = {"home": 1.0, "away": 1.0, "total": 2.0}
+        rows.append(row)
+
+    result = build_candidate_validation({
+        "per_match": [_row(index, f"S{index // 125}") for index in range(500)],
+        "goal_market_per_match": rows,
+    })
+    reliability = result["goal_markets"]["markets"]["btts_yes"]["holdout"]["reliability"]
+    assert reliability["base"]["sample_size"] == 100
+    assert reliability["candidate"]["sample_size"] == 100
+    assert reliability["candidate"]["ece"] < reliability["base"]["ece"]
+    assert len(reliability["candidate"]["bins"]) == 5
+    assert any(bucket["n"] == 0 for bucket in reliability["candidate"]["bins"])
+    assert all(
+        bucket["mean_predicted_probability"] is None
+        for bucket in reliability["candidate"]["bins"] if bucket["n"] == 0
+    )
+
+
+def test_binary_reliability_handles_empty_and_boundary_probabilities():
+    from football_research_validation import _binary_reliability
+
+    empty = _binary_reliability([], [])
+    assert empty["sample_size"] == 0
+    assert empty["ece"] is None
+    result = _binary_reliability([0.0, 1.0], [0.0, 1.0])
+    assert result["ece"] == 0
+    assert result["bins"][0]["n"] == 1
+    assert result["bins"][-1]["n"] == 1
