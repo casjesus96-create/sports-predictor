@@ -15,7 +15,9 @@ def _row(index, season, actual="home"):
     return {
         "match_id": str(index),
         "season": season,
-        "kickoff_at": f"{date(2000, 1, 1) + timedelta(days=index)}T00:00:00+00:00",
+        "kickoff_at": f"{date(2000, 1, 1) + timedelta(days=index // 2)}T00:00:00+00:00",
+        "home_team": f"Home {index}",
+        "away_team": f"Away {index}",
         "actual_outcome": actual,
         "base": base,
         "candidate": candidate,
@@ -36,7 +38,7 @@ def test_validation_uses_chronological_final_holdout_and_season_breakdown():
     }
 
     result = build_candidate_validation(evaluation)
-    assert result["protocol"] == "chronological_holdout_paired_bootstrap_v1"
+    assert result["protocol"] == "chronological_holdout_cluster_bootstrap_v2"
     assert result["split"]["development_matches"] == 400
     assert result["split"]["holdout_matches"] == 100
     assert result["split"]["holdout_start"] == rows[400]["kickoff_at"]
@@ -46,7 +48,23 @@ def test_validation_uses_chronological_final_holdout_and_season_breakdown():
     assert h2h["holdout"]["brier_delta"]["ci_95"][1] < 0
     assert h2h["holdout"]["log_loss_delta"]["ci_95"][1] < 0
     assert h2h["gate"]["status"] == "APTO_PARA_REVISION"
+    assert h2h["gate"]["season_consistency_scope"] == "development_only"
     assert h2h["gate"]["automatic_activation"] is False
+
+
+def test_holdout_seasons_cannot_satisfy_development_season_minimum():
+    rows = [
+        _row(index, "S1" if index < 200 else "S2" if index < 400 else "S3")
+        for index in range(500)
+    ]
+    result = build_candidate_validation({"per_match": rows})
+    gate = result["candidates"]["h2h"]["gate"]
+    assert result["split"]["holdout_matches"] == 100
+    assert gate["eligible_seasons"] == 2
+    assert gate["season_consistency_scope"] == "development_only"
+    assert [row["season"] for row in result["season_breakdown"]] == ["S1", "S2"]
+    assert result["holdout_season_diagnostics"][0]["season"] == "S3"
+    assert gate["status"] == "MUESTRA_INSUFICIENTE"
 
 
 def test_validation_refuses_small_holdout_and_missing_seasons():
@@ -59,8 +77,23 @@ def test_validation_refuses_small_holdout_and_missing_seasons():
     assert gate["reasons"]
 
 
-def test_validation_bootstrap_is_deterministic():
+def test_validation_bootstrap_is_deterministic_and_clustered_by_date():
     rows = [_row(index, f"S{index // 100}") for index in range(500)]
     first = build_candidate_validation({"per_match": rows})
     second = build_candidate_validation({"per_match": rows})
-    assert first["candidates"]["h2h"]["holdout"]["brier_delta"] == second["candidates"]["h2h"]["holdout"]["brier_delta"]
+    first_interval = first["candidates"]["h2h"]["holdout"]["brier_delta"]
+    second_interval = second["candidates"]["h2h"]["holdout"]["brier_delta"]
+    assert first_interval == second_interval
+    assert first_interval["cluster_count"] < first_interval["n"]
+    assert first["uncertainty"]["cluster_unit"].startswith("Fecha calendario")
+
+
+def test_validation_requires_enough_independent_holdout_dates():
+    rows = [_row(index, f"S{index // 125}") for index in range(500)]
+    for row in rows[400:]:
+        row["kickoff_at"] = "2026-11-01T12:00:00+00:00"
+    result = build_candidate_validation({"per_match": rows})
+    gate = result["candidates"]["h2h"]["gate"]
+    assert gate["holdout_clusters"] == 1
+    assert gate["holdout_cluster_minimum"] == 20
+    assert gate["status"] == "MUESTRA_INSUFICIENTE"

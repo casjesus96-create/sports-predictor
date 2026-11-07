@@ -5,12 +5,15 @@ No fitting, tuning, persistence, provider calls, or model activation occurs here
 """
 from __future__ import annotations
 
+import math
 import random
+from collections import defaultdict
 from typing import Any
 
 OUTCOMES = ("home", "draw", "away")
 BOOTSTRAP_REPLICATES = 1000
 MIN_HOLDOUT_MATCHES = 100
+MIN_HOLDOUT_CLUSTERS = 20
 MIN_SEASON_MATCHES = 50
 MIN_SEASONS = 3
 MIN_SEASON_CONSISTENCY = 0.60
@@ -22,20 +25,40 @@ def _losses(row: dict[str, Any], candidate_key: str) -> tuple[float, float, floa
     candidate = row[candidate_key]
     base_brier = sum((base[k] - (1.0 if actual == k else 0.0)) ** 2 for k in OUTCOMES)
     candidate_brier = sum((candidate[k] - (1.0 if actual == k else 0.0)) ** 2 for k in OUTCOMES)
-    base_log = -__import__("math").log(max(1e-15, base[actual]))
-    candidate_log = -__import__("math").log(max(1e-15, candidate[actual]))
+    base_log = -math.log(max(1e-15, base[actual]))
+    candidate_log = -math.log(max(1e-15, candidate[actual]))
     return base_brier, candidate_brier, base_log, candidate_log
 
 
-def _paired_interval(differences: list[float], seed: int) -> dict[str, Any]:
+def _paired_interval(
+    differences: list[float], cluster_keys: list[str], seed: int
+) -> dict[str, Any]:
+    """Cluster bootstrap by kickoff date, preserving same-matchday dependence."""
     n = len(differences)
     if n < 2:
-        return {"mean_delta": None, "ci_95": None, "n": n}
+        return {"mean_delta": None, "ci_95": None, "n": n, "cluster_count": len(set(cluster_keys))}
+    if len(cluster_keys) != n:
+        raise ValueError("Cada diferencia debe tener una clave de jornada/fecha.")
+
+    clusters: dict[str, list[float]] = defaultdict(list)
+    for key, difference in zip(cluster_keys, differences):
+        clusters[key].append(difference)
+    cluster_values = list(clusters.values())
+    if len(cluster_values) < 2:
+        return {
+            "mean_delta": round(sum(differences) / n, 6),
+            "ci_95": None,
+            "n": n,
+            "cluster_count": len(cluster_values),
+        }
+
     mean = sum(differences) / n
     rng = random.Random(seed)
     estimates = []
     for _ in range(BOOTSTRAP_REPLICATES):
-        estimates.append(sum(differences[rng.randrange(n)] for _ in range(n)) / n)
+        sampled = [cluster_values[rng.randrange(len(cluster_values))] for _ in range(len(cluster_values))]
+        sampled_n = sum(len(cluster) for cluster in sampled)
+        estimates.append(sum(sum(cluster) for cluster in sampled) / sampled_n)
     estimates.sort()
     lower = estimates[int(0.025 * (BOOTSTRAP_REPLICATES - 1))]
     upper = estimates[int(0.975 * (BOOTSTRAP_REPLICATES - 1))]
@@ -43,34 +66,54 @@ def _paired_interval(differences: list[float], seed: int) -> dict[str, Any]:
         "mean_delta": round(mean, 6),
         "ci_95": [round(lower, 6), round(upper, 6)],
         "n": n,
+        "cluster_count": len(cluster_values),
         "interpretation": "Delta negativo favorece al candidato; el intervalo debe quedar completamente por debajo de cero para evidenciar mejora.",
     }
 
 
 def _compare(rows: list[dict[str, Any]], candidate_key: str, seed: int) -> dict[str, Any]:
     if not rows:
-        return {"sample_size": 0, "base_brier": None, "candidate_brier": None,
-                "base_log_loss": None, "candidate_log_loss": None,
-                "brier_delta": _paired_interval([], seed),
-                "log_loss_delta": _paired_interval([], seed + 1)}
+        empty = _paired_interval([], [], seed)
+        return {
+            "sample_size": 0, "base_brier": None, "candidate_brier": None,
+            "base_log_loss": None, "candidate_log_loss": None,
+            "brier_delta": empty, "log_loss_delta": _paired_interval([], [], seed + 1),
+        }
     values = [_losses(row, candidate_key) for row in rows]
     n = len(values)
     bb = sum(v[0] for v in values) / n
     cb = sum(v[1] for v in values) / n
     bl = sum(v[2] for v in values) / n
     cl = sum(v[3] for v in values) / n
+    cluster_keys = [
+        str(row.get("kickoff_at") or "")[:10] or f"row:{index}"
+        for index, row in enumerate(rows)
+    ]
     return {
         "sample_size": n,
         "base_brier": round(bb, 6), "candidate_brier": round(cb, 6),
         "base_log_loss": round(bl, 6), "candidate_log_loss": round(cl, 6),
-        "brier_delta": _paired_interval([v[1] - v[0] for v in values], seed),
-        "log_loss_delta": _paired_interval([v[3] - v[2] for v in values], seed + 1),
+        "brier_delta": _paired_interval([v[1] - v[0] for v in values], cluster_keys, seed),
+        "log_loss_delta": _paired_interval([v[3] - v[2] for v in values], cluster_keys, seed + 1),
     }
 
 
-def _gate(holdout: dict[str, Any], season_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _season_breakdown(
+    rows: list[dict[str, Any]], candidate_key: str, seed: int
+) -> list[dict[str, Any]]:
+    seasons: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        season = str(row.get("season") or "SIN_TEMPORADA")
+        seasons.setdefault(season, []).append(row)
+    return [
+        {"season": season, **_compare(items, candidate_key, seed + index)}
+        for index, (season, items) in enumerate(sorted(seasons.items()))
+    ]
+
+
+def _gate(holdout: dict[str, Any], development_seasons: list[dict[str, Any]]) -> dict[str, Any]:
     n = holdout["sample_size"]
-    eligible_seasons = [s for s in season_rows if s["sample_size"] >= MIN_SEASON_MATCHES]
+    eligible_seasons = [s for s in development_seasons if s["sample_size"] >= MIN_SEASON_MATCHES]
     consistent = sum(
         1 for s in eligible_seasons
         if s["brier_delta"]["mean_delta"] is not None
@@ -82,36 +125,65 @@ def _gate(holdout: dict[str, Any], season_rows: list[dict[str, Any]]) -> dict[st
     reasons = []
     if n < MIN_HOLDOUT_MATCHES:
         reasons.append(f"Validación final requiere al menos {MIN_HOLDOUT_MATCHES} partidos; disponibles: {n}.")
+    holdout_clusters = holdout["brier_delta"].get("cluster_count", 0)
+    if holdout_clusters < MIN_HOLDOUT_CLUSTERS:
+        reasons.append(
+            f"Holdout requiere al menos {MIN_HOLDOUT_CLUSTERS} jornadas/fechas independientes; "
+            f"disponibles: {holdout_clusters}."
+        )
     if len(eligible_seasons) < MIN_SEASONS:
-        reasons.append(f"Se requieren al menos {MIN_SEASONS} temporadas con {MIN_SEASON_MATCHES}+ partidos; disponibles: {len(eligible_seasons)}.")
+        reasons.append(
+            f"Desarrollo requiere al menos {MIN_SEASONS} temporadas con {MIN_SEASON_MATCHES}+ partidos; "
+            f"disponibles: {len(eligible_seasons)}."
+        )
     brier_ci = holdout["brier_delta"].get("ci_95")
     log_ci = holdout["log_loss_delta"].get("ci_95")
     if not brier_ci or brier_ci[1] >= 0:
-        reasons.append("El IC 95% emparejado de Brier no demuestra mejora concluyente.")
+        reasons.append("El IC 95% emparejado por jornada de Brier no demuestra mejora concluyente.")
     if not log_ci or log_ci[1] >= 0:
-        reasons.append("El IC 95% emparejado de Log Loss no demuestra mejora concluyente.")
+        reasons.append("El IC 95% emparejado por jornada de Log Loss no demuestra mejora concluyente.")
     if consistency_rate is None or consistency_rate < MIN_SEASON_CONSISTENCY:
-        reasons.append(f"La mejora simultánea Brier/Log Loss no alcanza {MIN_SEASON_CONSISTENCY:.0%} de temporadas elegibles.")
-    status = "APTO_PARA_REVISION" if not reasons else (
-        "MUESTRA_INSUFICIENTE" if n < MIN_HOLDOUT_MATCHES or len(eligible_seasons) < MIN_SEASONS
-        else "NO_APTO"
+        reasons.append(
+            f"La mejora simultánea Brier/Log Loss no alcanza "
+            f"{MIN_SEASON_CONSISTENCY:.0%} de temporadas elegibles en desarrollo."
+        )
+    insufficient = (
+        n < MIN_HOLDOUT_MATCHES
+        or holdout_clusters < MIN_HOLDOUT_CLUSTERS
+        or len(eligible_seasons) < MIN_SEASONS
     )
+    status = "APTO_PARA_REVISION" if not reasons else ("MUESTRA_INSUFICIENTE" if insufficient else "NO_APTO")
     return {
         "status": status,
         "reasons": reasons,
         "holdout_minimum": MIN_HOLDOUT_MATCHES,
+        "holdout_cluster_minimum": MIN_HOLDOUT_CLUSTERS,
+        "holdout_clusters": holdout_clusters,
         "minimum_seasons": MIN_SEASONS,
         "minimum_matches_per_season": MIN_SEASON_MATCHES,
         "required_season_consistency": MIN_SEASON_CONSISTENCY,
         "eligible_seasons": len(eligible_seasons),
         "seasons_improved_on_both_metrics": consistent,
         "season_consistency_rate": round(consistency_rate, 4) if consistency_rate is not None else None,
+        "season_consistency_scope": "development_only",
         "automatic_activation": False,
     }
 
 
+def _row_identity(row: dict[str, Any]) -> tuple[str, ...]:
+    match_id = row.get("match_id")
+    if match_id is not None:
+        return ("id", str(match_id))
+    return (
+        "fixture",
+        str(row.get("kickoff_at") or ""),
+        str(row.get("home_team") or ""),
+        str(row.get("away_team") or ""),
+    )
+
+
 def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
-    """Create chronological holdout, season breakdown and conservative review gates."""
+    """Create independent chronological holdout and development-only consistency gates."""
     rows = sorted(
         evaluation.get("per_match") or [],
         key=lambda row: (str(row.get("kickoff_at") or ""), str(row.get("match_id") or "")),
@@ -121,39 +193,40 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
         key=lambda row: (str(row.get("kickoff_at") or ""), str(row.get("match_id") or "")),
     )
     split = max(1, int(len(rows) * 0.8)) if rows else 0
+    # Never divide one calendar matchday between development and holdout.
+    while 0 < split < len(rows):
+        previous_day = str(rows[split - 1].get("kickoff_at") or "")[:10]
+        next_day = str(rows[split].get("kickoff_at") or "")[:10]
+        if not previous_day or previous_day != next_day:
+            break
+        split += 1
     development, holdout_rows = rows[:split], rows[split:]
-    seasons: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        season = str(row.get("season") or "SIN_TEMPORADA")
-        seasons.setdefault(season, []).append(row)
 
-    h2h_seasons = [
-        {"season": season, **_compare(items, "candidate", 7000 + index)}
-        for index, (season, items) in enumerate(sorted(seasons.items()))
-    ]
+    h2h_development_seasons = _season_breakdown(development, "candidate", 7000)
+    h2h_holdout_seasons = _season_breakdown(holdout_rows, "candidate", 8000)
     h2h_holdout = _compare(holdout_rows, "candidate", 8100)
-    h2h_gate = _gate(h2h_holdout, h2h_seasons)
+    h2h_gate = _gate(h2h_holdout, h2h_development_seasons)
 
-    advanced_by_id = {str(row.get("match_id")): row for row in advanced_rows}
-    advanced_holdout = [
-        row for row in holdout_rows if str(row.get("match_id")) in advanced_by_id
+    advanced_by_id = {_row_identity(row): row for row in advanced_rows}
+    advanced_development_rows = [
+        {**row, "advanced_shadow": advanced_by_id[_row_identity(row)]["advanced_shadow"]}
+        for row in development if _row_identity(row) in advanced_by_id
     ]
     advanced_holdout_rows = [
-        {**row, "advanced_shadow": advanced_by_id[str(row.get("match_id"))]["advanced_shadow"]}
-        for row in advanced_holdout
+        {**row, "advanced_shadow": advanced_by_id[_row_identity(row)]["advanced_shadow"]}
+        for row in holdout_rows if _row_identity(row) in advanced_by_id
     ]
-    advanced_seasons = []
-    for index, (season, items) in enumerate(sorted(seasons.items())):
-        matched = [
-            {**row, "advanced_shadow": advanced_by_id[str(row.get("match_id"))]["advanced_shadow"]}
-            for row in items if str(row.get("match_id")) in advanced_by_id
-        ]
-        advanced_seasons.append({"season": season, **_compare(matched, "advanced_shadow", 9100 + index)})
+    advanced_development_seasons = _season_breakdown(
+        advanced_development_rows, "advanced_shadow", 9000
+    )
+    advanced_holdout_seasons = _season_breakdown(
+        advanced_holdout_rows, "advanced_shadow", 9500
+    )
     advanced_holdout_summary = _compare(advanced_holdout_rows, "advanced_shadow", 10100)
-    advanced_gate = _gate(advanced_holdout_summary, advanced_seasons)
+    advanced_gate = _gate(advanced_holdout_summary, advanced_development_seasons)
 
     return {
-        "protocol": "chronological_holdout_paired_bootstrap_v1",
+        "protocol": "chronological_holdout_cluster_bootstrap_v2",
         "split": {
             "development_share": 0.8,
             "holdout_share": 0.2,
@@ -161,21 +234,35 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
             "holdout_matches": len(holdout_rows),
             "holdout_start": holdout_rows[0].get("kickoff_at") if holdout_rows else None,
             "holdout_end": holdout_rows[-1].get("kickoff_at") if holdout_rows else None,
-            "rule": "Los objetivos se ordenan cronológicamente; el 20% final queda reservado para evaluación. No se ajustan parámetros con el holdout.",
+            "rule": "El 80% cronológico inicial se usa para consistencia por temporada; el 20% final queda reservado exclusivamente para la puerta de holdout. No se mezclan ambos tramos.",
         },
-        "season_breakdown": h2h_seasons,
+        # Kept for the existing UI contract; this now deliberately means development only.
+        "season_breakdown": h2h_development_seasons,
+        "holdout_season_diagnostics": h2h_holdout_seasons,
         "candidates": {
-            "h2h": {"holdout": h2h_holdout, "gate": h2h_gate},
-            "advanced_goals": {"holdout": advanced_holdout_summary, "gate": advanced_gate},
+            "h2h": {
+                "holdout": h2h_holdout,
+                "development_season_breakdown": h2h_development_seasons,
+                "holdout_season_diagnostics": h2h_holdout_seasons,
+                "gate": h2h_gate,
+            },
+            "advanced_goals": {
+                "holdout": advanced_holdout_summary,
+                "development_season_breakdown": advanced_development_seasons,
+                "holdout_season_diagnostics": advanced_holdout_seasons,
+                "gate": advanced_gate,
+            },
         },
         "uncertainty": {
-            "method": "Bootstrap emparejado por partido, 1000 réplicas deterministas, IC percentil 95%.",
+            "method": "Bootstrap emparejado por jornada/fecha, 1000 réplicas deterministas, IC percentil 95%.",
+            "cluster_unit": "Fecha calendario de kickoff; todos los partidos del mismo día se remuestrean juntos.",
             "comparison": "Diferencia de pérdida candidato menos Poisson sobre los mismos partidos.",
         },
         "limitations": [
-            "El corte de validación se realiza después de generar predicciones walk-forward; no se optimizan parámetros en el tramo reservado.",
+            "La consistencia entre temporadas se calcula solo en el tramo de desarrollo; el holdout final no participa en esa puerta.",
+            "El holdout evalúa candidatos ya definidos; cualquier ajuste posterior requiere una nueva muestra temporal no utilizada.",
             "La elegibilidad es una puerta de revisión, no prueba de rentabilidad ni autorización de activación.",
             "Las temporadas son las etiquetas originales del archivo; la cobertura incompleta puede reducir las muestras.",
-            "La consistencia entre ligas requiere ejecutar y comparar el mismo protocolo en varias competiciones.",
+            "El bootstrap por fecha reduce la falsa independencia entre partidos de una misma jornada, pero no elimina toda dependencia temporal entre jornadas.",
         ],
     }
