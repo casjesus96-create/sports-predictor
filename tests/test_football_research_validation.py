@@ -257,7 +257,7 @@ def test_goal_market_temporal_windows_are_chronological_clustered_and_developmen
     assert temporal["window_count"] >= 2
     windows = temporal["windows"]
     assert all(windows[index]["date_end"] < windows[index + 1]["date_start"] for index in range(len(windows) - 1))
-    assert sum(window["sample_size"] for window in windows) == result["goal_markets"]["development_sample_size"] + 12
+    assert sum(window["sample_size"] for window in windows) == result["goal_markets"]["development_sample_size"]
     assert all(window["independent_dates"] >= 10 for window in windows)
     assert all(
         window["markets"]["btts_yes"]["sample_size"] == window["sample_size"]
