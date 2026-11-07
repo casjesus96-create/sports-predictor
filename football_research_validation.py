@@ -182,6 +182,119 @@ def _row_identity(row: dict[str, Any]) -> tuple[str, ...]:
     )
 
 
+
+def _binary_market_summary(rows: list[dict[str, Any]], market_key: str, seed: int) -> dict[str, Any]:
+    selected = [row for row in rows if market_key in (row.get("markets") or {})]
+    if not selected:
+        empty = _paired_interval([], [], seed)
+        return {
+            "sample_size": 0, "base_brier": None, "candidate_brier": None,
+            "base_log_loss": None, "candidate_log_loss": None,
+            "brier_delta": empty, "log_loss_delta": _paired_interval([], [], seed + 1),
+            "observed_rate": None,
+        }
+    base_brier = []
+    candidate_brier = []
+    base_log = []
+    candidate_log = []
+    observed = []
+    cluster_keys = []
+    for index, row in enumerate(selected):
+        item = row["markets"][market_key]
+        actual = bool(item["actual"])
+        p_base = min(1.0 - 1e-15, max(1e-15, float(item["base"])))
+        p_candidate = min(1.0 - 1e-15, max(1e-15, float(item["candidate"])))
+        y = 1.0 if actual else 0.0
+        base_brier.append((p_base - y) ** 2)
+        candidate_brier.append((p_candidate - y) ** 2)
+        base_log.append(-(y * math.log(p_base) + (1.0 - y) * math.log(1.0 - p_base)))
+        candidate_log.append(-(y * math.log(p_candidate) + (1.0 - y) * math.log(1.0 - p_candidate)))
+        observed.append(y)
+        cluster_keys.append(str(row.get("kickoff_at") or "")[:10] or f"row:{index}")
+    n = len(selected)
+    return {
+        "sample_size": n,
+        "observed_rate": round(sum(observed) / n, 6),
+        "base_brier": round(sum(base_brier) / n, 6),
+        "candidate_brier": round(sum(candidate_brier) / n, 6),
+        "base_log_loss": round(sum(base_log) / n, 6),
+        "candidate_log_loss": round(sum(candidate_log) / n, 6),
+        "brier_delta": _paired_interval(
+            [candidate_brier[i] - base_brier[i] for i in range(n)], cluster_keys, seed
+        ),
+        "log_loss_delta": _paired_interval(
+            [candidate_log[i] - base_log[i] for i in range(n)], cluster_keys, seed + 1
+        ),
+    }
+
+
+def _expected_goals_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    fields = (
+        ("home", "actual_home_goals"),
+        ("away", "actual_away_goals"),
+        ("total", "actual_total_goals"),
+    )
+    result: dict[str, Any] = {"sample_size": len(rows)}
+    for label, actual_key in fields:
+        base_errors = []
+        candidate_errors = []
+        for row in rows:
+            actual = float(row[actual_key])
+            base_rate = float(row["base_expected_goals"][label])
+            candidate_rate = float(row["candidate_expected_goals"][label])
+            base_errors.append(abs(base_rate - actual))
+            candidate_errors.append(abs(candidate_rate - actual))
+        n = len(rows)
+        result[label] = {
+            "base_mae": round(sum(base_errors) / n, 6) if n else None,
+            "candidate_mae": round(sum(candidate_errors) / n, 6) if n else None,
+            "delta_mae": round((sum(candidate_errors) - sum(base_errors)) / n, 6) if n else None,
+        }
+    return result
+
+
+def _goal_market_validation(
+    rows: list[dict[str, Any]], holdout_start: str | None
+) -> dict[str, Any]:
+    ordered = sorted(
+        rows,
+        key=lambda row: (str(row.get("kickoff_at") or ""), str(row.get("match_id") or "")),
+    )
+    cutoff_day = str(holdout_start or "")[:10]
+    development = [
+        row for row in ordered
+        if not cutoff_day or str(row.get("kickoff_at") or "")[:10] < cutoff_day
+    ]
+    holdout = [
+        row for row in ordered
+        if cutoff_day and str(row.get("kickoff_at") or "")[:10] >= cutoff_day
+    ]
+    market_keys = ("btts_yes", "over_1_5", "over_2_5", "over_3_5")
+    return {
+        "status": "DESCRIPTIVE_RESEARCH_ONLY",
+        "development_sample_size": len(development),
+        "holdout_sample_size": len(holdout),
+        "holdout_start": holdout_start,
+        "markets": {
+            key: {
+                "development": _binary_market_summary(development, key, 11000 + i * 10),
+                "holdout": _binary_market_summary(holdout, key, 12000 + i * 10),
+            }
+            for i, key in enumerate(market_keys)
+        },
+        "expected_goals_mae": {
+            "development": _expected_goals_summary(development),
+            "holdout": _expected_goals_summary(holdout),
+        },
+        "interpretation": {
+            "brier_and_log_loss": "En Brier y Log Loss, delta negativo favorece al shadow; las métricas son comparaciones pareadas sobre los mismos partidos.",
+            "expected_goals_mae": "En MAE, delta negativo favorece al shadow.",
+            "scope": "El holdout se reserva para lectura final; estos resultados son descriptivos y no generan una puerta de activación.",
+        },
+        "automatic_activation": False,
+    }
+
+
 def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
     """Create independent chronological holdout and development-only consistency gates."""
     rows = sorted(
@@ -192,6 +305,7 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
         evaluation.get("advanced_goals_shadow_per_match") or [],
         key=lambda row: (str(row.get("kickoff_at") or ""), str(row.get("match_id") or "")),
     )
+    goal_market_rows = evaluation.get("goal_market_per_match") or []
     split = max(1, int(len(rows) * 0.8)) if rows else 0
     # Never divide one calendar matchday between development and holdout.
     while 0 < split < len(rows):
@@ -227,6 +341,9 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "protocol": "chronological_holdout_cluster_bootstrap_v2",
+        "goal_markets": _goal_market_validation(
+            goal_market_rows, holdout_rows[0].get("kickoff_at") if holdout_rows else None
+        ),
         "split": {
             "development_share": 0.8,
             "holdout_share": 0.2,
