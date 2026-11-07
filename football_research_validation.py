@@ -661,16 +661,17 @@ def _calibration_bias_segments(
         for row in rows:
             groups[segmenter(row)].append(row)
         segments = []
-        for segment_index, label in enumerate(segmenters[dimension](row) for row in []):
-            pass
         for segment_index, (label, segment_rows) in enumerate(sorted(groups.items())):
             dates = {
                 str(row.get("kickoff_at") or "")[:10]
                 for row in segment_rows if str(row.get("kickoff_at") or "")
             }
             eligible = len(segment_rows) >= MIN_SEASON_MATCHES and len(dates) >= MIN_TEMPORAL_WINDOW_DATES
+            ordered_dates = sorted(dates)
             segments.append({
                 "label": label,
+                "date_start": ordered_dates[0] if ordered_dates else None,
+                "date_end": ordered_dates[-1] if ordered_dates else None,
                 "sample_size": len(segment_rows),
                 "independent_dates": len(dates),
                 "eligible_for_descriptive_comparison": eligible,
