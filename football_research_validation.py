@@ -889,10 +889,6 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
             ),
         },
         "by_season": bias_by_season,
-        "temporal_windows": {
-            "h2h": h2h_temporal.get("windows", []),
-            "advanced_goals": advanced_temporal.get("windows", []),
-        },
         "automatic_recalibration": False,
         "interpretation": (
             "Diagnóstico de sesgo por clase calculado exclusivamente en desarrollo. "
