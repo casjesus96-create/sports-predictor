@@ -528,6 +528,8 @@ def test_1x2_bias_segments_explain_associations_without_claiming_causality():
 
 
 def test_1x2_bias_segments_use_development_only_and_mark_small_groups():
+    from football_research_validation import _calibration_bias_segments
+
     rows = []
     for index in range(700):
         row = _row(index, f"S{index // 175 + 1}", ("home", "draw", "away")[index % 3])
