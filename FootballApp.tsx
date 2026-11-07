@@ -1050,6 +1050,30 @@ function FootballHistoricalIntelligenceCenter() {
             </div>
           </div>
           <div style={{ marginTop: 9, borderTop: "1px solid #334155", paddingTop: 8 }}>
+            <strong style={{ fontSize: 11 }}>Calibración 1X2 · holdout reservado</strong>
+            <p style={{ color: "#94a3b8", fontSize: 9, margin: "3px 0 6px" }}>Evaluación final descriptiva, separada del desarrollo. ECE uno-contra-el-resto con IC95 por bootstrap de fechas; no se usa para ajustar probabilidades.</p>
+            {([
+              ["Candidato H2H", h2hHoldout],
+              ["Shadow avanzado", goalsHoldout],
+            ] as const).map(([label, holdout]) => <div key={label} style={{ marginTop: 5 }}>
+              <strong style={{ fontSize: 10 }}>{label} · n={holdout.sample_size ?? 0} · fechas independientes {holdout.outcomes?.home?.candidate?.uncertainty_cluster_count ?? 0}</strong>
+              <div style={{ color: "#94a3b8", fontSize: 9 }}>
+                {([
+                  ["Local", "home"], ["Empate", "draw"], ["Visitante", "away"],
+                ] as const).map(([outcomeLabel, outcomeKey]) => {
+                  const outcome = holdout.outcomes?.[outcomeKey] || {};
+                  const baseEce = outcome.base?.ece;
+                  const candidateEce = outcome.candidate?.ece;
+                  const ci = outcome.candidate?.ece_ci_95;
+                  const ciText = Array.isArray(ci)
+                    ? `[${Number(ci[0]).toFixed(3)}, ${Number(ci[1]).toFixed(3)}]`
+                    : "IC95 no estimable";
+                  return <span key={outcomeKey}>{outcomeLabel}: {baseEce == null ? "—" : Number(baseEce).toFixed(3)}→{candidateEce == null ? "—" : Number(candidateEce).toFixed(3)} (IC95 {ciText}){outcomeKey !== "away" ? " · " : ""}</span>;
+                })}
+              </div>
+            </div>)}
+          </div>
+          <div style={{ marginTop: 9, borderTop: "1px solid #334155", paddingTop: 8 }}>
             <strong style={{ fontSize: 11 }}>Estabilidad temporal 1X2 · ventanas cronológicas</strong>
             <p style={{ color: "#94a3b8", fontSize: 9, margin: "3px 0 6px" }}>Solo desarrollo; holdout excluido. ECE por resultado (local/empate/visitante), uno-contra-el-resto. Diagnóstico descriptivo, no modifica probabilidades.</p>
             {([
