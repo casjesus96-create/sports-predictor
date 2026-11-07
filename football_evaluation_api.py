@@ -271,9 +271,9 @@ def football_cross_league_evaluation(
     """Compare official-model calibration across the five archived leagues."""
     try:
         client = get_supabase_client()
-        comparisons = {}
+        rows_by_competition = {}
         for code in CROSS_LEAGUE_CODES:
-            rows = (
+            rows_by_competition[code] = (
                 client.table("football_prediction_snapshots")
                 .select("provider_match_id,competition_code,model_version,kickoff_at,home_probability,draw_probability,away_probability,actual_home_score,actual_away_score,actual_outcome,result_status,settled_at")
                 .eq("result_status", "SETTLED")
@@ -283,6 +283,26 @@ def football_cross_league_evaluation(
                 .limit(limit_per_competition)
                 .execute().data or []
             )
+        date_ranges = {
+            code: sorted(
+                str(row.get("kickoff_at") or "")[:10]
+                for row in rows if str(row.get("kickoff_at") or "")[:10]
+            )
+            for code, rows in rows_by_competition.items()
+        }
+        populated_ranges = [dates for dates in date_ranges.values() if dates]
+        common_start = max((dates[0] for dates in populated_ranges), default=None)
+        common_end = min((dates[-1] for dates in populated_ranges), default=None)
+        comparisons = {}
+        for code in CROSS_LEAGUE_CODES:
+            rows = rows_by_competition[code]
+            if common_start and common_end and common_start <= common_end:
+                rows = [
+                    row for row in rows
+                    if common_start <= str(row.get("kickoff_at") or "")[:10] <= common_end
+                ]
+            else:
+                rows = []
             evaluated = evaluate_rows(rows)
             valid_items = []
             for row in rows:
@@ -316,6 +336,12 @@ def football_cross_league_evaluation(
             "source": "football_prediction_snapshots",
             "model_version": MODEL_VERSION,
             "competitions": comparisons,
+            "common_date_window": {
+                "date_start": common_start,
+                "date_end": common_end,
+                "aligned_across_all_five": bool(common_start and common_end and common_start <= common_end),
+                "policy": "Las cinco ligas se filtran al intervalo calendario común dentro del límite recuperado por competición.",
+            },
             "comparison_policy": {
                 "scope": "Modelo oficial único; snapshots SETTLED; cada liga se evalúa por separado.",
                 "minimum_matches": MIN_CROSS_LEAGUE_MATCHES,
