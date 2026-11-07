@@ -156,7 +156,7 @@ def test_backtest_keeps_paired_goal_market_probabilities_and_actuals(monkeypatch
     monkeypatch.setattr(football_backtest, "predict_advanced_shadow", fake_shadow)
 
     result = run_chronological_backtest(rows)
-    assert result["goal_market_sample_size"] == result["scored_matches"]
+    assert result["metrics"]["goal_market_sample_size"] == result["scored_matches"]
     assert len(result["goal_market_per_match"]) == result["scored_matches"]
     first = result["goal_market_per_match"][0]
     assert first["markets"]["btts_yes"]["base"] == 0.55
