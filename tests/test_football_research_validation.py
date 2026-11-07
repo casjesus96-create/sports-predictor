@@ -1,4 +1,6 @@
-from datetime import date, timedelta\n\nfrom football_research_validation import build_candidate_validation
+from datetime import date, timedelta
+
+from football_research_validation import build_candidate_validation
 
 
 def _row(index, season, actual="home"):
