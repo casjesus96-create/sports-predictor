@@ -1194,8 +1194,10 @@ def archive_research_backtest(
     evaluation["advanced_goals_shadow_per_match_count"] = len(
         evaluation.get("advanced_goals_shadow_per_match") or []
     )
+    evaluation["goal_market_per_match_count"] = len(evaluation.get("goal_market_per_match") or [])
     evaluation.pop("per_match", None)
     evaluation.pop("advanced_goals_shadow_per_match", None)
+    evaluation.pop("goal_market_per_match", None)
     return {
         "success": True,
         "provider": "Sports Predictor · Supabase archive",

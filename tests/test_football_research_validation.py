@@ -97,3 +97,44 @@ def test_validation_requires_enough_independent_holdout_dates():
     assert gate["holdout_clusters"] == 1
     assert gate["holdout_cluster_minimum"] == 20
     assert gate["status"] == "MUESTRA_INSUFICIENTE"
+
+
+
+def test_goal_markets_use_same_chronological_holdout_and_paired_losses():
+    rows = []
+    for index in range(500):
+        row = _row(index, f"S{index // 125}")
+        actual_btts = index % 2 == 0
+        actual_over = index % 3 != 0
+        row["markets"] = {
+            "btts_yes": {
+                "base": 0.50, "candidate": 0.90 if actual_btts else 0.10,
+                "actual": actual_btts,
+            },
+            "over_2_5": {
+                "base": 0.50, "candidate": 0.90 if actual_over else 0.10,
+                "actual": actual_over,
+            },
+        }
+        row["actual_home_goals"] = 2
+        row["actual_away_goals"] = 1
+        row["actual_total_goals"] = 3
+        row["base_expected_goals"] = {"home": 1.0, "away": 1.0, "total": 2.0}
+        row["candidate_expected_goals"] = {"home": 1.8, "away": 1.1, "total": 2.9}
+        rows.append(row)
+
+    result = build_candidate_validation({
+        "per_match": [_row(index, f"S{index // 125}") for index in range(500)],
+        "goal_market_per_match": rows,
+    })
+    markets = result["goal_markets"]
+    assert markets["status"] == "DESCRIPTIVE_RESEARCH_ONLY"
+    assert markets["development_sample_size"] == 400
+    assert markets["holdout_sample_size"] == 100
+    btts = markets["markets"]["btts_yes"]["holdout"]
+    assert btts["sample_size"] == 100
+    assert btts["candidate_brier"] < btts["base_brier"]
+    assert btts["candidate_log_loss"] < btts["base_log_loss"]
+    assert btts["brier_delta"]["ci_95"][1] < 0
+    assert markets["expected_goals_mae"]["holdout"]["total"]["delta_mae"] < 0
+    assert markets["automatic_activation"] is False
