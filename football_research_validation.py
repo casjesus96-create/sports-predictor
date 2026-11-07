@@ -13,6 +13,7 @@ from typing import Any
 OUTCOMES = ("home", "draw", "away")
 BOOTSTRAP_REPLICATES = 1000
 MIN_HOLDOUT_MATCHES = 100
+MIN_HOLDOUT_CLUSTERS = 20
 MIN_SEASON_MATCHES = 50
 MIN_SEASONS = 3
 MIN_SEASON_CONSISTENCY = 0.60
@@ -124,6 +125,12 @@ def _gate(holdout: dict[str, Any], development_seasons: list[dict[str, Any]]) ->
     reasons = []
     if n < MIN_HOLDOUT_MATCHES:
         reasons.append(f"Validación final requiere al menos {MIN_HOLDOUT_MATCHES} partidos; disponibles: {n}.")
+    holdout_clusters = holdout["brier_delta"].get("cluster_count", 0)
+    if holdout_clusters < MIN_HOLDOUT_CLUSTERS:
+        reasons.append(
+            f"Holdout requiere al menos {MIN_HOLDOUT_CLUSTERS} jornadas/fechas independientes; "
+            f"disponibles: {holdout_clusters}."
+        )
     if len(eligible_seasons) < MIN_SEASONS:
         reasons.append(
             f"Desarrollo requiere al menos {MIN_SEASONS} temporadas con {MIN_SEASON_MATCHES}+ partidos; "
@@ -140,12 +147,18 @@ def _gate(holdout: dict[str, Any], development_seasons: list[dict[str, Any]]) ->
             f"La mejora simultánea Brier/Log Loss no alcanza "
             f"{MIN_SEASON_CONSISTENCY:.0%} de temporadas elegibles en desarrollo."
         )
-    insufficient = n < MIN_HOLDOUT_MATCHES or len(eligible_seasons) < MIN_SEASONS
+    insufficient = (
+        n < MIN_HOLDOUT_MATCHES
+        or holdout_clusters < MIN_HOLDOUT_CLUSTERS
+        or len(eligible_seasons) < MIN_SEASONS
+    )
     status = "APTO_PARA_REVISION" if not reasons else ("MUESTRA_INSUFICIENTE" if insufficient else "NO_APTO")
     return {
         "status": status,
         "reasons": reasons,
         "holdout_minimum": MIN_HOLDOUT_MATCHES,
+        "holdout_cluster_minimum": MIN_HOLDOUT_CLUSTERS,
+        "holdout_clusters": holdout_clusters,
         "minimum_seasons": MIN_SEASONS,
         "minimum_matches_per_season": MIN_SEASON_MATCHES,
         "required_season_consistency": MIN_SEASON_CONSISTENCY,
