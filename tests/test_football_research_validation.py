@@ -1,4 +1,4 @@
-from football_research_validation import build_candidate_validation
+from datetime import date, timedelta\n\nfrom football_research_validation import build_candidate_validation
 
 
 def _row(index, season, actual="home"):
@@ -13,7 +13,7 @@ def _row(index, season, actual="home"):
     return {
         "match_id": str(index),
         "season": season,
-        "kickoff_at": f"{2000 + index // 100:04d}-01-{index % 28 + 1:02d}T00:00:00+00:00",
+        "kickoff_at": f"{date(2000, 1, 1) + timedelta(days=index)}T00:00:00+00:00",
         "actual_outcome": actual,
         "base": base,
         "candidate": candidate,
