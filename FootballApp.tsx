@@ -1091,7 +1091,7 @@ function FootballHistoricalIntelligenceCenter() {
                     const fmt = (value: any) => value == null ? "—" : (value > 0 ? "+" : "") + (Number(value) * 100).toFixed(1) + " pp";
                     const outcomes = segment.bias?.outcomes || {};
                     return <div key={segment.label} style={{ color: segment.eligible_for_descriptive_comparison ? "#cbd5e1" : "#94a3b8", fontSize: 9, padding: "2px 0" }}>
-                      {segment.label} · n={segment.sample_size} · fechas={segment.independent_dates} · {segment.eligible_for_descriptive_comparison ? "comparable" : "muestra pequeña"}
+                      {segment.label} · n={segment.sample_size} · fechas={segment.independent_dates} · {segment.date_start || "—"}→{segment.date_end || "—"} · {segment.eligible_for_descriptive_comparison ? "comparable" : "muestra pequeña"}
                       <div>Poisson L/E/V: {(["home", "draw", "away"] as const).map(key => fmt(outcomes[key]?.base?.bias)).join(" / ")} pp</div>
                       <div>Sombra L/E/V: {(["home", "draw", "away"] as const).map(key => fmt(outcomes[key]?.[modelKey === "h2h" ? "candidate" : "advanced_shadow"]?.bias)).join(" / ")} pp</div>
                     </div>;
