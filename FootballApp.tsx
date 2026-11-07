@@ -1049,6 +1049,25 @@ function FootballHistoricalIntelligenceCenter() {
               {(goalsGate.reasons || []).map((reason: string, index: number) => <div key={index} style={{ color: "#fbbf24", fontSize: 9, marginTop: 3 }}>• {reason}</div>)}
             </div>
           </div>
+          <div style={{ marginTop: 9, borderTop: "1px solid #334155", paddingTop: 8 }}>
+            <strong style={{ fontSize: 11 }}>Mercados de goles · comparación descriptiva en holdout</strong>
+            <p style={{ color: "#94a3b8", fontSize: 9, margin: "3px 0 6px" }}>Poisson oficial frente al shadow avanzado · mismo conjunto de partidos · sin puerta de activación.</p>
+            {[
+              ["BTTS Sí", "btts_yes"],
+              ["Over 1.5", "over_1_5"],
+              ["Over 2.5", "over_2_5"],
+              ["Over 3.5", "over_3_5"],
+            ].map(([label, key]) => {
+              const item = validation.goal_markets?.markets?.[key]?.holdout || {};
+              return <div key={key} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #253247", padding: "5px 0", fontSize: 10 }}>
+                <span>{label} · n={item.sample_size ?? 0}</span>
+                <span style={{ textAlign: "right" }}>ΔB {delta(item.brier_delta)} · ΔLL {delta(item.log_loss_delta)}</span>
+              </div>;
+            })}
+            <div style={{ fontSize: 10, marginTop: 5 }}>
+              MAE goles totales · Δ {validation.goal_markets?.expected_goals_mae?.holdout?.total?.delta_mae == null ? "—" : Number(validation.goal_markets.expected_goals_mae.holdout.total.delta_mae).toFixed(3)}
+            </div>
+          </div>
           <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700 }}>Consistencia H2H en desarrollo por temporada</div>
           {(validation.season_breakdown || []).map((item: any) => <div key={item.season} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #334155", padding: "5px 0", fontSize: 10 }}>
             <span>{item.season} · n={item.sample_size}</span><span>ΔB {delta(item.brier_delta)} · ΔLL {delta(item.log_loss_delta)}</span>
