@@ -103,3 +103,64 @@ def test_backtest_target_limit_must_be_positive():
 
     with pytest.raises(ValueError):
         run_chronological_backtest(history_with_repeated_pair(), target_limit=0)
+
+
+
+def test_backtest_keeps_paired_goal_market_probabilities_and_actuals(monkeypatch):
+    import football_backtest
+
+    rows = []
+    for i in range(1, 13):
+        rows.append(fixture(i, "Alpha" if i % 2 else "Beta", "Beta" if i % 2 else "Alpha",
+                            2 if i % 3 else 0, 1 if i % 4 else 0,
+                            f"2026-01-{i:02d}T15:00:00Z"))
+
+    base_markets = {
+        "both_teams_to_score": {"yes": {"probability": 0.55}},
+        "total_goals": {
+            "over_1_5": {"probability": 0.70},
+            "over_2_5": {"probability": 0.50},
+            "over_3_5": {"probability": 0.30},
+        },
+    }
+
+    def fake_predict(home, away, history):
+        return {
+            "available": True,
+            "probabilities": {"home": 0.5, "draw": 0.25, "away": 0.25},
+            "goal_markets": base_markets,
+            "expected_goals": {"home": 1.5, "away": 1.0, "total": 2.5},
+        }
+
+    def fake_h2h(home, away, kickoff, base, history):
+        return {
+            "available": True,
+            "candidate_probabilities": {"home": 0.5, "draw": 0.25, "away": 0.25},
+            "h2h": {"valid_meetings": 0},
+            "status": "INSUFFICIENT_H2H",
+        }
+
+    def fake_shadow(home, away, history, kickoff):
+        return {
+            "available": True,
+            "probabilities": {"home": 0.5, "draw": 0.25, "away": 0.25},
+            "goal_markets": {
+                "both_teams_to_score": {"yes": 0.60, "no": 0.40},
+                "total_goals": {"over_1_5": 0.75, "over_2_5": 0.55, "over_3_5": 0.35},
+            },
+            "expected_goals": {"home": 1.7, "away": 1.1, "total": 2.8},
+        }
+
+    monkeypatch.setattr(football_backtest, "predict_1x2", fake_predict)
+    monkeypatch.setattr(football_backtest, "evaluate_h2h_candidate", fake_h2h)
+    monkeypatch.setattr(football_backtest, "predict_advanced_shadow", fake_shadow)
+
+    result = run_chronological_backtest(rows)
+    assert result["goal_market_sample_size"] == result["scored_matches"]
+    assert len(result["goal_market_per_match"]) == result["scored_matches"]
+    first = result["goal_market_per_match"][0]
+    assert first["markets"]["btts_yes"]["base"] == 0.55
+    assert first["markets"]["btts_yes"]["candidate"] == 0.60
+    assert first["markets"]["over_2_5"]["actual"] is True
+    assert first["base_expected_goals"]["total"] == 2.5
+    assert first["candidate_expected_goals"]["total"] == 2.8
