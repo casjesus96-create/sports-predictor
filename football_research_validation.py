@@ -723,7 +723,7 @@ def _multiclass_temporal_breakdown(
             "independent_dates": len(dates),
             **summary,
             "calibration_bias": _calibration_bias_summary(
-                window_rows, candidate_key, seed + index * 1000
+                window_rows, candidate_key, seed + index * 1000, include_ci=False
             ),
             "eligible_for_descriptive_comparison": (
                 len(window_rows) >= MIN_TEMPORAL_WINDOW_MATCHES
