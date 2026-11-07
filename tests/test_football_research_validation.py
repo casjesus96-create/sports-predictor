@@ -86,3 +86,14 @@ def test_validation_bootstrap_is_deterministic_and_clustered_by_date():
     assert first_interval == second_interval
     assert first_interval["cluster_count"] < first_interval["n"]
     assert first["uncertainty"]["cluster_unit"].startswith("Fecha calendario")
+
+
+def test_validation_requires_enough_independent_holdout_dates():
+    rows = [_row(index, f"S{index // 125}") for index in range(500)]
+    for row in rows[400:]:
+        row["kickoff_at"] = "2026-11-01T12:00:00+00:00"
+    result = build_candidate_validation({"per_match": rows})
+    gate = result["candidates"]["h2h"]["gate"]
+    assert gate["holdout_clusters"] == 1
+    assert gate["holdout_cluster_minimum"] == 20
+    assert gate["status"] == "MUESTRA_INSUFICIENTE"
