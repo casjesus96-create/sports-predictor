@@ -282,6 +282,42 @@ def _binary_market_summary(rows: list[dict[str, Any]], market_key: str, seed: in
     }
 
 
+
+def _goal_market_season_breakdown(
+    rows: list[dict[str, Any]], market_keys: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """Season diagnostics use development rows only; they never inspect holdout."""
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        season = str(row.get("season") or "").strip()
+        if season:
+            grouped[season].append(row)
+    result = []
+    for season, season_rows in sorted(grouped.items()):
+        markets = {}
+        for index, market_key in enumerate(market_keys):
+            summary = _binary_market_summary(season_rows, market_key, 15000 + index)
+            markets[market_key] = {
+                "sample_size": summary["sample_size"],
+                "base_brier": summary["base_brier"],
+                "candidate_brier": summary["candidate_brier"],
+                "brier_delta": summary["brier_delta"],
+                "base_log_loss": summary["base_log_loss"],
+                "candidate_log_loss": summary["candidate_log_loss"],
+                "log_loss_delta": summary["log_loss_delta"],
+                "base_ece": summary["reliability"]["base"]["ece"],
+                "candidate_ece": summary["reliability"]["candidate"]["ece"],
+                "eligible_for_descriptive_comparison": summary["sample_size"] >= MIN_SEASON_MATCHES,
+            }
+        result.append({
+            "season": season,
+            "sample_size": len(season_rows),
+            "markets": markets,
+        })
+    return result
+
+
+
 def _expected_goals_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     fields = (
         ("home", "actual_home_goals"),
@@ -336,6 +372,9 @@ def _goal_market_validation(
             }
             for i, key in enumerate(market_keys)
         },
+        "development_season_breakdown": _goal_market_season_breakdown(development, market_keys),
+        "season_diagnostics_scope": "development_only",
+        "minimum_matches_per_season_for_descriptive_comparison": MIN_SEASON_MATCHES,
         "expected_goals_mae": {
             "development": _expected_goals_summary(development),
             "holdout": _expected_goals_summary(holdout),

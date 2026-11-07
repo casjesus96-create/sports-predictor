@@ -1074,6 +1074,21 @@ function FootballHistoricalIntelligenceCenter() {
               MAE goles totales · Δ {validation.goal_markets?.expected_goals_mae?.holdout?.total?.delta_mae == null ? "—" : Number(validation.goal_markets.expected_goals_mae.holdout.total.delta_mae).toFixed(3)}
             </div>
           </div>
+          <div style={{ marginTop: 8, borderTop: "1px solid #334155", paddingTop: 7 }}>
+            <strong style={{ fontSize: 11 }}>Estabilidad de mercados por temporada · solo desarrollo</strong>
+            <p style={{ color: "#94a3b8", fontSize: 9, margin: "3px 0 5px" }}>No incluye el holdout. Temporadas con menos de {validation.goal_markets?.minimum_matches_per_season_for_descriptive_comparison ?? 50} partidos se muestran, pero no se consideran comparables.</p>
+            {(validation.goal_markets?.development_season_breakdown || []).map((season: any) => {
+              const btts = season.markets?.btts_yes || {};
+              const over = season.markets?.over_2_5 || {};
+              return <div key={season.season} style={{ borderTop: "1px solid #253247", padding: "5px 0", fontSize: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <strong>{season.season} · n={season.sample_size}</strong>
+                  <span style={{ color: "#94a3b8" }}>{btts.eligible_for_descriptive_comparison && over.eligible_for_descriptive_comparison ? "Muestra descriptiva suficiente" : "Muestra pequeña"}</span>
+                </div>
+                <div style={{ color: "#94a3b8" }}>BTTS ΔB {delta(btts.brier_delta)} · O2.5 ΔB {delta(over.brier_delta)}</div>
+              </div>;
+            })}
+          </div>
           <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700 }}>Consistencia H2H en desarrollo por temporada</div>
           {(validation.season_breakdown || []).map((item: any) => <div key={item.season} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #334155", padding: "5px 0", fontSize: 10 }}>
             <span>{item.season} · n={item.sample_size}</span><span>ΔB {delta(item.brier_delta)} · ΔLL {delta(item.log_loss_delta)}</span>
@@ -1092,7 +1107,14 @@ function FootballHistoricalIntelligenceCenter() {
           const delta = (value: any) => value?.mean_delta == null ? "—" : Number(value.mean_delta).toFixed(4);
           return <div key={item.competition} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #334155", padding: "6px 0", fontSize: 10 }}>
             <span><strong>{item.name || item.competition}</strong><div style={{ color: "#94a3b8" }}>Holdout n={holdout.sample_size ?? 0}</div></span>
-            <span style={{ textAlign: "right" }}>{gate.status || "—"}<div style={{ color: "#94a3b8" }}>ΔB {delta(holdout.brier_delta)} · ΔLL {delta(holdout.log_loss_delta)}</div></span>
+            <span style={{ textAlign: "right" }}>
+              {gate.status || "—"}
+              <div style={{ color: "#94a3b8" }}>1X2 ΔB {delta(holdout.brier_delta)} · ΔLL {delta(holdout.log_loss_delta)}</div>
+              <div style={{ color: "#94a3b8" }}>
+                BTTS ΔB {delta(item.validation?.goal_markets?.markets?.btts_yes?.holdout?.brier_delta)}
+                {" · "}O2.5 ΔB {delta(item.validation?.goal_markets?.markets?.over_2_5?.holdout?.brier_delta)}
+              </div>
+            </span>
           </div>;
         })}
       </div>
