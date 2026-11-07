@@ -291,8 +291,8 @@ def football_cross_league_evaluation(
             for code, rows in rows_by_competition.items()
         }
         populated_ranges = [dates for dates in date_ranges.values() if dates]
-        common_start = max((dates[0] for dates in populated_ranges), default=None)
-        common_end = min((dates[-1] for dates in populated_ranges), default=None)
+        common_start = max((dates[0] for dates in populated_ranges), default=None) if len(populated_ranges) == len(CROSS_LEAGUE_CODES) else None
+        common_end = min((dates[-1] for dates in populated_ranges), default=None) if len(populated_ranges) == len(CROSS_LEAGUE_CODES) else None
         comparisons = {}
         for code in CROSS_LEAGUE_CODES:
             rows = rows_by_competition[code]
