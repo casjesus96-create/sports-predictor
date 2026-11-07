@@ -1064,6 +1064,7 @@ function FootballHistoricalIntelligenceCenter() {
         {leagueValidation.map((item: any) => {
           const gate = item.validation?.candidates?.h2h?.gate || {};
           const holdout = item.validation?.candidates?.h2h?.holdout || {};
+          const delta = (value: any) => value?.mean_delta == null ? "—" : Number(value.mean_delta).toFixed(4);
           return <div key={item.competition} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #334155", padding: "6px 0", fontSize: 10 }}>
             <span><strong>{item.name || item.competition}</strong><div style={{ color: "#94a3b8" }}>Holdout n={holdout.sample_size ?? 0}</div></span>
             <span style={{ textAlign: "right" }}>{gate.status || "—"}<div style={{ color: "#94a3b8" }}>ΔB {delta(holdout.brier_delta)} · ΔLL {delta(holdout.log_loss_delta)}</div></span>
