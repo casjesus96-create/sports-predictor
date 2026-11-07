@@ -415,7 +415,7 @@ def test_1x2_calibration_bias_is_development_only_and_identifies_over_underpredi
     advanced_rows = []
     for index in range(600):
         actual = ("home", "draw", "away")[index % 3]
-        row = _row(index, f"S{index // 150 + 1}", actual)
+        row = _row(index, f"S{index // 200 + 1}", actual)
         row["base"] = {"home": 0.50, "draw": 0.25, "away": 0.25}
         row["candidate"] = {"home": 0.45, "draw": 0.30, "away": 0.25}
         rows.append(row)
@@ -480,7 +480,7 @@ def test_1x2_calibration_bias_temporal_windows_match_development_dates_only():
 
     result = build_candidate_validation({"per_match": rows})
     bias = result["calibration_bias_1x2"]
-    temporal = bias["temporal_windows"]["h2h"]
+    temporal = result["temporal_drift_1x2"]["h2h"]["windows"]
     assert temporal
     assert all(window["calibration_bias"]["scope"] == "development_only" for window in temporal)
     assert all(
