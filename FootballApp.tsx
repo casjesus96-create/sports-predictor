@@ -1050,6 +1050,36 @@ function FootballHistoricalIntelligenceCenter() {
             </div>
           </div>
           <div style={{ marginTop: 9, borderTop: "1px solid #334155", paddingTop: 8 }}>
+            <strong style={{ fontSize: 11 }}>Estabilidad temporal 1X2 · ventanas cronológicas</strong>
+            <p style={{ color: "#94a3b8", fontSize: 9, margin: "3px 0 6px" }}>Solo desarrollo; holdout excluido. ECE por resultado (local/empate/visitante), uno-contra-el-resto. Diagnóstico descriptivo, no modifica probabilidades.</p>
+            {([
+              ["Candidato H2H", "h2h"],
+              ["Shadow avanzado", "advanced_goals"],
+            ] as const).map(([label, key]) => {
+              const diagnostic = validation.temporal_drift_1x2?.[key] || {};
+              return <div key={key} style={{ marginTop: 6 }}>
+                <strong style={{ fontSize: 10 }}>{label} · {diagnostic.window_count || 0} ventanas</strong>
+                {(diagnostic.windows || []).map((window: any) => <div key={window.window} style={{ borderTop: "1px solid #253247", padding: "5px 0", fontSize: 9 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong>Ventana {window.window} · n={window.sample_size}</strong>
+                    <span style={{ color: "#94a3b8" }}>{window.date_start || "—"} → {window.date_end || "—"}</span>
+                  </div>
+                  <div style={{ color: "#cbd5e1" }}>Accuracy Poisson {pct(window.base_accuracy == null ? null : Number((window.base_accuracy * 100).toFixed(1)))} · candidato {pct(window.candidate_accuracy == null ? null : Number((window.candidate_accuracy * 100).toFixed(1)))} · Δ {pct(window.accuracy_delta == null ? null : Number((window.accuracy_delta * 100).toFixed(1)))}</div>
+                  <div style={{ color: "#94a3b8" }}>Δ Brier {delta(window.brier_delta)} · Δ Log Loss {delta(window.log_loss_delta)}</div>
+                  <div style={{ color: "#94a3b8" }}>{([
+                    ["Local", "home"], ["Empate", "draw"], ["Visitante", "away"],
+                  ] as const).map(([outcomeLabel, outcomeKey]) => {
+                    const outcome = window.outcomes?.[outcomeKey] || {};
+                    const baseEce = outcome.base?.ece;
+                    const candidateEce = outcome.candidate?.ece;
+                    return <span key={outcomeKey}>{outcomeLabel}: ECE {baseEce == null ? "—" : Number(baseEce).toFixed(3)}→{candidateEce == null ? "—" : Number(candidateEce).toFixed(3)}{outcomeKey !== "away" ? " · " : ""}</span>;
+                  })}</div>
+                </div>)}
+                {!(diagnostic.windows || []).length && <p style={{ color: "#fbbf24", fontSize: 9 }}>Muestra insuficiente para comparar ventanas 1X2.</p>}
+              </div>;
+            })}
+          </div>
+          <div style={{ marginTop: 9, borderTop: "1px solid #334155", paddingTop: 8 }}>
             <strong style={{ fontSize: 11 }}>Mercados de goles · comparación descriptiva en holdout</strong>
             <p style={{ color: "#94a3b8", fontSize: 9, margin: "3px 0 6px" }}>Poisson oficial frente al shadow avanzado · mismo conjunto de partidos · sin puerta de activación.</p>
             {[

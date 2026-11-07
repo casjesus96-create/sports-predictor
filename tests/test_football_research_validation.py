@@ -273,3 +273,57 @@ def test_goal_market_temporal_windows_report_insufficient_sample_without_fabrica
     assert result["window_count"] == 0
     assert result["windows"] == []
     assert "insuficiente" in result["reason"].lower()
+
+
+def test_1x2_temporal_drift_is_clustered_development_only_and_reports_each_outcome():
+    rows = []
+    advanced_rows = []
+    for index in range(500):
+        actual = ("home", "draw", "away")[index % 3]
+        row = _row(index, f"S{index // 125 + 1}", actual)
+        rows.append(row)
+        advanced_rows.append({
+            **row,
+            "advanced_shadow": {
+                "home": 0.45, "draw": 0.30, "away": 0.25,
+            },
+        })
+
+    result = build_candidate_validation({
+        "per_match": rows,
+        "advanced_goals_shadow_per_match": advanced_rows,
+    })
+    drift = result["temporal_drift_1x2"]
+    assert drift["scope"] == "development_only"
+    for candidate_key in ("h2h", "advanced_goals"):
+        candidate = drift[candidate_key]
+        assert candidate["scope"] == "development_only"
+        assert candidate["window_count"] >= 2
+        windows = candidate["windows"]
+        assert sum(window["sample_size"] for window in windows) == 400
+        assert all(
+            windows[index]["date_end"] < windows[index + 1]["date_start"]
+            for index in range(len(windows) - 1)
+        )
+        assert windows[-1]["date_end"] < result["split"]["holdout_start"][:10]
+        for window in windows:
+            assert window["independent_dates"] >= 10
+            assert window["eligible_for_descriptive_comparison"] is True
+            assert window["base_accuracy"] is not None
+            assert window["candidate_accuracy"] is not None
+            assert set(window["outcomes"]) == {"home", "draw", "away"}
+            for outcome in ("home", "draw", "away"):
+                assert window["outcomes"][outcome]["base"]["sample_size"] == window["sample_size"]
+                assert window["outcomes"][outcome]["candidate"]["sample_size"] == window["sample_size"]
+                assert len(window["outcomes"][outcome]["base"]["bins"]) == 5
+                assert len(window["outcomes"][outcome]["candidate"]["bins"]) == 5
+
+
+def test_1x2_temporal_drift_reports_insufficient_sample_without_windows():
+    from football_research_validation import _multiclass_temporal_breakdown
+
+    result = _multiclass_temporal_breakdown([], "candidate", 123)
+    assert result["scope"] == "development_only"
+    assert result["window_count"] == 0
+    assert result["windows"] == []
+    assert "insuficiente" in result["reason"].lower()
