@@ -741,7 +741,8 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
 
     h2h_development_seasons = _season_breakdown(development, "candidate", 7000)
     h2h_holdout_seasons = _season_breakdown(holdout_rows, "candidate", 8000)
-    h2h_holdout = _compare(holdout_rows, "candidate", 8100)
+    h2h_holdout = _multiclass_window_summary(holdout_rows, "candidate", 8100)
+    h2h_holdout["reliability_scope"] = "holdout_only"
     h2h_gate = _gate(h2h_holdout, h2h_development_seasons)
 
     advanced_by_id = {_row_identity(row): row for row in advanced_rows}
@@ -759,7 +760,10 @@ def build_candidate_validation(evaluation: dict[str, Any]) -> dict[str, Any]:
     advanced_holdout_seasons = _season_breakdown(
         advanced_holdout_rows, "advanced_shadow", 9500
     )
-    advanced_holdout_summary = _compare(advanced_holdout_rows, "advanced_shadow", 10100)
+    advanced_holdout_summary = _multiclass_window_summary(
+        advanced_holdout_rows, "advanced_shadow", 10100
+    )
+    advanced_holdout_summary["reliability_scope"] = "holdout_only"
     advanced_gate = _gate(advanced_holdout_summary, advanced_development_seasons)
 
     return {
