@@ -8,8 +8,12 @@ from football_archive import sync_football_archive
 def resolve_year_range(start_year=None, end_year=None, current_year=None):
     """Use the current and previous season by default; honor explicit manual ranges."""
     year = int(current_year or datetime.now(timezone.utc).year)
-    start = int(start_year) if str(start_year or "").strip() else max(2000, year - 1)
     end = int(end_year) if str(end_year or "").strip() else year
+    start = (
+        int(start_year)
+        if str(start_year or "").strip()
+        else max(2000, end - 1 if str(end_year or "").strip() else year - 1)
+    )
     return start, end
 
 
