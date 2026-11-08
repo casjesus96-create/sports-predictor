@@ -46,15 +46,16 @@ class _Query:
         if self.table_name == "football_team_aliases":
             return type("Result", (), {"data": []})()
         if self.table_name == "football_archive_teams":
-            rows = [{"canonical_team_key": self.key}] if self.filters.get("canonical_team_key") == self.key else []
+            requested_key = self.filters.get("canonical_team_key")
+            resolved_key = requested_key if self.key is None else self.key
+            rows = [{"canonical_team_key": resolved_key}] if requested_key == resolved_key else []
             return type("Result", (), {"data": rows})()
         raise AssertionError(f"Unexpected table: {self.table_name}")
 
 
 class _Client:
     def table(self, name):
-        key = "arsenal" if name == "football_archive_teams" else "chelsea"
-        return _Query(name, key)
+        return _Query(name, None)
 
 
 def test_app_finalized_payload_requires_confirmed_teams_and_uses_archive_identity():
