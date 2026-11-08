@@ -43,6 +43,7 @@ type Match = {
   homeTeam?: { name?: string; shortName?: string; tla?: string; crest?: string; id?: number };
   awayTeam?: { name?: string; shortName?: string; tla?: string; crest?: string; id?: number };
   score?: { winner?: string | null; duration?: string; fullTime?: { home?: number | null; away?: number | null }; halfTime?: { home?: number | null; away?: number | null } };
+  archive_verification_token?: string | null;
   venue?: string;
   referees?: Array<{ name?: string; nationality?: string; type?: string }>;
   prediction?: Prediction;
@@ -1553,6 +1554,7 @@ export default function FootballApp() {
     const supported = ["PL", "PD", "SA", "BL1", "FL1"].includes(competition);
     if (!supported || status !== "FINISHED" || !match.utcDate ||
         !match.homeTeam?.name || !match.awayTeam?.name ||
+        !match.archive_verification_token ||
         !Number.isInteger(homeScore) || !Number.isInteger(awayScore) ||
         Number(homeScore) < 0 || Number(homeScore) > 30 ||
         Number(awayScore) < 0 || Number(awayScore) > 30) {
@@ -1574,6 +1576,7 @@ export default function FootballApp() {
           away_team: match.awayTeam.name,
           home_score: homeScore,
           away_score: awayScore,
+          verification_token: match.archive_verification_token,
         }),
       });
       const body = await response.json();
