@@ -20,6 +20,7 @@ from football_model import MODEL_VERSION, predict_1x2
 from football_goals_shadow import predict_advanced_shadow
 from football_cross_comp_model import predict_cross_competition, EXPERIMENT_VERSION as CROSS_COMP_EXPERIMENT_VERSION
 from football_history import record_pregame_snapshot, settle_official_result, record_experimental_snapshot, settle_experimental_results
+from football_archive import create_app_finalized_verification_token
 from football_h2h_experiment import evaluate_h2h_candidate, EXPERIMENT_VERSION
 from football_backtest import run_chronological_backtest
 from football_form_elo_experiment import predict_form_elo, EXPERIMENT_VERSION as FORM_ELO_EXPERIMENT_VERSION
@@ -374,6 +375,30 @@ def football_games(
         # Only official full-time numeric scores can settle a previously saved snapshot.
         settle_official_result(item, competition)
         settle_experimental_results(item)
+
+        # The client can request a manual archive write only with a signature
+        # generated here from the exact provider fixture. This avoids trusting
+        # browser-supplied scores and does not make an additional provider call.
+        if (
+            status == "FINISHED"
+            and competition.strip().upper() in {"PL", "PD", "SA", "BL1", "FL1"}
+            and _has_numeric_full_time(item)
+            and item.get("id") is not None
+            and item.get("utcDate")
+            and item.get("homeTeam", {}).get("name")
+            and item.get("awayTeam", {}).get("name")
+        ):
+            full_time = (item.get("score") or {}).get("fullTime") or {}
+            item["archive_verification_token"] = create_app_finalized_verification_token({
+                "match_id": item["id"],
+                "competition_code": competition,
+                "status": status,
+                "utc_date": item["utcDate"],
+                "home_team": item["homeTeam"]["name"],
+                "away_team": item["awayTeam"]["name"],
+                "home_score": full_time["home"],
+                "away_score": full_time["away"],
+            })
         enriched_matches.append(item)
 
     return {

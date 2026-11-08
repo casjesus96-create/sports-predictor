@@ -43,6 +43,7 @@ type Match = {
   homeTeam?: { name?: string; shortName?: string; tla?: string; crest?: string; id?: number };
   awayTeam?: { name?: string; shortName?: string; tla?: string; crest?: string; id?: number };
   score?: { winner?: string | null; duration?: string; fullTime?: { home?: number | null; away?: number | null }; halfTime?: { home?: number | null; away?: number | null } };
+  archive_verification_token?: string | null;
   venue?: string;
   referees?: Array<{ name?: string; nationality?: string; type?: string }>;
   prediction?: Prediction;
@@ -1502,6 +1503,8 @@ export default function FootballApp() {
   const [crossLeagueSeasons, setCrossLeagueSeasons] = useState<any>(null);
   const [crossLeagueLoading, setCrossLeagueLoading] = useState(false);
   const [crossLeagueError, setCrossLeagueError] = useState("");
+  const [archiveSavingId, setArchiveSavingId] = useState<number | null>(null);
+  const [archiveMessages, setArchiveMessages] = useState<Record<number, string>>({});
 
 
   useEffect(() => {
@@ -1540,6 +1543,58 @@ export default function FootballApp() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error consultando football-data.org.");
     } finally { setLoading(false); }
+  }
+
+  async function archiveFinishedMatch(match: Match) {
+    const matchId = Number(match.id);
+    const status = String(match.status || "").toUpperCase();
+    const fullTime = match.score?.fullTime;
+    const homeScore = fullTime?.home;
+    const awayScore = fullTime?.away;
+    const supported = ["PL", "PD", "SA", "BL1", "FL1"].includes(competition);
+    if (!supported || status !== "FINISHED" || !match.utcDate ||
+        !match.homeTeam?.name || !match.awayTeam?.name ||
+        !match.archive_verification_token ||
+        !Number.isInteger(homeScore) || !Number.isInteger(awayScore) ||
+        Number(homeScore) < 0 || Number(homeScore) > 30 ||
+        Number(awayScore) < 0 || Number(awayScore) > 30) {
+      setArchiveMessages(current => ({ ...current, [matchId]: "No se puede registrar: faltan datos finales válidos o la liga no pertenece al archivo." }));
+      return;
+    }
+    setArchiveSavingId(matchId);
+    setArchiveMessages(current => ({ ...current, [matchId]: "" }));
+    try {
+      const response = await fetch(`${API}/archive/ingest-finalized`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          match_id: matchId,
+          competition_code: competition,
+          status,
+          utc_date: match.utcDate,
+          home_team: match.homeTeam.name,
+          away_team: match.awayTeam.name,
+          home_score: homeScore,
+          away_score: awayScore,
+          verification_token: match.archive_verification_token,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo incorporar el encuentro al histórico.");
+      setArchiveMessages(current => ({
+        ...current,
+        [matchId]: body.status === "ALREADY_PRESENT"
+          ? "Ya estaba en el histórico. No se creó un duplicado."
+          : "Encuentro incorporado correctamente al histórico propio.",
+      }));
+    } catch (err) {
+      setArchiveMessages(current => ({
+        ...current,
+        [matchId]: err instanceof Error ? err.message : "Error registrando el encuentro.",
+      }));
+    } finally {
+      setArchiveSavingId(null);
+    }
   }
 
   async function loadHistory(statusFilter: "ALL" | "PENDING" | "SETTLED" = historyStatus) {
@@ -1842,6 +1897,13 @@ export default function FootballApp() {
                 <div style={{ fontWeight: 700 }}>{away}</div><small style={{ color: "#9ca3af" }}>{match.awayTeam?.tla || ""}</small>
               </div>
             </div>
+            {String(match.status || "").toUpperCase() === "FINISHED" && ["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <section style={{ margin: "8px 0 12px", padding: 10, border: "1px solid #166534", borderRadius: 8, background: "#071b12" }}>
+              <div style={{ fontSize: 11, color: "#bbf7d0", marginBottom: 7 }}>Resultado final confirmado por la aplicación · incorporación manual al archivo propio</div>
+              <button type="button" onClick={() => archiveFinishedMatch(match)} disabled={archiveSavingId === match.id} style={{ ...buttonStyle, width: "100%", background: "#166534", borderColor: "#4ade80" }}>
+                {archiveSavingId === match.id ? "Validando y guardando…" : "Guardar encuentro en histórico propio"}
+              </button>
+              {archiveMessages[match.id] && <p role="status" style={{ fontSize: 11, color: archiveMessages[match.id].startsWith("No se puede") || archiveMessages[match.id].includes("No se pudo") || archiveMessages[match.id].includes("no se registró") || archiveMessages[match.id].includes("conflicto") ? "#fca5a5" : "#86efac", margin: "7px 0 0" }}>{archiveMessages[match.id]}</p>}
+            </section>}
                 <HeadToHeadPanel competition={competition} match={match} />
                 {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <TeamRecentFormPanel competition={competition} match={match} />}
                 {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <FootballMarketPatternsPanel competition={competition} match={match} />}
