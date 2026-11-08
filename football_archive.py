@@ -14,6 +14,7 @@ import re
 import unicodedata
 from datetime import date, datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 from fastapi import APIRouter, HTTPException, Query
@@ -33,11 +34,11 @@ UPSERT_BATCH_SIZE = 500
 
 # Football-Data.co.uk CSV competition codes for the five major European leagues.
 COMPETITIONS = {
-    "PL": {"name": "Premier League", "country": "England", "source_code": "E0"},
-    "PD": {"name": "LaLiga", "country": "Spain", "source_code": "SP1"},
-    "SA": {"name": "Serie A", "country": "Italy", "source_code": "I1"},
-    "BL1": {"name": "Bundesliga", "country": "Germany", "source_code": "D1"},
-    "FL1": {"name": "Ligue 1", "country": "France", "source_code": "F1"},
+    "PL": {"name": "Premier League", "country": "England", "source_code": "E0", "timezone": "Europe/London"},
+    "PD": {"name": "LaLiga", "country": "Spain", "source_code": "SP1", "timezone": "Europe/Madrid"},
+    "SA": {"name": "Serie A", "country": "Italy", "source_code": "I1", "timezone": "Europe/Rome"},
+    "BL1": {"name": "Bundesliga", "country": "Germany", "source_code": "D1", "timezone": "Europe/Berlin"},
+    "FL1": {"name": "Ligue 1", "country": "France", "source_code": "F1", "timezone": "Europe/Paris"},
 }
 
 
@@ -303,7 +304,8 @@ def _build_app_finalized_payload(payload: AppFinalizedMatchRequest, client) -> d
         raise HTTPException(status_code=422, detail="La fecha debe incluir zona horaria.")
     if kickoff > datetime.now(timezone.utc):
         raise HTTPException(status_code=409, detail="El encuentro tiene una fecha futura; no se puede registrar como finalizado.")
-    match_date = kickoff.date()
+    # Football-Data.co.uk dates are local competition dates, not UTC dates.
+    match_date = kickoff.astimezone(ZoneInfo(COMPETITIONS[competition]["timezone"])).date()
     if match_date.year < 1990:
         raise HTTPException(status_code=422, detail="La fecha del encuentro está fuera del rango histórico admitido.")
 
