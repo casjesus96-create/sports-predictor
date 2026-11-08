@@ -323,6 +323,7 @@ def _build_app_finalized_payload(payload: AppFinalizedMatchRequest, client) -> d
     return {
         "source_key": source_key,
         "source": "APP_FINALIZED",
+        "status": "FINISHED",
         "source_url": f"https://api.football-data.org/v4/matches/{payload.match_id}",
         "competition_code": competition,
         "competition_name": COMPETITIONS[competition]["name"],
