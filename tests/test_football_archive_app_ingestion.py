@@ -88,8 +88,10 @@ def test_app_finalized_payload_requires_confirmed_teams_and_uses_archive_identit
     {"away_score": 31},
 ])
 def test_app_finalized_payload_rejects_nonfinal_or_invalid_match_data(overrides):
-    request = _request(**overrides)
+    # Pydantic rejects impossible score values while constructing the request;
+    # semantic fixture checks (status/date) are rejected by the payload builder.
     with pytest.raises((HTTPException, ValidationError)):
+        request = _request(**overrides)
         _build_app_finalized_payload(request, _Client())
 
 
