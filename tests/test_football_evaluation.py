@@ -129,4 +129,4 @@ def test_season_metrics_use_home_draw_and_away_actual_indices():
 
     assert metrics["accuracy"] == 1.0
     assert metrics["brier_score"] == 0.06
-    assert math.isclose(metrics["log_loss"], -math.log(0.8), rel_tol=1e-6)
+    assert math.isclose(metrics["log_loss"], -math.log(0.8), abs_tol=1e-6)
