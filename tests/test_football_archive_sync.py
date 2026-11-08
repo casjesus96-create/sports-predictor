@@ -13,7 +13,7 @@ def test_archive_sync_honors_manual_historical_range():
 
 def test_archive_sync_can_override_only_one_year_bound():
     assert resolve_year_range("2022", None, current_year=2026) == (2022, 2026)
-    assert resolve_year_range(None, "2024", current_year=2026) == (2025, 2024)
+    assert resolve_year_range(None, "2024", current_year=2026) == (2023, 2024)
 
 
 def test_workflow_refreshes_archive_twice_daily():
