@@ -113,3 +113,20 @@ def test_season_calibration_remains_descriptive_and_requires_independent_dates()
     assert result["independent_dates"] == 12
     assert result["eligible_for_descriptive_comparison"] is True
     assert result["scope"] == "official_model_settled_snapshots_only"
+
+
+def test_season_metrics_use_home_draw_and_away_actual_indices():
+    import math
+    from football_evaluation_api import _season_metrics
+
+    items = [
+        ({"kickoff_at": "2026-08-01T12:00:00Z"}, [0.8, 0.1, 0.1], "home", 0),
+        ({"kickoff_at": "2026-08-02T12:00:00Z"}, [0.1, 0.8, 0.1], "draw", 1),
+        ({"kickoff_at": "2026-08-03T12:00:00Z"}, [0.1, 0.1, 0.8], "away", 2),
+    ]
+
+    metrics = _season_metrics(items)
+
+    assert metrics["accuracy"] == 1.0
+    assert metrics["brier_score"] == 0.06
+    assert math.isclose(metrics["log_loss"], -math.log(0.8), abs_tol=1e-6)

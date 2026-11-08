@@ -370,6 +370,31 @@ def _season_key(kickoff_at: str | None) -> str | None:
     return f"{start_year}-{str(start_year + 1)[-2:]}"
 
 
+def _season_metrics(items: list[tuple]) -> dict:
+    """Compute 1X2 metrics using the numeric actual-outcome index."""
+    n = len(items)
+    if not n:
+        return {"accuracy": None, "brier_score": None, "log_loss": None}
+    eps = 1e-15
+    brier = sum(
+        sum((probabilities[i] - (i == actual_index)) ** 2 for i in range(3))
+        for _, probabilities, _, actual_index in items
+    ) / n
+    log_loss = -sum(
+        math.log(max(eps, probabilities[actual_index]))
+        for _, probabilities, _, actual_index in items
+    ) / n
+    accuracy = sum(
+        max(range(3), key=lambda i: probabilities[i]) == actual_index
+        for _, probabilities, _, actual_index in items
+    ) / n
+    return {
+        "accuracy": round(accuracy, 6),
+        "brier_score": round(brier, 6),
+        "log_loss": round(log_loss, 6),
+    }
+
+
 @router.get("/evaluation/cross-league/seasons")
 def football_cross_league_season_evaluation(
     limit_per_competition: int = Query(5000, ge=100, le=5000),
@@ -410,33 +435,17 @@ def football_cross_league_season_evaluation(
                 total = sum(probabilities)
                 normalized = [value / total for value in probabilities]
                 actual = "home" if home_score > away_score else "away" if home_score < away_score else "draw"
-                by_season[season].append((row, normalized, actual, 0))
+                actual_index = {"home": 0, "draw": 1, "away": 2}[actual]
+                by_season[season].append((row, normalized, actual, actual_index))
 
             seasons = {}
             for season, items in sorted(by_season.items()):
                 calibration = _competition_calibration(
                     items, seed=sum(ord(char) for char in f"{code}:{season}")
                 )
-                n = len(items)
-                brier = sum(
-                    sum((p[i] - (i == actual)) ** 2 for i in range(3))
-                    for _, p, _, actual in items
-                ) / n
-                log_loss = -sum(
-                    math.log(max(1e-15, p[actual]))
-                    for _, p, _, actual in items
-                ) / n
-                accuracy = sum(
-                    max(range(3), key=lambda i: p[i]) == actual
-                    for _, p, _, actual in items
-                ) / n
                 seasons[season] = {
-                    "sample_size": n,
-                    "metrics": {
-                        "accuracy": round(accuracy, 6),
-                        "brier_score": round(brier, 6),
-                        "log_loss": round(log_loss, 6),
-                    },
+                    "sample_size": len(items),
+                    "metrics": _season_metrics(items),
                     "calibration": calibration,
                 }
             result[code] = {
