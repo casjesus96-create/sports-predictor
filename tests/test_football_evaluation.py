@@ -82,3 +82,34 @@ def test_competition_calibration_marks_small_samples_and_missing_dates():
     assert result["eligible_for_descriptive_comparison"] is False
     assert result["outcomes"]["home"]["bias_ci_95"] is None
     assert result["outcomes"]["home"]["interpretation"] == "IC95_NO_ESTIMABLE"
+
+
+
+def test_season_key_uses_july_to_june_boundaries():
+    from football_evaluation_api import _season_key
+
+    assert _season_key("2026-07-01T00:00:00Z") == "2026-27"
+    assert _season_key("2026-11-08T12:00:00Z") == "2026-27"
+    assert _season_key("2027-06-30T23:59:00Z") == "2026-27"
+    assert _season_key("2027-07-01T00:00:00Z") == "2027-28"
+    assert _season_key(None) is None
+    assert _season_key("unknown") is None
+
+
+def test_season_calibration_remains_descriptive_and_requires_independent_dates():
+    from football_evaluation_api import _competition_calibration
+
+    items = []
+    for day in range(12):
+        for match in range(5):
+            items.append((
+                {"kickoff_at": f"2026-08-{day + 1:02d}T12:00:00Z"},
+                [0.50, 0.25, 0.25],
+                ("home", "draw", "away")[(day + match) % 3],
+                0,
+            ))
+    result = _competition_calibration(items, seed=2026)
+    assert result["sample_size"] == 60
+    assert result["independent_dates"] == 12
+    assert result["eligible_for_descriptive_comparison"] is True
+    assert result["scope"] == "official_model_settled_snapshots_only"
