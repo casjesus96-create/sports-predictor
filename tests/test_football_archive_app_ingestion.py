@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -8,7 +6,13 @@ from football_archive import (
     AppFinalizedMatchRequest,
     _build_app_finalized_payload,
     archive_ingest_app_finalized_match,
+    create_app_finalized_verification_token,
 )
+
+
+@pytest.fixture(autouse=True)
+def _signing_secret(monkeypatch):
+    monkeypatch.setenv("FOOTBALL_ARCHIVE_SIGNING_SECRET", "unit-test-signing-secret")
 
 
 def _request(**overrides):
@@ -23,6 +27,8 @@ def _request(**overrides):
         "away_score": 1,
     }
     values.update(overrides)
+    if "verification_token" not in values:
+        values["verification_token"] = create_app_finalized_verification_token(values)
     return AppFinalizedMatchRequest(**values)
 
 
@@ -157,3 +163,11 @@ def test_app_finalized_date_uses_competition_local_calendar_day():
     # 23:30 UTC is 00:30 on July 2 in London during British Summer Time.
     assert payload["match_date"] == "2026-07-02"
     assert payload["season"] == "2627"
+
+
+def test_app_finalized_payload_rejects_tampered_provider_score():
+    request = _request()
+    request.home_score = 3
+    with pytest.raises(HTTPException) as exc:
+        _build_app_finalized_payload(request, _Client())
+    assert exc.value.status_code == 403
