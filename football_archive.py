@@ -248,6 +248,139 @@ def _client_or_503():
         raise HTTPException(status_code=503, detail="El histórico propio no está disponible temporalmente.") from exc
 
 
+class AppFinalizedMatchRequest(BaseModel):
+    match_id: int = Field(gt=0, strict=True)
+    competition_code: str = Field(min_length=2, max_length=8)
+    status: str = Field(min_length=1, max_length=30)
+    utc_date: str = Field(min_length=20, max_length=40)
+    home_team: str = Field(min_length=2, max_length=100)
+    away_team: str = Field(min_length=2, max_length=100)
+    home_score: int = Field(ge=0, le=30, strict=True)
+    away_score: int = Field(ge=0, le=30, strict=True)
+
+
+def _resolve_known_archive_team(client, competition: str, team_name: str) -> str:
+    """Resolve only an exact archive team or an explicitly confirmed alias."""
+    key = normalize_team_key(team_name)
+    if not key:
+        raise HTTPException(status_code=422, detail="Nombre de equipo vacío o no válido.")
+    try:
+        aliases = client.table("football_team_aliases").select(
+            "canonical_team_key"
+        ).eq("competition_code", competition).eq("alias_key", key).limit(2).execute().data or []
+        if len(aliases) > 1:
+            raise HTTPException(status_code=409, detail=f"El nombre '{team_name}' tiene alias ambiguos.")
+        if len(aliases) == 1:
+            return str(aliases[0]["canonical_team_key"])
+        known = client.table("football_archive_teams").select(
+            "canonical_team_key"
+        ).eq("competition_code", competition).eq("canonical_team_key", key).limit(1).execute().data or []
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Could not verify app-finalized team identity")
+        raise HTTPException(status_code=503, detail="No se pudo verificar la identidad de los equipos en el archivo.") from exc
+    if not known:
+        raise HTTPException(
+            status_code=409,
+            detail=f"No se registró '{team_name}': el equipo no tiene identidad confirmada en {competition}. Confirma primero su alias en el Centro de Identidad.",
+        )
+    return key
+
+
+def _build_app_finalized_payload(payload: AppFinalizedMatchRequest, client) -> dict[str, Any]:
+    """Validate a provider fixture before constructing the owned-archive row."""
+    competition = payload.competition_code.strip().upper()
+    if competition not in COMPETITIONS:
+        raise HTTPException(status_code=400, detail="La incorporación manual solo admite las cinco ligas del archivo propio.")
+    if payload.status.strip().upper() != "FINISHED":
+        raise HTTPException(status_code=409, detail="Solo se incorporan encuentros con estado FINISHED confirmado; AWARDED y estados parciales requieren revisión.")
+    try:
+        kickoff = datetime.fromisoformat(payload.utc_date.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="La fecha del encuentro no tiene formato ISO 8601 válido.") from exc
+    if kickoff.tzinfo is None or kickoff.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="La fecha debe incluir zona horaria.")
+    if kickoff > datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="El encuentro tiene una fecha futura; no se puede registrar como finalizado.")
+    match_date = kickoff.date()
+    if match_date.year < 1990:
+        raise HTTPException(status_code=422, detail="La fecha del encuentro está fuera del rango histórico admitido.")
+
+    home_name = payload.home_team.strip()
+    away_name = payload.away_team.strip()
+    home_key = _resolve_known_archive_team(client, competition, home_name)
+    away_key = _resolve_known_archive_team(client, competition, away_name)
+    if not home_key or not away_key or home_key == away_key:
+        raise HTTPException(status_code=422, detail="Los equipos deben ser distintos y tener identidades históricas confirmadas.")
+
+    home_score = payload.home_score
+    away_score = payload.away_score
+    start_year = match_date.year if match_date.month >= 7 else match_date.year - 1
+    season = season_code(start_year)
+    identity = "|".join((SOURCE_NAME, competition, season, match_date.isoformat(), home_key, away_key))
+    source_key = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return {
+        "source_key": source_key,
+        "source": "APP_FINALIZED",
+        "source_url": f"https://api.football-data.org/v4/matches/{payload.match_id}",
+        "competition_code": competition,
+        "competition_name": COMPETITIONS[competition]["name"],
+        "season": season,
+        "match_date": match_date.isoformat(),
+        "home_team": home_name,
+        "home_team_key": home_key,
+        "away_team": away_name,
+        "away_team_key": away_key,
+        "home_score": home_score,
+        "away_score": away_score,
+        "result": "H" if home_score > away_score else "A" if home_score < away_score else "D",
+    }
+
+
+@router.post("/ingest-finalized")
+def archive_ingest_app_finalized_match(payload: AppFinalizedMatchRequest):
+    """Add a verified FINISHED fixture to the owned archive without overwriting existing results."""
+    client = _client_or_503()
+    row = _build_app_finalized_payload(payload, client)
+    try:
+        result = client.rpc("ingest_app_finalized_football_match", {
+            "p_match": row,
+            "p_external_match_id": str(payload.match_id),
+        }).execute()
+        data = result.data or []
+        outcome = data[0] if isinstance(data, list) and data else data if isinstance(data, dict) else {}
+        status = str(outcome.get("status") or "").upper()
+        stored_key = outcome.get("source_key") or row["source_key"]
+    except Exception as exc:
+        logger.exception("Could not ingest app-finalized football match %s", payload.match_id)
+        raise HTTPException(status_code=503, detail="No se pudo guardar el encuentro en el histórico propio.") from exc
+
+    if status == "CONFLICT":
+        raise HTTPException(
+            status_code=409,
+            detail="El archivo ya contiene este encuentro con datos distintos o existe una coincidencia ambigua. No se modificó ningún resultado; la sincronización programada deberá verificarlo.",
+        )
+    if status not in {"INSERTED", "ALREADY_PRESENT"}:
+        logger.error("Unexpected app-finalized archive RPC response: %r", outcome)
+        raise HTTPException(status_code=503, detail="El archivo no confirmó el resultado de la operación.")
+    return {
+        "success": True,
+        "status": status,
+        "source": "APP_FINALIZED",
+        "source_key": stored_key,
+        "inserted": status == "INSERTED",
+        "already_present": status == "ALREADY_PRESENT",
+        "archive_updated": False,
+        "message": (
+            "Encuentro incorporado al histórico propio."
+            if status == "INSERTED"
+            else "El encuentro ya estaba archivado; no se creó un duplicado ni se sobrescribió el resultado."
+        ),
+        "provider_calls": 0,
+        "model_changed": False,
+    }
+
 
 class TeamAliasRequest(BaseModel):
     competition_code: str = Field(min_length=2, max_length=8)
