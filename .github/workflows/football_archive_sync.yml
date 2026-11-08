@@ -12,7 +12,8 @@ on:
         required: true
         default: "2026"
   schedule:
-    - cron: "17 5 * * 1"
+    - cron: "17 5 * * *"
+    - cron: "17 15 * * *"
 
 permissions:
   contents: read
@@ -34,6 +35,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          FOOTBALL_ARCHIVE_START_YEAR: ${{ github.event.inputs.start_year || '2025' }}
-          FOOTBALL_ARCHIVE_END_YEAR: ${{ github.event.inputs.end_year || '2026' }}
+          FOOTBALL_ARCHIVE_START_YEAR: ${{ github.event.inputs.start_year || '' }}
+          FOOTBALL_ARCHIVE_END_YEAR: ${{ github.event.inputs.end_year || '' }}
         run: python sync_football_archive.py
