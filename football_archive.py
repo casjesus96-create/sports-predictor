@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import hmac
+import json
 import io
 import logging
 import os
@@ -31,6 +33,45 @@ SOURCE_NAME = "football-data.co.uk"
 SOURCE_BASE_URL = "https://www.football-data.co.uk/mmz4281"
 REQUEST_TIMEOUT_SECONDS = 30
 UPSERT_BATCH_SIZE = 500
+
+
+def _app_archive_signature_secret() -> str:
+    return (
+        os.getenv("FOOTBALL_ARCHIVE_SIGNING_SECRET", "").strip()
+        or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    )
+
+
+def _app_archive_signature_payload(values: dict[str, Any]) -> str:
+    signed = {
+        "match_id": int(values["match_id"]),
+        "competition_code": str(values["competition_code"]).strip().upper(),
+        "status": str(values["status"]).strip().upper(),
+        "utc_date": str(values["utc_date"]).strip(),
+        "home_team": str(values["home_team"]).strip(),
+        "away_team": str(values["away_team"]).strip(),
+        "home_score": int(values["home_score"]),
+        "away_score": int(values["away_score"]),
+    }
+    return json.dumps(signed, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def create_app_finalized_verification_token(values: dict[str, Any]) -> str | None:
+    """Sign the exact fixture returned by our backend without another provider request."""
+    secret = _app_archive_signature_secret()
+    if not secret:
+        return None
+    message = _app_archive_signature_payload(values).encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def verify_app_finalized_verification_token(values: dict[str, Any], token: str) -> bool:
+    secret = _app_archive_signature_secret()
+    if not secret or not token:
+        return False
+    expected = create_app_finalized_verification_token(values)
+    return bool(expected and hmac.compare_digest(expected, str(token)))
+
 
 # Football-Data.co.uk CSV competition codes for the five major European leagues.
 COMPETITIONS = {
@@ -258,6 +299,7 @@ class AppFinalizedMatchRequest(BaseModel):
     away_team: str = Field(min_length=2, max_length=100)
     home_score: int = Field(ge=0, le=30, strict=True)
     away_score: int = Field(ge=0, le=30, strict=True)
+    verification_token: str = Field(min_length=64, max_length=64)
 
 
 def _resolve_known_archive_team(client, competition: str, team_name: str) -> str:
@@ -291,6 +333,18 @@ def _resolve_known_archive_team(client, competition: str, team_name: str) -> str
 
 def _build_app_finalized_payload(payload: AppFinalizedMatchRequest, client) -> dict[str, Any]:
     """Validate a provider fixture before constructing the owned-archive row."""
+    signed_values = {
+        "match_id": payload.match_id,
+        "competition_code": payload.competition_code,
+        "status": payload.status,
+        "utc_date": payload.utc_date,
+        "home_team": payload.home_team,
+        "away_team": payload.away_team,
+        "home_score": payload.home_score,
+        "away_score": payload.away_score,
+    }
+    if not verify_app_finalized_verification_token(signed_values, payload.verification_token):
+        raise HTTPException(status_code=403, detail="La verificación del encuentro no es válida o ha caducado por rotación de credenciales. Actualiza los partidos y vuelve a intentarlo.")
     competition = payload.competition_code.strip().upper()
     if competition not in COMPETITIONS:
         raise HTTPException(status_code=400, detail="La incorporación manual solo admite las cinco ligas del archivo propio.")
