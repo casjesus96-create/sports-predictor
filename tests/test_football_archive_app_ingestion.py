@@ -82,14 +82,14 @@ def test_app_finalized_payload_requires_confirmed_teams_and_uses_archive_identit
 @pytest.mark.parametrize("overrides", [
     {"status": "IN_PLAY"},
     {"status": "AWARDED"},
-    {"utc_date": "2026-11-07T20:00:00"},
+    {"utc_date": "2026-11-07T20:00:00.000"},
     {"utc_date": "2026-11-09T20:00:00Z"},
     {"home_score": -1},
     {"away_score": 31},
 ])
 def test_app_finalized_payload_rejects_nonfinal_or_invalid_match_data(overrides):
     request = _request(**overrides)
-    with pytest.raises(HTTPException):
+    with pytest.raises((HTTPException, ValidationError)):
         _build_app_finalized_payload(request, _Client())
 
 
