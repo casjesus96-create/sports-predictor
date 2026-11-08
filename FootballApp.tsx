@@ -1498,6 +1498,10 @@ export default function FootballApp() {
   const [historyError, setHistoryError] = useState("");
   const [historyStatus, setHistoryStatus] = useState<"ALL" | "PENDING" | "SETTLED">("ALL");
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
+  const [crossLeagueComparison, setCrossLeagueComparison] = useState<any>(null);
+  const [crossLeagueSeasons, setCrossLeagueSeasons] = useState<any>(null);
+  const [crossLeagueLoading, setCrossLeagueLoading] = useState(false);
+  const [crossLeagueError, setCrossLeagueError] = useState("");
 
 
   useEffect(() => {
@@ -1557,6 +1561,25 @@ export default function FootballApp() {
     } catch (err: unknown) {
       setHistoryError(err instanceof Error ? err.message : "Error consultando el historial persistente.");
     } finally { setHistoryLoading(false); }
+  }
+
+  async function loadCrossLeagueComparison() {
+    setCrossLeagueLoading(true); setCrossLeagueError("");
+    try {
+      const [overallResponse, seasonResponse] = await Promise.all([
+        fetch(API + "/evaluation/cross-league"),
+        fetch(API + "/evaluation/cross-league/seasons"),
+      ]);
+      const [overallBody, seasonBody] = await Promise.all([
+        overallResponse.json(), seasonResponse.json(),
+      ]);
+      if (!overallResponse.ok) throw new Error(overallBody.detail || "No se pudo comparar la calibración entre ligas.");
+      if (!seasonResponse.ok) throw new Error(seasonBody.detail || "No se pudo consultar la estabilidad por temporada.");
+      setCrossLeagueComparison(overallBody);
+      setCrossLeagueSeasons(seasonBody);
+    } catch (err: unknown) {
+      setCrossLeagueError(err instanceof Error ? err.message : "Error consultando la comparación entre ligas.");
+    } finally { setCrossLeagueLoading(false); }
   }
 
   async function loadBacktest() {
@@ -1700,13 +1723,56 @@ export default function FootballApp() {
       {view === "history" && <section style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <div><h2 style={{ margin: 0 }}>Historial de predicciones guardadas</h2><p style={{ color: "#9ca3af", fontSize: 12, margin: "5px 0 0" }}>Snapshots originales e inmutables del modelo oficial · {selectedLeague.name}</p></div>
-          <button type="button" onClick={() => loadHistory()} disabled={historyLoading} style={buttonStyle}>{historyLoading ? "Actualizando…" : "Actualizar"}</button>
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+            <button type="button" onClick={loadCrossLeagueComparison} disabled={crossLeagueLoading} style={buttonStyle}>{crossLeagueLoading ? "Comparando…" : "Comparar cinco ligas"}</button>
+            <button type="button" onClick={() => loadHistory()} disabled={historyLoading} style={buttonStyle}>{historyLoading ? "Actualizando…" : "Actualizar"}</button>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
           {(["ALL", "PENDING", "SETTLED"] as const).map((status) => <button key={status} type="button" onClick={() => { setHistoryStatus(status); loadHistory(status); }} style={{ ...buttonStyle, background: historyStatus === status ? "#0f766e" : "#1f2937" }}>{status === "ALL" ? "Todos" : status === "PENDING" ? "Pendientes" : "Liquidados"}</button>)}
           <button type="button" onClick={() => { setView("games"); loadData("games"); }} style={{ ...buttonStyle, background: "#334155" }}>Volver a partidos</button>
         </div>
         {historyError && <p role="alert" style={{ color: "#fecaca" }}>{historyError}</p>}
+        {crossLeagueError && <p role="alert" style={{ color: "#fecaca" }}>{crossLeagueError}</p>}
+        {crossLeagueComparison && crossLeagueSeasons && <section style={{ margin: "12px 0", padding: 12, borderRadius: 8, background: "#172033" }}>
+          <h3 style={{ margin: "0 0 6px" }}>Calibración 1X2 · cinco ligas y estabilidad estacional</h3>
+          <p style={{ color: "#9ca3af", fontSize: 11, margin: "0 0 10px" }}>
+            Modelo oficial · solo predicciones liquidadas · ventana común: ${crossLeagueComparison.common_date_window?.date_start || "—"} a ${crossLeagueComparison.common_date_window?.date_end || "—"}.
+            La temporada se aproxima por calendario julio-junio; no es un identificador oficial de competición.
+          </p>
+          {Object.entries(crossLeagueComparison.competitions || {}).map(([code, data]: [string, any]) => {
+            const seasonData = crossLeagueSeasons.competitions?.[code]?.seasons || {};
+            const overall = data.calibration?.outcomes || {};
+            return <article key={code} style={{ marginTop: 10, padding: 10, border: "1px solid #475569", borderRadius: 8 }}>
+              <strong>{code} · {data.sample_size || 0} partidos en ventana común</strong>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 6, marginTop: 8 }}>
+                {(["home", "draw", "away"] as const).map((outcome) => {
+                  const item = overall[outcome];
+                  return <div key={outcome} style={{ background: "#0b1220", padding: 7, borderRadius: 6, fontSize: 11 }}>
+                    <div>{outcome === "home" ? "Local" : outcome === "draw" ? "Empate" : "Visitante"}</div>
+                    <strong>{typeof item?.bias === "number" ? (item.bias > 0 ? "+" : "") + (item.bias * 100).toFixed(2) + " pp" : "—"}</strong>
+                    <div style={{ color: "#9ca3af" }}>{item?.interpretation || "Sin datos"}</div>
+                  </div>;
+                })}
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11 }}>
+                <strong>Por temporada</strong>
+                {Object.keys(seasonData).length === 0 && <p style={{ color: "#fbbf24" }}>Sin snapshots oficiales para mostrar temporadas.</p>}
+                {Object.entries(seasonData).map(([season, detail]: [string, any]) => <div key={season} style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid #334155" }}>
+                  <strong>{season}</strong> · {detail.sample_size} partidos · Accuracy {percent(detail.metrics?.accuracy)} · Brier {typeof detail.metrics?.brier_score === "number" ? detail.metrics.brier_score.toFixed(4) : "—"} · Log Loss {typeof detail.metrics?.log_loss === "number" ? detail.metrics.log_loss.toFixed(4) : "—"}
+                  <div style={{ color: detail.calibration?.eligible_for_descriptive_comparison ? "#86efac" : "#fbbf24" }}>
+                    {detail.calibration?.eligible_for_descriptive_comparison ? "Muestra elegible para análisis descriptivo" : "Muestra insuficiente · " + (detail.calibration?.sample_size || 0) + " partidos / " + (detail.calibration?.independent_dates || 0) + " fechas"}
+                  </div>
+                  <div style={{ color: "#9ca3af" }}>Sesgo L/E/V: {(["home", "draw", "away"] as const).map((outcome) => {
+                    const bias = detail.calibration?.outcomes?.[outcome]?.bias;
+                    return (outcome === "home" ? "L " : outcome === "draw" ? "E " : "V ") + (typeof bias === "number" ? (bias > 0 ? "+" : "") + (bias * 100).toFixed(2) + " pp" : "—");
+                  }).join(" · ")}</div>
+                </div>)}
+              </div>
+            </article>;
+          })}
+          <p style={{ color: "#9ca3af", fontSize: 11, marginBottom: 0 }}>Sesgo = probabilidad media pronosticada menos frecuencia observada. Los intervalos agrupados por fecha describen incertidumbre; no prueban causalidad ni justifican recalibración. No se modifican las predicciones oficiales.</p>
+        </section>}
         {historyEvaluation && <section style={{ margin: "12px 0", padding: 11, borderRadius: 8, background: "#172033" }}>
           <strong>Rendimiento del modelo oficial · {historyEvaluation.sample_size ?? 0} partidos liquidados</strong>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, marginTop: 8 }}>

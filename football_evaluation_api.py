@@ -356,3 +356,110 @@ def football_cross_league_evaluation(
             status_code=503,
             detail="No fue posible comparar la calibración 1X2 entre las cinco ligas.",
         ) from exc
+
+def _season_key(kickoff_at: str | None) -> str | None:
+    """Approximate European season as July-June from the stored kickoff date."""
+    value = str(kickoff_at or "")
+    if len(value) < 7:
+        return None
+    try:
+        year, month = int(value[:4]), int(value[5:7])
+    except ValueError:
+        return None
+    start_year = year if month >= 7 else year - 1
+    return f"{start_year}-{str(start_year + 1)[-2:]}"
+
+
+@router.get("/evaluation/cross-league/seasons")
+def football_cross_league_season_evaluation(
+    limit_per_competition: int = Query(5000, ge=100, le=5000),
+):
+    """Describe official-model 1X2 calibration by competition and July-June season."""
+    try:
+        client = get_supabase_client()
+        result = {}
+        for code in CROSS_LEAGUE_CODES:
+            rows = (
+                client.table("football_prediction_snapshots")
+                .select("provider_match_id,competition_code,model_version,kickoff_at,home_probability,draw_probability,away_probability,actual_home_score,actual_away_score,result_status")
+                .eq("result_status", "SETTLED")
+                .eq("model_version", MODEL_VERSION)
+                .eq("competition_code", code)
+                .order("kickoff_at", desc=True)
+                .limit(limit_per_competition)
+                .execute().data or []
+            )
+            by_season = defaultdict(list)
+            skipped = 0
+            for row in rows:
+                season = _season_key(row.get("kickoff_at"))
+                probabilities = [_number(row.get(key)) for key in (
+                    "home_probability", "draw_probability", "away_probability"
+                )]
+                home_score = _number(row.get("actual_home_score"))
+                away_score = _number(row.get("actual_away_score"))
+                if (
+                    season is None
+                    or any(value is None or value < 0 or value > 1 for value in probabilities)
+                    or abs(sum(probabilities) - 1.0) > 0.02
+                    or home_score is None or away_score is None
+                    or home_score < 0 or away_score < 0
+                ):
+                    skipped += 1
+                    continue
+                total = sum(probabilities)
+                normalized = [value / total for value in probabilities]
+                actual = "home" if home_score > away_score else "away" if home_score < away_score else "draw"
+                by_season[season].append((row, normalized, actual, 0))
+
+            seasons = {}
+            for season, items in sorted(by_season.items()):
+                calibration = _competition_calibration(
+                    items, seed=sum(ord(char) for char in f"{code}:{season}")
+                )
+                n = len(items)
+                brier = sum(
+                    sum((p[i] - (i == actual)) ** 2 for i in range(3))
+                    for _, p, _, actual in items
+                ) / n
+                log_loss = -sum(
+                    math.log(max(1e-15, p[actual]))
+                    for _, p, _, actual in items
+                ) / n
+                accuracy = sum(
+                    max(range(3), key=lambda i: p[i]) == actual
+                    for _, p, _, actual in items
+                ) / n
+                seasons[season] = {
+                    "sample_size": n,
+                    "metrics": {
+                        "accuracy": round(accuracy, 6),
+                        "brier_score": round(brier, 6),
+                        "log_loss": round(log_loss, 6),
+                    },
+                    "calibration": calibration,
+                }
+            result[code] = {
+                "season_count": len(seasons),
+                "skipped_rows": skipped,
+                "seasons": seasons,
+            }
+
+        return {
+            "success": True,
+            "read_only": True,
+            "source": "football_prediction_snapshots",
+            "model_version": MODEL_VERSION,
+            "competitions": result,
+            "season_method": "Aproximación calendario julio-junio derivada de kickoff_at; no sustituye un identificador oficial de temporada.",
+            "minimum_matches": MIN_CROSS_LEAGUE_MATCHES,
+            "minimum_independent_dates": MIN_CROSS_LEAGUE_DATES,
+            "interpretation": "Cada temporada se evalúa dentro de su liga. Las muestras no elegibles se muestran, pero no permiten conclusiones comparativas. No se ajusta el modelo.",
+            "automatic_recalibration": False,
+            "limit_per_competition": limit_per_competition,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible evaluar la estabilidad estacional de la calibración 1X2.",
+        ) from exc
