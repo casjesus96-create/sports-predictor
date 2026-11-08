@@ -146,3 +146,13 @@ def test_app_finalized_endpoint_rejects_conflicting_existing_result(monkeypatch)
     with pytest.raises(HTTPException) as exc:
         archive_ingest_app_finalized_match(_request())
     assert exc.value.status_code == 409
+
+
+def test_app_finalized_date_uses_competition_local_calendar_day():
+    payload = _build_app_finalized_payload(
+        _request(utc_date="2026-07-01T23:30:00Z"),
+        _Client(),
+    )
+    # 23:30 UTC is 00:30 on July 2 in London during British Summer Time.
+    assert payload["match_date"] == "2026-07-02"
+    assert payload["season"] == "2627"
