@@ -5,6 +5,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -77,6 +78,104 @@ def _binary_market_metrics(items: list[dict[str, Any]], probability_key: str, ac
             "calibration_bins": bins}
 
 
+
+SEGMENT_MINIMUM_SAMPLE = 30
+
+
+def _football_season(kickoff_at: Any, competition_code: str) -> str | None:
+    """Assign a fixture to a July-to-June season using the competition's local date."""
+    try:
+        from football_archive import COMPETITIONS
+        config = COMPETITIONS.get(str(competition_code or "").upper())
+        if not config:
+            return None
+        parsed = datetime.fromisoformat(str(kickoff_at).replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        local_date = parsed.astimezone(ZoneInfo(config["timezone"])).date()
+        start_year = local_date.year if local_date.month >= 7 else local_date.year - 1
+        return f"{start_year}/{str(start_year + 1)[-2:]}"
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def _segmented_calibration_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return metrics only when the relevant segment has a defensible minimum N."""
+    n = len(items)
+    eligible = n >= SEGMENT_MINIMUM_SAMPLE
+    outcomes = {}
+    for key, probability_key, actual_key in (
+        ("home", "home_p", "actual_home"),
+        ("draw", "draw_p", "actual_draw"),
+        ("away", "away_p", "actual_away"),
+    ):
+        metric = _binary_market_metrics(items, probability_key, actual_key)
+        outcomes[key] = {
+            "sample_size": metric["sample_size"],
+            "eligible": metric["sample_size"] >= SEGMENT_MINIMUM_SAMPLE,
+            "metrics": metric if metric["sample_size"] >= SEGMENT_MINIMUM_SAMPLE else None,
+        }
+
+    markets = {}
+    for key, probability_key, actual_key in (
+        ("btts_yes", "btts_p", "actual_btts"),
+        ("over_2_5", "over25_p", "actual_over25"),
+    ):
+        metric = _binary_market_metrics(items, probability_key, actual_key)
+        markets[key] = {
+            "sample_size": metric["sample_size"],
+            "eligible": metric["sample_size"] >= SEGMENT_MINIMUM_SAMPLE,
+            "metrics": metric if metric["sample_size"] >= SEGMENT_MINIMUM_SAMPLE else None,
+        }
+
+    multiclass = None
+    if eligible:
+        multiclass = {
+            "accuracy": round(sum(item["correct"] for item in items) / n, 5),
+            "brier_score": round(sum(item["brier"] for item in items) / n, 5),
+            "log_loss": round(sum(item["log_loss"] for item in items) / n, 5),
+        }
+    return {
+        "sample_size": n,
+        "minimum_sample": SEGMENT_MINIMUM_SAMPLE,
+        "eligible": eligible,
+        "metrics": multiclass,
+        "outcomes": outcomes,
+        "markets": markets,
+        "status": "EVALUABLE" if eligible else "INSUFFICIENT_SAMPLE",
+    }
+
+
+def _build_segmented_calibration(valid: list[dict[str, Any]]) -> dict[str, Any]:
+    by_competition: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_season: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    excluded_missing_season = 0
+    for item in valid:
+        row = item["row"]
+        competition = str(row.get("competition_code") or "").strip().upper()
+        season = _football_season(row.get("kickoff_at"), competition)
+        if not competition or not season:
+            excluded_missing_season += 1
+            continue
+        by_competition[competition].append(item)
+        by_season[(competition, season)].append(item)
+
+    return {
+        "minimum_sample": SEGMENT_MINIMUM_SAMPLE,
+        "season_definition": "Temporada local julio–junio; la fecha de inicio se calcula con la zona horaria oficial de cada competición.",
+        "by_competition": [
+            {"competition": code, **_segmented_calibration_summary(items)}
+            for code, items in sorted(by_competition.items())
+        ],
+        "by_season": [
+            {"competition": code, "season": season, **_segmented_calibration_summary(items)}
+            for (code, season), items in sorted(by_season.items())
+        ],
+        "excluded_missing_competition_or_season": excluded_missing_season,
+        "read_only": True,
+        "model_changed": False,
+    }
+
 def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str | None = None) -> dict[str, Any]:
     """Score immutable settled official snapshots and expose descriptive error patterns."""
     valid = []
@@ -115,6 +214,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "actual_btts": actual_btts, "actual_over25": actual_over25,
             "home_p": probs["HOME"], "draw_p": probs["DRAW"], "away_p": probs["AWAY"],
             "actual_home": actual == "HOME", "actual_draw": actual == "DRAW", "actual_away": actual == "AWAY",
+            "btts_p": btts_p, "over25_p": over25_p,
         })
 
     n = len(valid)
@@ -128,6 +228,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
                                    "over_2_5": _binary_market_metrics([], "over25_p", "actual_over25")},
             "outcome_calibration": {"sample_size": 0, "multiclass_brier_score": None, "multiclass_log_loss": None,
                                     "outcomes": {key.lower(): _binary_market_metrics([], f"{key.lower()}_p", f"actual_{key.lower()}") for key in OUTCOMES}},
+            "segmented_calibration": _build_segmented_calibration([]),
             "signals": [
                 "Todavía no hay suficientes snapshots oficiales liquidados y válidos para extraer patrones."
             ],
@@ -231,6 +332,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
         "confidence_bands": bands, "surprises": surprises, "signals": signals,
         "market_calibration": {"btts_yes": btts_report, "over_2_5": over25_report},
         "outcome_calibration": outcome_calibration,
+        "segmented_calibration": _build_segmented_calibration(valid),
         "data_scope": "Solo snapshots oficiales inmutables FOOTBALL-POISSON-0.5.0 con resultado SETTLED; no usa resultados sin pronóstico prepartido.",
         "learning_policy": "Aprendizaje diagnóstico: mide errores, calibración, sorpresas y residuos de goles. No entrena, recalibra ni modifica probabilidades oficiales.",
         "model_changed": False, "snapshots_written": 0, "provider_calls": 0,
