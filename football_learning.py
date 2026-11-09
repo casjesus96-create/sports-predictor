@@ -387,3 +387,69 @@ def football_postmatch_learning(
         import logging
         logging.getLogger(__name__).exception("Could not build football post-match learning report")
         raise HTTPException(status_code=503, detail="No se pudo construir el diagnóstico postpartido del fútbol.") from exc
+
+
+
+@router.get("/baseline-comparison")
+def football_baseline_comparison(
+    competition: str = Query(..., min_length=2, max_length=8),
+):
+    """Compare official settled snapshots with two pre-match historical baselines."""
+    try:
+        from football_archive import COMPETITIONS
+        from football_baselines import build_baseline_comparison
+
+        code = competition.strip().upper()
+        config = COMPETITIONS.get(code)
+        if not config:
+            raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+
+        client = get_supabase_client()
+        snapshot_rows = []
+        snapshot_limit = 5000
+        page_size = 1000
+        for offset in range(0, snapshot_limit, page_size):
+            query = client.table("football_prediction_snapshots").select(
+                "provider_match_id,competition_code,kickoff_at,home_team,away_team,model_version,"
+                "home_probability,draw_probability,away_probability,prediction_payload,"
+                "result_status,actual_home_score,actual_away_score,actual_outcome"
+            ).eq("competition_code", code).eq("model_version", MODEL_VERSION).eq("result_status", "SETTLED")
+            page = query.order("kickoff_at", desc=False).range(offset, offset + page_size - 1).execute().data or []
+            snapshot_rows.extend(page)
+            if len(page) < page_size:
+                break
+
+        archive_rows = []
+        archive_limit = 12000
+        for offset in range(0, archive_limit, page_size):
+            query = client.table("football_match_archive").select(
+                "match_date,home_team,home_team_key,away_team,away_team_key,home_score,away_score"
+            ).eq("competition_code", code)
+            page = query.order("match_date", desc=False).range(offset, offset + page_size - 1).execute().data or []
+            archive_rows.extend(page)
+            if len(page) < page_size:
+                break
+
+        alias_rows = client.table("football_team_aliases").select(
+            "alias_key,canonical_team_key"
+        ).eq("competition_code", code).limit(5000).execute().data or []
+        team_aliases = {
+            str(row["alias_key"]): str(row["canonical_team_key"])
+            for row in alias_rows
+            if row.get("alias_key") and row.get("canonical_team_key")
+        }
+
+        report = build_baseline_comparison(
+            snapshot_rows, archive_rows, code, config["timezone"],
+            team_aliases=team_aliases,
+            snapshot_truncated=len(snapshot_rows) >= snapshot_limit,
+            archive_truncated=len(archive_rows) >= archive_limit,
+        )
+        report["snapshot_rows_returned"] = len(snapshot_rows)
+        return report
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Could not compare official football forecasts with historical baselines")
+        raise HTTPException(status_code=503, detail="No se pudo completar la comparación con las líneas base históricas.") from exc

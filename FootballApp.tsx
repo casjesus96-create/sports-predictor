@@ -1573,6 +1573,23 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [baselineReport, setBaselineReport] = useState<any>(null);
+  const [baselineLoading, setBaselineLoading] = useState(false);
+  const [baselineError, setBaselineError] = useState("");
+
+  async function loadBaselineComparison() {
+    setBaselineLoading(true); setBaselineError(""); setBaselineReport(null);
+    try {
+      const response = await fetch(`${API}/learning/baseline-comparison?competition=${encodeURIComponent(competition)}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo comparar con las líneas base.");
+      setBaselineReport(body);
+    } catch (err) {
+      setBaselineError(err instanceof Error ? err.message : "Error comparando las líneas base históricas.");
+    } finally { setBaselineLoading(false); }
+  }
+
+  useEffect(() => { setBaselineReport(null); setBaselineError(""); }, [competition]);
 
   async function loadReport() {
     setLoading(true); setError("");
@@ -1601,7 +1618,10 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
       <div><h2 style={{ margin: 0 }}>🧠 Aprendizaje postpartido · {competition}</h2>
         <p style={{ color: "#9ca3af", fontSize: 12, margin: "5px 0" }}>Auditoría de pronósticos oficiales ya liquidados. Detecta sorpresas, sobreconfianza y errores en goles esperados.</p>
       </div>
-      <button type="button" onClick={loadReport} disabled={loading} style={{ ...buttonStyle, background: "#155e75" }}>{loading ? "Analizando…" : "Actualizar diagnóstico"}</button>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" onClick={loadReport} disabled={loading} style={{ ...buttonStyle, background: "#155e75" }}>{loading ? "Analizando…" : "Actualizar diagnóstico"}</button>
+        <button type="button" onClick={loadBaselineComparison} disabled={baselineLoading} style={{ ...buttonStyle, background: "#6d28d9" }}>{baselineLoading ? "Comparando…" : "Comparar con líneas base"}</button>
+      </div>
     </div>
     {error && <p role="alert" style={{ color: "#fecaca" }}>{error}</p>}
     {loading && !report && <p style={{ color: "#cbd5e1" }}>Analizando snapshots oficiales liquidados…</p>}
@@ -1672,6 +1692,70 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
       <ul style={{ color: "#cbd5e1", paddingLeft: 20 }}>{(report.signals || []).map((signal: string, index: number) => <li key={index} style={{ marginBottom: 5 }}>{signal}</li>)}</ul>
       <p style={{ color: "#fbbf24", fontSize: 12, marginBottom: 0 }}>Diagnóstico descriptivo, no explicación causal. No modifica ni recalibra el modelo; no escribe snapshots y no realiza llamadas a proveedores. Para atribuir causas harán falta variables prepartido adicionales guardadas de forma consistente.</p>
     </>}
+    {baselineError && <p role="alert" style={{ color: "#fecaca" }}>{baselineError}</p>}
+    {baselineLoading && <p style={{ color: "#cbd5e1" }}>Comparando snapshots oficiales con antecedentes históricos anteriores a cada corte…</p>}
+    {baselineReport && (() => {
+      const renderSlice = (title: string, slice: any) => {
+        const oneXTwo = slice?.one_x_two || {};
+        const metricRows = [
+          { label: "Modelo oficial", value: oneXTwo.official_model },
+          { label: "Frecuencia histórica de liga", value: oneXTwo.league_frequency_baseline },
+          { label: "Forma reciente local/visitante", value: oneXTwo.recent_form_baseline },
+        ];
+        const renderMarket = (key: string, comparison: any) => {
+          const label = key === "btts_yes" ? "Ambos equipos marcan · Sí" : "Más de 2.5 goles";
+          const rows = [
+            { label: "Modelo oficial", value: comparison?.official_model },
+            { label: "Frecuencia histórica de liga", value: comparison?.league_frequency_baseline },
+            { label: "Forma reciente local/visitante", value: comparison?.recent_form_baseline },
+          ];
+          const ci = comparison?.paired_delta_ci_95 || {};
+          const formatInterval = (value: any) => Array.isArray(value) ? `[${value[0]}, ${value[1]}]` : "no estimable";
+          return <div key={key} style={{ padding: 9, borderRadius: 8, background: "#111827", marginTop: 8 }}>
+            <strong>{label} · N emparejada: {comparison?.sample_size ?? 0}</strong>
+            <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Referencia</th><th style={cellStyle}>Acierto</th><th style={cellStyle}>Brier ↓</th><th style={cellStyle}>Log Loss ↓</th></tr></thead>
+              <tbody>{rows.map((row) => <tr key={row.label}>
+                <td style={cellStyle}>{row.label}</td>
+                <td style={cellStyle}>{percent(row.value?.accuracy)}</td>
+                <td style={cellStyle}>{typeof row.value?.brier_score === "number" ? row.value.brier_score.toFixed(4) : "—"}</td>
+                <td style={cellStyle}>{typeof row.value?.log_loss === "number" ? row.value.log_loss.toFixed(4) : "—"}</td>
+              </tr>)}</tbody>
+            </table></div>
+            <p style={{ color: "#cbd5e1", fontSize: 10, marginBottom: 0 }}>IC95% Δ Brier oficial − liga: {formatInterval(ci.vs_league?.brier_score)} · oficial − forma: {formatInterval(ci.vs_recent?.brier_score)}</p>
+          </div>;
+        };
+        const deltaLeague = oneXTwo.delta_official_minus_league || {};
+        const deltaRecent = oneXTwo.delta_official_minus_recent || {};
+        const deltaText = (label: string, delta: any, interval: any) => `${label}: Δ Brier ${typeof delta.brier_score === "number" ? delta.brier_score.toFixed(4) : "—"} · IC95% [${interval?.brier_score?.[0] ?? "—"}, ${interval?.brier_score?.[1] ?? "—"}] · Δ Log Loss ${typeof delta.log_loss === "number" ? delta.log_loss.toFixed(4) : "—"} · IC95% [${interval?.log_loss?.[0] ?? "—"}, ${interval?.log_loss?.[1] ?? "—"}] · Δ acierto ${typeof delta.accuracy === "number" ? `${delta.accuracy > 0 ? "+" : ""}${(delta.accuracy * 100).toFixed(2)} pp` : "—"}`;
+        return <div key={title} style={{ marginTop: 12, padding: 10, borderRadius: 8, background: "#0b1220", border: "1px solid #475569" }}>
+          <h4 style={{ margin: "0 0 6px" }}>{title}</h4>
+          <p style={{ color: "#cbd5e1", fontSize: 11, margin: "4px 0" }}>Objetivos oficiales válidos: {slice?.official_valid_targets ?? 0} · Comparación 1X2 emparejada: {oneXTwo?.sample_size ?? 0} · Elegibles por frecuencia de liga: {slice?.league_baseline_eligible_targets ?? 0} · Elegibles por forma reciente: {slice?.recent_form_baseline_eligible_targets ?? 0}</p>
+          <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+            <thead><tr><th style={cellStyle}>Referencia 1X2</th><th style={cellStyle}>Acierto</th><th style={cellStyle}>Brier ↓</th><th style={cellStyle}>Log Loss ↓</th></tr></thead>
+            <tbody>{metricRows.map((row) => <tr key={row.label}>
+              <td style={cellStyle}>{row.label}</td>
+              <td style={cellStyle}>{percent(row.value?.accuracy)}</td>
+              <td style={cellStyle}>{typeof row.value?.brier_score === "number" ? row.value.brier_score.toFixed(4) : "—"}</td>
+              <td style={cellStyle}>{typeof row.value?.log_loss === "number" ? row.value.log_loss.toFixed(4) : "—"}</td>
+            </tr>)}</tbody>
+          </table></div>
+          <p style={{ color: "#cbd5e1", fontSize: 11, margin: "6px 0" }}>{deltaText("Oficial − liga", deltaLeague, oneXTwo.paired_delta_ci_95?.vs_league)}<br />{deltaText("Oficial − forma reciente", deltaRecent, oneXTwo.paired_delta_ci_95?.vs_recent)}</p>
+          {renderMarket("btts_yes", slice?.markets?.btts_yes)}
+          {renderMarket("over_2_5", slice?.markets?.over_2_5)}
+        </div>;
+      };
+      return <section style={{ marginTop: 14, padding: 11, borderRadius: 10, background: "#111827", border: "1px solid #7c3aed" }}>
+        <h3 style={{ margin: 0 }}>⚖️ Modelo oficial frente a líneas base históricas · {competition}</h3>
+        <p style={{ color: "#cbd5e1", fontSize: 11 }}>Snapshots oficiales liquidados · Modelo {baselineReport.model_version} · Archivo propio · Solo información anterior al partido · Sin cuotas ni llamadas a proveedores.</p>
+        <p style={{ color: "#cbd5e1", fontSize: 11 }}>Muestra oficial: {baselineReport.snapshot_sample_size ?? 0} · Archivo histórico: {baselineReport.archive_history_rows ?? 0} · Excluidos por datos inválidos: {baselineReport.excluded_invalid_snapshots ?? 0}.</p>
+        {baselineReport.snapshots_truncated && <p style={{ color: "#fbbf24", fontSize: 11 }}>Aviso: la consulta alcanzó el límite de snapshots; la muestra puede estar truncada.</p>}
+        {baselineReport.history_truncated && <p style={{ color: "#fbbf24", fontSize: 11 }}>Aviso: el archivo alcanzó el límite de historial; la cobertura puede estar truncada.</p>}
+        {renderSlice("Desarrollo cronológico · 80%", baselineReport.development)}
+        {renderSlice("Holdout final · 20% reservado", baselineReport.holdout)}
+        <p style={{ color: "#fbbf24", fontSize: 11, marginBottom: 0 }}>El holdout usa líneas base congeladas antes de su primera fecha: ningún resultado del tramo final alimenta sus probabilidades. Δ negativo favorece al modelo en Brier/Log Loss; Δ positivo favorece al modelo en acierto. Es una comparación descriptiva, no prueba de rentabilidad ni autorización para recalibrar.</p>
+      </section>;
+    })()}
   </section>;
 }
 
