@@ -79,6 +79,10 @@ def test_baseline_comparison_uses_official_snapshots_and_paired_samples():
     assert report["development"]["one_x_two"]["recent_form_baseline"]["sample_size"] == 12
     assert report["development"]["markets"]["btts_yes"]["sample_size"] == 12
     assert report["development"]["markets"]["over_2_5"]["sample_size"] == 12
+    ci = report["development"]["one_x_two"]["paired_delta_ci_95"]["vs_league"]
+    assert ci["cluster_count"] == 12
+    assert len(ci["brier_score"]) == 2
+    assert report["development"]["one_x_two"]["interpretation"].find("cruza cero") >= 0
 
 
 def test_holdout_baseline_is_frozen_before_holdout_and_ignores_holdout_results():
@@ -157,6 +161,7 @@ def test_baseline_endpoint_reads_official_snapshots_and_owned_archive(monkeypatc
             self.offset = 0
             self.page_limit = 1000
             self.filters = []
+            self.ordering = None
         def select(self, columns):
             return self
         def eq(self, column, value):
