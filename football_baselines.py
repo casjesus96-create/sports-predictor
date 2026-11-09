@@ -300,11 +300,13 @@ def _paired_cluster_interval(
     rows: list[dict[str, Any]], baseline_key: str, kind: str,
     actual_key: str | None, seed: int,
 ) -> dict[str, Any]:
-    grouped = defaultdict(list)
+    grouped = defaultdict(lambda: {"n": 0, "sums": {"accuracy": 0.0, "brier_score": 0.0, "log_loss": 0.0}})
     for row in rows:
-        grouped[str(row.get("day") or "SIN_FECHA")].append(
-            _row_metric_deltas(row, baseline_key, kind, actual_key)
-        )
+        day = str(row.get("day") or "SIN_FECHA")
+        values = _row_metric_deltas(row, baseline_key, kind, actual_key)
+        grouped[day]["n"] += 1
+        for metric in values:
+            grouped[day]["sums"][metric] += values[metric]
     clusters = sorted(grouped)
     if len(clusters) < 2:
         return {
@@ -316,12 +318,12 @@ def _paired_cluster_interval(
     samples = {"accuracy": [], "brier_score": [], "log_loss": []}
     for _ in range(1000):
         selected = [rng.choice(clusters) for _ in clusters]
-        flattened = [item for day in selected for item in grouped[day]]
-        denominator = len(flattened)
+        denominator = sum(grouped[day]["n"] for day in selected)
         if not denominator:
             continue
         for metric in samples:
-            samples[metric].append(sum(item[metric] for item in flattened) / denominator)
+            total = sum(grouped[day]["sums"][metric] for day in selected)
+            samples[metric].append(total / denominator)
 
     def percentile(values: list[float], q: float) -> float:
         ordered = sorted(values)
