@@ -1494,6 +1494,15 @@ function ProbabilitySignal({ label, value }: { label: string; value?: number }) 
   </div>;
 }
 
+function MarketProbabilitySignal({ label, market }: { label: string; market?: { probability: number; fair_odds?: number | null } }) {
+  return <div style={{ minWidth: 0 }}>
+    <ProbabilitySignal label={label} value={market?.probability} />
+    <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 4, textAlign: "right" }}>
+      Cuota justa matemática: {typeof market?.fair_odds === "number" ? market.fair_odds.toFixed(2) : "—"}
+    </div>
+  </div>;
+}
+
 function FootballMatchLessonsPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -2067,20 +2076,24 @@ export default function FootballApp() {
                 <strong>Mercados derivados del modelo</strong>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
                   <div style={{ background: "#0f172a", padding: 10, borderRadius: 8 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 6 }}>Ambos equipos marcan</div>
-                    <div>Sí: <strong>{percent(prediction.goal_markets.both_teams_to_score?.yes?.probability)}</strong> · Cuota justa {prediction.goal_markets.both_teams_to_score?.yes?.fair_odds ?? "—"}</div>
-                    <div>No: <strong>{percent(prediction.goal_markets.both_teams_to_score?.no?.probability)}</strong> · Cuota justa {prediction.goal_markets.both_teams_to_score?.no?.fair_odds ?? "—"}</div>
+                    <div style={{ fontWeight: 700, marginBottom: 8 }}>Ambos equipos marcan</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                      <MarketProbabilitySignal label="Sí" market={prediction.goal_markets.both_teams_to_score?.yes} />
+                      <MarketProbabilitySignal label="No" market={prediction.goal_markets.both_teams_to_score?.no} />
+                    </div>
                   </div>
                   <div style={{ background: "#0f172a", padding: 10, borderRadius: 8 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 6 }}>Portería a cero</div>
-                    <div>{home}: <strong>{percent(prediction.goal_markets.clean_sheet?.home?.probability)}</strong></div>
-                    <div>{away}: <strong>{percent(prediction.goal_markets.clean_sheet?.away?.probability)}</strong></div>
+                    <div style={{ fontWeight: 700, marginBottom: 8 }}>Portería a cero</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                      <MarketProbabilitySignal label={home} market={prediction.goal_markets.clean_sheet?.home} />
+                      <MarketProbabilitySignal label={away} market={prediction.goal_markets.clean_sheet?.away} />
+                    </div>
                   </div>
                 </div>
-                <div style={{ overflowX: "auto", marginTop: 10 }}>
-                  <table style={tableStyle}>
-                    <thead><tr><th style={cellStyle}>Mercado de goles</th><th style={cellStyle}>Probabilidad</th><th style={cellStyle}>Cuota justa estimada</th></tr></thead>
-                    <tbody>{([
+                <div style={{ marginTop: 10 }}>
+                  <strong style={{ fontSize: 12 }}>Totales y goles por equipo</strong>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 8, marginTop: 8 }}>
+                    {([
                       ["Más de 1.5 goles", prediction.goal_markets.total_goals?.over_1_5],
                       ["Más de 2.5 goles", prediction.goal_markets.total_goals?.over_2_5],
                       ["Más de 3.5 goles", prediction.goal_markets.total_goals?.over_3_5],
@@ -2089,12 +2102,22 @@ export default function FootballApp() {
                       [home + " marca +1.5", prediction.goal_markets.team_goals?.home_over_1_5],
                       [away + " marca +0.5", prediction.goal_markets.team_goals?.away_over_0_5],
                       [away + " marca +1.5", prediction.goal_markets.team_goals?.away_over_1_5],
-                    ] as Array<[string, { probability: number; fair_odds?: number | null } | undefined]>).map(([label, market]) => <tr key={label}><td style={cellStyle}>{label}</td><td style={cellStyle}><strong>{percent((market as { probability?: number } | undefined)?.probability)}</strong></td><td style={cellStyle}>{(market as { fair_odds?: number | null } | undefined)?.fair_odds ?? "—"}</td></tr>)}</tbody>
-                  </table>
+                    ] as Array<[string, { probability: number; fair_odds?: number | null } | undefined]>).map(([label, market]) =>
+                      <MarketProbabilitySignal key={label} label={label} market={market} />
+                    )}
+                  </div>
                 </div>
-                {prediction.most_likely_scorelines && <div style={{ marginTop: 10 }}><strong>Marcadores exactos más probables</strong><div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>{prediction.most_likely_scorelines.map((score) => <div key={score.home + "-" + score.away} style={{ padding: "8px 10px", background: "#0f172a", borderRadius: 8 }}><strong>{score.home}–{score.away}</strong><div style={{ color: "#9ca3af", fontSize: 11 }}>{percent(score.probability)}</div></div>)}</div></div>}
-                {prediction.double_chance && <div style={{ marginTop: 10, fontSize: 13 }}><strong>Doble oportunidad:</strong> 1X {percent(prediction.double_chance.home_or_draw?.probability)} · X2 {percent(prediction.double_chance.draw_or_away?.probability)} · 12 {percent(prediction.double_chance.home_or_away?.probability)}</div>}
+                {prediction.most_likely_scorelines && <div style={{ marginTop: 10 }}><strong>Marcadores exactos más probables</strong><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, marginTop: 8 }}>{prediction.most_likely_scorelines.map((score) => <ProbabilitySignal key={score.home + "-" + score.away} label={score.home + "–" + score.away} value={score.probability} />)}</div></div>}
+                {prediction.double_chance && <div style={{ marginTop: 10 }}>
+                  <strong style={{ fontSize: 12 }}>Doble oportunidad</strong>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
+                    <ProbabilitySignal label="1X" value={prediction.double_chance.home_or_draw?.probability} />
+                    <ProbabilitySignal label="X2" value={prediction.double_chance.draw_or_away?.probability} />
+                    <ProbabilitySignal label="12" value={prediction.double_chance.home_or_away?.probability} />
+                  </div>
+                </div>}
               </section>}
+              <p style={{ marginBottom: 0, fontSize: 11, color: "#9ca3af" }}>Las barras y colores facilitan comparar la magnitud de las probabilidades estimadas; no representan confianza calibrada ni garantía de acierto. Los mercados derivados comparten la misma matriz de goles.</p>
               <p style={{ marginBottom: 0, fontSize: 11, color: "#9ca3af" }}>Muestra: {prediction.sample?.home_team_matches ?? 0} partidos del local y {prediction.sample?.away_team_matches ?? 0} del visitante · {prediction.model_version}</p>
               {prediction.calibration?.note && <p style={{ marginBottom: 0, fontSize: 11, color: "#fbbf24" }}>{prediction.calibration.note}</p>}
             </section> : <p style={{ color: "#fbbf24", fontSize: 13 }}>Probabilidad oficial no disponible: {prediction?.reason || "faltan resultados finalizados suficientes."}</p>}
