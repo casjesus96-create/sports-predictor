@@ -310,6 +310,8 @@ def football_match_learning_context(
         report["window_days"] = 90
         report["window_start"] = window_start.isoformat()
         return report
+    except HTTPException:
+        raise
     except Exception as exc:
         import logging
         logging.getLogger(__name__).exception("Could not build football match learning context")
