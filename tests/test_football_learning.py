@@ -246,3 +246,51 @@ def test_empty_report_has_stable_segmented_calibration_schema():
     assert segmented["by_season"] == []
     assert segmented["read_only"] is True
     assert segmented["model_changed"] is False
+
+
+
+def test_error_diagnostics_build_confusion_matrix_and_goal_residuals():
+    rows = []
+    for index in range(30):
+        # Predicted HOME, actual DRAW: the model's most likely outcome is wrong.
+        row = snapshot(0.60, 0.25, 0.15, 1, 1, 900 + index)
+        row["expected_goals"] = {"home": 1.5, "away": 0.8, "total": 2.3}
+        rows.append(row)
+
+    report = build_postmatch_learning_report(rows, "PL")
+    diagnostic = report["error_diagnostics"]
+    matrix = diagnostic["confusion_matrix"]["predicted_rows_actual_columns"]
+
+    assert matrix["HOME"]["DRAW"] == 30
+    assert matrix["HOME"]["HOME"] == 0
+    assert diagnostic["goal_residuals"]["home_goals"]["sample_size"] == 30
+    assert diagnostic["goal_residuals"]["home_goals"]["bias_actual_minus_expected"] == -0.5
+    assert diagnostic["goal_residuals"]["home_goals"]["mae"] == 0.5
+    assert diagnostic["goal_residuals"]["away_goals"]["bias_actual_minus_expected"] == 0.2
+    assert diagnostic["goal_residuals"]["total_goals"]["bias_actual_minus_expected"] == -0.3
+    assert diagnostic["read_only"] is True
+    assert diagnostic["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_goal_residual_metrics_are_hidden_below_minimum_sample():
+    rows = [snapshot(0.60, 0.25, 0.15, 2, 1, 950 + index) for index in range(29)]
+    report = build_postmatch_learning_report(rows, "PL")
+    home = report["error_diagnostics"]["goal_residuals"]["home_goals"]
+
+    assert home["sample_size"] == 29
+    assert home["eligible"] is False
+    assert home["bias_actual_minus_expected"] is None
+    assert home["mae"] is None
+    assert home["rmse"] is None
+
+
+def test_empty_error_diagnostics_have_stable_schema():
+    report = build_postmatch_learning_report([], "PL")
+    diagnostic = report["error_diagnostics"]
+
+    assert diagnostic["confusion_matrix"]["sample_size"] == 0
+    assert set(diagnostic["confusion_matrix"]["predicted_rows_actual_columns"]) == {"HOME", "DRAW", "AWAY"}
+    assert diagnostic["goal_residuals"]["total_goals"]["sample_size"] == 0
+    assert diagnostic["read_only"] is True
