@@ -1678,6 +1678,61 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
           <p style={{ color: "#fbbf24", fontSize: 11 }}>Cada resultado se evalúa como evento binario (ocurre / no ocurre), además de las métricas multiclase del 1X2. Las bandas con pocos partidos son inestables; esta auditoría no recalibra ni modifica el pronóstico oficial.</p>
         </>;
       })()}
+      <h3 style={{ marginBottom: 6 }}>Calibración por competición y temporada</h3>
+      {(() => {
+        const segmented = report.segmented_calibration || {};
+        const renderSegment = (segment: any, label: string) => {
+          const metric = segment.metrics;
+          const outcomes = segment.outcomes || {};
+          const markets = segment.markets || {};
+          const rows = [
+            ...[["home", "Victoria local"], ["draw", "Empate"], ["away", "Victoria visitante"]].map(([key, name]) => ({
+              name, sample: outcomes[key]?.sample_size ?? 0, eligible: outcomes[key]?.eligible,
+              brier: outcomes[key]?.metrics?.brier_score, logLoss: outcomes[key]?.metrics?.log_loss,
+              bins: outcomes[key]?.metrics?.calibration_bins || [],
+            })),
+            ...[["btts_yes", "BTTS Sí"], ["over_2_5", "Over 2.5"]].map(([key, name]) => ({
+              name, sample: markets[key]?.sample_size ?? 0, eligible: markets[key]?.eligible,
+              brier: markets[key]?.metrics?.brier_score, logLoss: markets[key]?.metrics?.log_loss,
+              bins: markets[key]?.metrics?.calibration_bins || [],
+            })),
+          ];
+          return <div key={label} style={{ padding: 10, marginTop: 8, borderRadius: 8, background: "#111827" }}>
+            <strong>{label}</strong>
+            <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 3 }}>
+              N 1X2: {segment.sample_size} · Acierto: {metric ? percent(metric.accuracy) : "No evaluable"} · Brier multiclase: {metric?.brier_score ?? "—"} · Log Loss multiclase: {metric?.log_loss ?? "—"}
+            </div>
+            {!segment.eligible && <p style={{ color: "#fbbf24", fontSize: 11, margin: "5px 0" }}>Muestra insuficiente: se requieren al menos {segment.minimum_sample} partidos. No se interpretan métricas globales de este segmento.</p>}
+            <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Resultado / mercado</th><th style={cellStyle}>N propio</th><th style={cellStyle}>Brier</th><th style={cellStyle}>Log Loss</th><th style={cellStyle}>Estado</th></tr></thead>
+              <tbody>{rows.map((row) => <tr key={row.name}>
+                <td style={cellStyle}>{row.name}</td><td style={cellStyle}>{row.sample}</td>
+                <td style={cellStyle}>{typeof row.brier === "number" ? row.brier.toFixed(5) : "—"}</td>
+                <td style={cellStyle}>{typeof row.logLoss === "number" ? row.logLoss.toFixed(5) : "—"}</td>
+                <td style={cellStyle}>{row.eligible ? "Evaluable" : "N insuficiente"}</td>
+              </tr>)}</tbody>
+            </table></div>
+            <details style={{ marginTop: 6 }}>
+              <summary style={{ cursor: "pointer", color: "#cbd5e1", fontSize: 11 }}>Ver bandas de calibración por resultado y mercado</summary>
+              {rows.map((row) => <div key={row.name} style={{ marginTop: 6 }}>
+                <strong style={{ fontSize: 11 }}>{row.name}</strong>
+                <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Prob. media</th><th style={cellStyle}>Frecuencia real</th></tr></thead>
+                  <tbody>{row.bins.map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td></tr>)}</tbody>
+                </table></div>
+              </div>)}
+            </details>
+          </div>;
+        };
+        return <div style={{ marginBottom: 14 }}>
+          <p style={{ color: "#9ca3af", fontSize: 11 }}>Temporada local julio–junio · mínimo {segmented.minimum_sample ?? 30} observaciones por métrica. Cada mercado y resultado utiliza su propia muestra; los segmentos pequeños muestran N, no conclusiones.</p>
+          <h4 style={{ margin: "8px 0 4px" }}>Por competición</h4>
+          {(segmented.by_competition || []).length ? segmented.by_competition.map((item: any) => renderSegment(item, item.competition)) : <p style={{ color: "#9ca3af" }}>No hay segmentos de competición evaluables.</p>}
+          <h4 style={{ margin: "12px 0 4px" }}>Por temporada</h4>
+          {(segmented.by_season || []).length ? segmented.by_season.map((item: any) => renderSegment(item, `${item.competition} · ${item.season}`)) : <p style={{ color: "#9ca3af" }}>No hay segmentos de temporada disponibles.</p>}
+          {segmented.excluded_missing_competition_or_season > 0 && <p style={{ color: "#fbbf24", fontSize: 11 }}>Excluidos de la segmentación por competición/temporada no identificable: {segmented.excluded_missing_competition_or_season}.</p>}
+        </div>;
+      })()}
       <h3 style={{ marginBottom: 6 }}>¿La confianza coincide con lo que ocurre?</h3>
       <div style={{ overflowX: "auto" }}><table style={tableStyle}>
         <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>
