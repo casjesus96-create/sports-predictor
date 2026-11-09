@@ -176,6 +176,7 @@ def _build_segmented_calibration(valid: list[dict[str, Any]]) -> dict[str, Any]:
         "model_changed": False,
     }
 
+
 def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str | None = None) -> dict[str, Any]:
     """Score immutable settled official snapshots and expose descriptive error patterns."""
     valid = []
