@@ -201,8 +201,6 @@ def _download_season(competition: str, season: str) -> list[dict[str, Any]]:
     config = COMPETITIONS[competition]
     url = f"{SOURCE_BASE_URL}/{season}/{config['source_code']}.csv"
     response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
-    if response.status_code == 404:
-        return []
     response.raise_for_status()
     return parse_csv_matches(response.content, competition, season)
 
@@ -212,7 +210,7 @@ def sync_football_archive(
     end_year: int | None = None,
     competitions: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Import completed league results; idempotent by deterministic source_key."""
+    """Import completed league results and report availability per league/season."""
     if end_year is None:
         end_year = datetime.now(timezone.utc).year
     if start_year < 1990 or end_year < start_year or end_year > datetime.now(timezone.utc).year:
@@ -223,13 +221,28 @@ def sync_football_archive(
         raise ValueError(f"Competiciones no admitidas: {', '.join(unknown)}")
 
     client = get_supabase_client()
-    totals = {"downloaded": 0, "inserted_or_updated": 0, "unavailable_files": 0, "failed_files": 0}
+    totals = {
+        "downloaded": 0,
+        "inserted_or_updated": 0,
+        "available_files": 0,
+        "unavailable_files": 0,
+        "failed_files": 0,
+    }
     errors: list[str] = []
+    season_results: list[dict[str, Any]] = []
     for year in range(start_year, end_year + 1):
         season = season_code(year)
         for competition in selected:
+            result = {
+                "competition": competition,
+                "season": season,
+                "status": "available",
+                "matches": 0,
+            }
             try:
                 rows = _download_season(competition, season)
+                result["matches"] = len(rows)
+                totals["available_files"] += 1
                 totals["downloaded"] += len(rows)
                 for offset in range(0, len(rows), UPSERT_BATCH_SIZE):
                     batch = rows[offset:offset + UPSERT_BATCH_SIZE]
@@ -256,20 +269,41 @@ def sync_football_archive(
                         totals["inserted_or_updated"] += len(batch)
                 logger.info("Football archive %s %s: %s matches", competition, season, len(rows))
             except requests.HTTPError as exc:
-                if getattr(exc.response, "status_code", None) == 404:
+                status_code = getattr(exc.response, "status_code", None)
+                if status_code == 404:
+                    result["status"] = "unavailable"
                     totals["unavailable_files"] += 1
-                    continue
-                totals["failed_files"] += 1
-                errors.append(f"{competition}/{season}: HTTP {getattr(exc.response, 'status_code', 'error')}")
-                logger.warning("Football archive source failed for %s/%s: %s", competition, season, exc)
+                else:
+                    result["status"] = "failed"
+                    totals["failed_files"] += 1
+                    errors.append(f"{competition}/{season}: HTTP {status_code or 'error'}")
+                    logger.warning("Football archive source failed for %s/%s: %s", competition, season, exc)
             except requests.RequestException as exc:
+                result["status"] = "failed"
                 totals["failed_files"] += 1
                 errors.append(f"{competition}/{season}: network error")
                 logger.warning("Football archive download failed for %s/%s: %s", competition, season, exc)
-            except Exception as exc:
+            except Exception:
+                result["status"] = "failed"
                 totals["failed_files"] += 1
                 errors.append(f"{competition}/{season}: storage/import error")
                 logger.exception("Football archive import failed for %s/%s", competition, season)
+            season_results.append(result)
+
+    coverage_by_competition = []
+    for competition in selected:
+        items = [item for item in season_results if item["competition"] == competition]
+        coverage_by_competition.append({
+            "competition": competition,
+            "seasons_checked": len(items),
+            "available_files": sum(item["status"] == "available" for item in items),
+            "unavailable_files": sum(item["status"] == "unavailable" for item in items),
+            "failed_files": sum(item["status"] == "failed" for item in items),
+            "matches_downloaded": sum(item["matches"] for item in items),
+            "seasons_with_zero_matches": sum(
+                item["status"] == "available" and item["matches"] == 0 for item in items
+            ),
+        })
 
     return {
         "success": totals["failed_files"] == 0,
@@ -278,9 +312,10 @@ def sync_football_archive(
         "end_year": end_year,
         "competitions": selected,
         **totals,
+        "coverage_by_competition": coverage_by_competition,
+        "season_results": season_results,
         "errors": errors[:50],
     }
-
 
 def _client_or_503():
     try:
