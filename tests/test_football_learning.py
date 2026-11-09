@@ -59,4 +59,7 @@ def test_postmatch_learning_excludes_invalid_probability_rows():
 
     assert report["sample_size"] == 0
     assert report["excluded_invalid_rows"] == 1
-    assert report["model_changed"] is not True
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
