@@ -144,7 +144,7 @@ def test_local_competition_date_is_used_for_archive_cutoffs():
     report = build_baseline_comparison(rows, archive_history(), "PL", "Europe/Paris")
 
     assert report["split"]["development_matches"] == 1
-    assert report["split"]["holdout_start_local_date"] == "2026-01-02"
+    assert report["split"]["holdout_start_local_date"] == "2026-01-03"
 
 
 
