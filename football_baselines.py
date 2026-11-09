@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import math
+import random
 import unicodedata
+from collections import defaultdict
 from bisect import bisect_left
 from datetime import date, datetime, timezone
 from typing import Any
@@ -266,12 +268,88 @@ def _deltas(official: dict[str, Any], baseline: dict[str, Any]) -> dict[str, flo
     return result
 
 
-def _comparison(rows: list[dict[str, Any]], kind: str, actual_key: str | None = None) -> dict[str, Any]:
-    metric = _multiclass_metrics if kind == "one_x_two" else None
+def _row_metric_deltas(row: dict[str, Any], baseline_key: str, kind: str, actual_key: str | None):
+    official = row["official"]
+    baseline = row[baseline_key]
     if kind == "one_x_two":
-        official = metric(rows, "official")
-        league = metric(rows, "league")
-        recent = metric(rows, "recent")
+        actual = row["actual"]
+        official_correct = max(OUTCOMES, key=lambda key: official[key]) == actual
+        baseline_correct = max(OUTCOMES, key=lambda key: baseline[key]) == actual
+        y = {key: 1.0 if actual == key else 0.0 for key in OUTCOMES}
+        official_brier = sum((official[key] - y[key]) ** 2 for key in OUTCOMES)
+        baseline_brier = sum((baseline[key] - y[key]) ** 2 for key in OUTCOMES)
+        official_log = -math.log(max(official[actual], 1e-15))
+        baseline_log = -math.log(max(baseline[actual], 1e-15))
+    else:
+        actual = bool(row[actual_key])
+        y = 1.0 if actual else 0.0
+        official_correct = (official >= 0.5) == actual
+        baseline_correct = (baseline >= 0.5) == actual
+        official_brier = (official - y) ** 2
+        baseline_brier = (baseline - y) ** 2
+        official_log = -(y * math.log(max(official, 1e-15)) + (1-y) * math.log(max(1-official, 1e-15)))
+        baseline_log = -(y * math.log(max(baseline, 1e-15)) + (1-y) * math.log(max(1-baseline, 1e-15)))
+    return {
+        "accuracy": float(official_correct) - float(baseline_correct),
+        "brier_score": official_brier - baseline_brier,
+        "log_loss": official_log - baseline_log,
+    }
+
+
+def _paired_cluster_interval(
+    rows: list[dict[str, Any]], baseline_key: str, kind: str,
+    actual_key: str | None, seed: int,
+) -> dict[str, Any]:
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[str(row.get("day") or "SIN_FECHA")].append(
+            _row_metric_deltas(row, baseline_key, kind, actual_key)
+        )
+    clusters = sorted(grouped)
+    if len(clusters) < 2:
+        return {
+            "cluster_count": len(clusters),
+            "accuracy": None, "brier_score": None, "log_loss": None,
+            "reason": "Se requieren al menos dos fechas independientes para estimar el intervalo.",
+        }
+    rng = random.Random(seed)
+    samples = {"accuracy": [], "brier_score": [], "log_loss": []}
+    for _ in range(1000):
+        selected = [rng.choice(clusters) for _ in clusters]
+        flattened = [item for day in selected for item in grouped[day]]
+        denominator = len(flattened)
+        if not denominator:
+            continue
+        for metric in samples:
+            samples[metric].append(sum(item[metric] for item in flattened) / denominator)
+
+    def percentile(values: list[float], q: float) -> float:
+        ordered = sorted(values)
+        position = (len(ordered) - 1) * q
+        lower = int(position)
+        upper = min(lower + 1, len(ordered) - 1)
+        fraction = position - lower
+        return ordered[lower] * (1 - fraction) + ordered[upper] * fraction
+
+    return {
+        "cluster_count": len(clusters),
+        **{
+            metric: [round(percentile(values, 0.025), 5), round(percentile(values, 0.975), 5)]
+            if values else None
+            for metric, values in samples.items()
+        },
+        "method": "Bootstrap pareado por fecha, 1.000 réplicas deterministas; delta = modelo oficial menos línea base.",
+    }
+
+
+def _comparison(
+    rows: list[dict[str, Any]], kind: str, actual_key: str | None = None,
+    seed: int = 1000,
+) -> dict[str, Any]:
+    if kind == "one_x_two":
+        official = _multiclass_metrics(rows, "official")
+        league = _multiclass_metrics(rows, "league")
+        recent = _multiclass_metrics(rows, "recent")
     else:
         official = _binary_metrics(rows, "official", actual_key)
         league = _binary_metrics(rows, "league", actual_key)
@@ -283,7 +361,11 @@ def _comparison(rows: list[dict[str, Any]], kind: str, actual_key: str | None = 
         "recent_form_baseline": recent,
         "delta_official_minus_league": _deltas(official, league),
         "delta_official_minus_recent": _deltas(official, recent),
-        "interpretation": "En accuracy, delta positivo favorece al modelo; en Brier y Log Loss, delta negativo favorece al modelo.",
+        "paired_delta_ci_95": {
+            "vs_league": _paired_cluster_interval(rows, "league", kind, actual_key, seed),
+            "vs_recent": _paired_cluster_interval(rows, "recent", kind, actual_key, seed + 1),
+        },
+        "interpretation": "En accuracy, delta positivo favorece al modelo; en Brier y Log Loss, delta negativo favorece al modelo. Un IC95% que cruza cero no demuestra superioridad.",
     }
 
 
@@ -365,6 +447,7 @@ def _evaluate_slice(
                 "official": row[f"official_{market}"],
                 "league": row[f"league_{market}"],
                 "recent": row[f"recent_{market}"],
+                "day": row["day"],
                 actual_key: row[actual_key],
             }
             for row in paired if row.get(f"official_{market}") is not None
