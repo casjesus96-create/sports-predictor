@@ -171,3 +171,78 @@ def test_1x2_calibration_has_stable_empty_schema():
     assert calibration["multiclass_log_loss"] is None
     assert set(calibration["outcomes"]) == {"home", "draw", "away"}
     assert all(item["sample_size"] == 0 for item in calibration["outcomes"].values())
+
+
+
+def test_segmented_calibration_uses_competition_local_july_to_june_season():
+    from football_learning import _football_season
+
+    assert _football_season("2026-07-01T00:30:00Z", "PL") == "2026/27"
+    assert _football_season("2026-06-30T22:30:00Z", "PD") == "2026/27"
+    assert _football_season("2026-06-30T22:00:00Z", "PL") == "2025/26"
+    assert _football_season("2026-11-08T15:00:00", "PL") is None
+    assert _football_season("2026-11-08T15:00:00Z", "XYZ") is None
+
+
+def test_segmented_calibration_requires_30_observations_per_segment_and_metric():
+    rows = []
+    for index in range(30):
+        row = snapshot(0.60, 0.25, 0.15, 2, 1, 500 + index)
+        year = 2024 if index < 15 else 2025
+        day = (index % 15) + 1
+        row["kickoff_at"] = f"{year}-09-{day:02d}T15:00:00Z"
+        row["competition_code"] = "PL"
+        if index >= 28:
+            row["prediction_payload"]["goal_markets"]["both_teams_to_score"]["yes"]["probability"] = None
+        rows.append(row)
+
+    report = build_postmatch_learning_report(rows, "PL")
+    segmented = report["segmented_calibration"]
+
+    assert segmented["minimum_sample"] == 30
+    assert len(segmented["by_competition"]) == 1
+    competition = segmented["by_competition"][0]
+    assert competition["sample_size"] == 30
+    assert competition["eligible"] is True
+    assert competition["metrics"]["accuracy"] == 1.0
+    assert competition["outcomes"]["home"]["sample_size"] == 30
+    assert competition["outcomes"]["home"]["eligible"] is True
+    assert competition["markets"]["btts_yes"]["sample_size"] == 28
+    assert competition["markets"]["btts_yes"]["eligible"] is False
+    assert competition["markets"]["btts_yes"]["metrics"] is None
+    assert len(segmented["by_season"]) == 2
+    assert all(item["sample_size"] == 15 for item in segmented["by_season"])
+    assert all(item["eligible"] is False for item in segmented["by_season"])
+    assert all(item["metrics"] is None for item in segmented["by_season"])
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_segmented_calibration_keeps_competitions_separate():
+    rows = []
+    for index in range(30):
+        row = snapshot(0.60, 0.25, 0.15, 2, 1, 700 + index)
+        row["competition_code"] = "PL" if index < 15 else "BL1"
+        row["kickoff_at"] = f"2025-09-{(index % 15) + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    report = build_postmatch_learning_report(rows)
+    by_competition = {item["competition"]: item for item in report["segmented_calibration"]["by_competition"]}
+
+    assert set(by_competition) == {"PL", "BL1"}
+    assert by_competition["PL"]["sample_size"] == 15
+    assert by_competition["BL1"]["sample_size"] == 15
+    assert by_competition["PL"]["eligible"] is False
+    assert by_competition["BL1"]["eligible"] is False
+
+
+def test_empty_report_has_stable_segmented_calibration_schema():
+    report = build_postmatch_learning_report([], "PL")
+    segmented = report["segmented_calibration"]
+
+    assert segmented["minimum_sample"] == 30
+    assert segmented["by_competition"] == []
+    assert segmented["by_season"] == []
+    assert segmented["read_only"] is True
+    assert segmented["model_changed"] is False
