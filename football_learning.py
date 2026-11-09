@@ -57,6 +57,26 @@ def _market_probability(payload: dict, market: str) -> float | None:
     return parsed if parsed is not None and 0 <= parsed <= 1 else None
 
 
+def _binary_market_metrics(items: list[dict[str, Any]], probability_key: str, actual_key: str) -> dict[str, Any]:
+    usable = []
+    for item in items:
+        probability, actual = item.get(probability_key), item.get(actual_key)
+        if probability is None or not isinstance(actual, bool) or not math.isfinite(probability) or not 0 <= probability <= 1:
+            continue
+        usable.append((float(probability), float(actual)))
+    bins = []
+    for lower, upper in ((0.0, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 1.000001)):
+        subset = [(p, y) for p, y in usable if lower <= p < upper]
+        bins.append({"range": f"{int(lower*100)}–{int(min(1,upper)*100)}%", "sample_size": len(subset),
+                     "mean_probability": round(sum(p for p, _ in subset)/len(subset), 4) if subset else None,
+                     "observed_rate": round(sum(y for _, y in subset)/len(subset), 4) if subset else None})
+    n = len(usable)
+    return {"sample_size": n,
+            "brier_score": round(sum((p-y)**2 for p,y in usable)/n, 5) if n else None,
+            "log_loss": round(sum(-(y*math.log(max(p,1e-15))+(1-y)*math.log(max(1-p,1e-15))) for p,y in usable)/n, 5) if n else None,
+            "calibration_bins": bins}
+
+
 def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str | None = None) -> dict[str, Any]:
     """Score immutable settled official snapshots and expose descriptive error patterns."""
     valid = []
@@ -101,7 +121,10 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "success": True, "read_only": True, "model_version": MODEL_VERSION,
             "competition": competition, "sample_size": 0, "excluded_invalid_rows": excluded,
             "metrics": {"accuracy": None, "brier_score": None, "log_loss": None},
-            "confidence_bands": [], "surprises": [], "signals": [
+            "confidence_bands": [], "surprises": [],
+            "market_calibration": {"btts_yes": _binary_market_metrics([], "btts_p", "actual_btts"),
+                                   "over_2_5": _binary_market_metrics([], "over25_p", "actual_over25")},
+            "signals": [
                 "Todavía no hay suficientes snapshots oficiales liquidados y válidos para extraer patrones."
             ],
             "learning_policy": "Diagnóstico descriptivo; no modifica ni recalibra el modelo oficial.",
@@ -152,8 +175,10 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
     ) if expected_rows else None
     btts_rows = [item for item in valid if item["btts_p"] is not None]
     over_rows = [item for item in valid if item["over25_p"] is not None]
-    btts_brier = sum((item["btts_p"] - float(item["actual_btts"])) ** 2 for item in btts_rows) / len(btts_rows) if btts_rows else None
-    over25_brier = sum((item["over25_p"] - float(item["actual_over25"])) ** 2 for item in over_rows) / len(over_rows) if over_rows else None
+    btts_report = _binary_market_metrics(valid, "btts_p", "actual_btts")
+    over25_report = _binary_market_metrics(valid, "over25_p", "actual_over25")
+    btts_brier = btts_report["brier_score"]
+    over25_brier = over25_report["brier_score"]
 
     signals = []
     high = [item for item in valid if item["confidence"] >= 0.70]
@@ -183,11 +208,14 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "expected_total_goals_sample": len(expected_rows),
             "btts_brier_score": round(btts_brier, 5) if btts_brier is not None else None,
             "btts_sample": len(btts_rows),
+            "btts_log_loss": btts_report["log_loss"],
             "over_2_5_brier_score": round(over25_brier, 5) if over25_brier is not None else None,
             "over_2_5_sample": len(over_rows),
+            "over_2_5_log_loss": over25_report["log_loss"],
             "upset_count": len(upset_rows),
         },
         "confidence_bands": bands, "surprises": surprises, "signals": signals,
+        "market_calibration": {"btts_yes": btts_report, "over_2_5": over25_report},
         "data_scope": "Solo snapshots oficiales inmutables FOOTBALL-POISSON-0.5.0 con resultado SETTLED; no usa resultados sin pronóstico prepartido.",
         "learning_policy": "Aprendizaje diagnóstico: mide errores, calibración, sorpresas y residuos de goles. No entrena, recalibra ni modifica probabilidades oficiales.",
         "model_changed": False, "snapshots_written": 0, "provider_calls": 0,
