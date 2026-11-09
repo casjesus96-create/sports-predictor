@@ -246,7 +246,7 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
             side = "HOME" if is_home else "AWAY"
             games.append({
                 "prob": item["p"][side], "won": item["actual"] == side,
-                "ef": item["eh"] if is_home else item["ea],
+                "ef": item["eh"] if is_home else item["ea"],
                 "ea": item["ea"] if is_home else item["eh"],
                 "af": item["hs"] if is_home else item["aws"],
                 "aa": item["aws"] if is_home else item["hs"],
