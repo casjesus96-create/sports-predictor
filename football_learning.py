@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from collections import defaultdict
 from typing import Any
 
@@ -197,12 +198,23 @@ def _team_key(value):
     return " ".join(str(value or "").casefold().split())
 
 
+def _utc_datetime(value):
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return None
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
 def build_match_learning_context(rows, competition, home_team, away_team, kickoff_at):
     """Read-only descriptive context based only on settled snapshots before kickoff."""
     valid = []
     for row in rows:
-        stamp = str(row.get("kickoff_at") or "")
-        if not stamp.endswith("Z") or not kickoff_at.endswith("Z") or stamp >= kickoff_at:
+        stamp = _utc_datetime(row.get("kickoff_at"))
+        target = _utc_datetime(kickoff_at)
+        if stamp is None or target is None or stamp >= target:
             continue
         if row.get("result_status") != "SETTLED" or row.get("model_version") != MODEL_VERSION:
             continue
