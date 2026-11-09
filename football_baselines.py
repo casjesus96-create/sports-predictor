@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import math
 import random
-import unicodedata
 from collections import defaultdict
 from bisect import bisect_left
 from datetime import date, datetime, timezone
@@ -110,14 +109,6 @@ def _normalize_archive(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "over_2_5": home_score + away_score >= 3,
         })
     return sorted(valid, key=lambda row: row["day"])
-
-
-def _smoothed_outcome_rates(rows: list[dict[str, Any]]) -> dict[str, float]:
-    counts = {key: 1 for key in OUTCOMES}
-    for row in rows:
-        counts[row["outcome"]] += 1
-    denominator = len(rows) + len(OUTCOMES)
-    return {key: counts[key] / denominator for key in OUTCOMES}
 
 
 def _smoothed_binary(rows: list[dict[str, Any]], key: str) -> float:
