@@ -1477,13 +1477,75 @@ function FootballArchiveBrowser() {
   </section>;
 }
 
+function FootballPostmatchLearningPanel({ competition }: { competition: string }) {
+  const [report, setReport] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function loadReport() {
+    setLoading(true); setError("");
+    try {
+      const response = await fetch(`${API}/learning?competition=${encodeURIComponent(competition)}&limit=5000`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "No se pudo construir el diagnóstico postpartido.");
+      setReport(body);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error consultando el aprendizaje postpartido.");
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadReport(); }, [competition]);
+
+  const metrics = report?.metrics || {};
+  const metricCard = (label: string, value: string) => (
+    <div style={{ padding: 10, borderRadius: 8, background: "#172033" }}>
+      <div style={{ color: "#9ca3af", fontSize: 11 }}>{label}</div>
+      <strong style={{ fontSize: 20 }}>{value}</strong>
+    </div>
+  );
+
+  return <section style={{ ...cardStyle, borderColor: "#0e7490" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <div><h2 style={{ margin: 0 }}>🧠 Aprendizaje postpartido · {competition}</h2>
+        <p style={{ color: "#9ca3af", fontSize: 12, margin: "5px 0" }}>Auditoría de pronósticos oficiales ya liquidados. Detecta sorpresas, sobreconfianza y errores en goles esperados.</p>
+      </div>
+      <button type="button" onClick={loadReport} disabled={loading} style={{ ...buttonStyle, background: "#155e75" }}>{loading ? "Analizando…" : "Actualizar diagnóstico"}</button>
+    </div>
+    {error && <p role="alert" style={{ color: "#fecaca" }}>{error}</p>}
+    {loading && !report && <p style={{ color: "#cbd5e1" }}>Analizando snapshots oficiales liquidados…</p>}
+    {report && <>
+      <p style={{ color: "#cbd5e1", fontSize: 12 }}>Muestra válida: <strong>{report.sample_size}</strong> · Registros excluidos por datos inválidos: {report.excluded_invalid_rows} · Modelo: {report.model_version}</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(135px,1fr))", gap: 8 }}>
+        {metricCard("Acierto 1X2", percent(metrics.accuracy))}
+        {metricCard("Brier (menor mejor)", typeof metrics.brier_score === "number" ? metrics.brier_score.toFixed(4) : "—")}
+        {metricCard("Log Loss (menor mejor)", typeof metrics.log_loss === "number" ? metrics.log_loss.toFixed(4) : "—")}
+        {metricCard("Sorpresas", String(metrics.upset_count ?? 0))}
+        {metricCard("Error medio goles totales", typeof metrics.expected_total_goals_mae === "number" ? metrics.expected_total_goals_mae.toFixed(2) : "—")}
+      </div>
+      <h3 style={{ marginBottom: 6 }}>¿La confianza coincide con lo que ocurre?</h3>
+      <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+        <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Sorpresas</th></tr></thead>
+        <tbody>{(report.confidence_bands || []).map((band: any) => <tr key={band.range}><td style={cellStyle}>{band.range}</td><td style={cellStyle}>{band.sample_size}</td><td style={cellStyle}>{percent(band.mean_confidence)}</td><td style={cellStyle}>{percent(band.accuracy)}</td><td style={cellStyle}>{band.upsets}</td></tr>)}</tbody>
+      </table></div>
+      <h3 style={{ marginBottom: 6 }}>Sorpresas que merecen revisión</h3>
+      {(report.surprises || []).length ? (report.surprises || []).map((item: any) => <article key={item.match_id} style={{ padding: 10, marginTop: 8, borderRadius: 8, background: "#0b1220", border: "1px solid #475569" }}>
+        <strong>{item.home_team} {item.score} {item.away_team}</strong>
+        <div style={{ color: "#cbd5e1", fontSize: 12, marginTop: 4 }}>Pronóstico: {item.predicted_outcome} ({percent(item.predicted_confidence)}) · Resultado: {item.actual_outcome} · Probabilidad asignada al resultado real: {percent(item.actual_outcome_probability)} · Sorpresa (Log Loss): {item.surprise_score}</div>
+      </article>) : <p style={{ color: "#9ca3af" }}>No hay sorpresas de favorito en esta muestra.</p>}
+      <h3 style={{ marginBottom: 6 }}>Señales detectadas</h3>
+      <ul style={{ color: "#cbd5e1", paddingLeft: 20 }}>{(report.signals || []).map((signal: string, index: number) => <li key={index} style={{ marginBottom: 5 }}>{signal}</li>)}</ul>
+      <p style={{ color: "#fbbf24", fontSize: 12, marginBottom: 0 }}>Diagnóstico descriptivo, no explicación causal. No modifica ni recalibra el modelo; no escribe snapshots y no realiza llamadas a proveedores. Para atribuir causas harán falta variables prepartido adicionales guardadas de forma consistente.</p>
+    </>}
+  </section>;
+}
+
 export default function FootballApp() {
   const [competition, setCompetition] = useState("PL");
   const [selectedDate, setSelectedDate] = useState(todayInput());
   const [availability, setAvailability] = useState<CompetitionStatus[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
-  const [view, setView] = useState<"games" | "standings" | "history" | "archive" | "intelligence">("games");
+  const [view, setView] = useState<"games" | "standings" | "history" | "archive" | "intelligence" | "learning">("games");
   const [matchFilter, setMatchFilter] = useState<"upcoming" | "all" | "finished">("all");
   const [loading, setLoading] = useState(false);
   const [loadingCompetitions, setLoadingCompetitions] = useState(true);
@@ -1525,7 +1587,7 @@ export default function FootballApp() {
   const providerCompetition = availability.find((item) => item.code === competition);
   const available = providerCompetition?.available_in_plan;
 
-  async function loadData(nextView: "games" | "standings" | "history" = (view === "archive" || view === "intelligence" ? "games" : view)) {
+  async function loadData(nextView: "games" | "standings" | "history" = (view === "archive" || view === "intelligence" || view === "learning" ? "games" : view)) {
     setLoading(true); setError(""); setNotice(""); setView(nextView);
     try {
       const response = await fetch(nextView === "games"
@@ -1698,6 +1760,7 @@ export default function FootballApp() {
         <button type="button" aria-pressed={view === "history"} onClick={() => loadHistory()} disabled={historyLoading || loadingCompetitions} style={{ ...buttonStyle, background: view === "history" ? "#0f766e" : "#115e59", border: view === "history" ? "2px solid #5eead4" : "1px solid #5eead4", fontSize: 14 }}>{historyLoading ? "Cargando historial…" : "📚 Historial"}</button>
         <button type="button" aria-pressed={view === "archive"} onClick={() => setView("archive")} style={{ ...buttonStyle, background: view === "archive" ? "#166534" : "#14532d", border: view === "archive" ? "2px solid #86efac" : "1px solid #86efac" }}>🗄️ Archivo histórico</button>
         <button type="button" aria-pressed={view === "intelligence"} onClick={() => setView("intelligence")} style={{ ...buttonStyle, background: view === "intelligence" ? "#155e75" : "#164e63", border: view === "intelligence" ? "2px solid #67e8f9" : "1px solid #67e8f9" }}>🧠 Centro histórico</button>
+        <button type="button" aria-pressed={view === "learning"} onClick={() => setView("learning")} style={{ ...buttonStyle, background: view === "learning" ? "#0e7490" : "#164e63", border: view === "learning" ? "2px solid #67e8f9" : "1px solid #67e8f9" }}>📈 Aprendizaje postpartido</button>
         <button type="button" onClick={loadBacktest} disabled={backtestLoading || loadingCompetitions} style={{ ...buttonStyle, background: "#7c3aed" }}>{backtestLoading ? "Evaluando histórico…" : "Evaluar modelo con histórico"}</button>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1" }}><input type="checkbox" checked={includeExternalH2h} onChange={(event) => setIncludeExternalH2h(event.target.checked)} /> Consultar H2H externo (máx. 10 solicitudes)</label>
       </div>
@@ -1774,6 +1837,7 @@ export default function FootballApp() {
 
       {view === "archive" && <FootballArchiveBrowser />}
       {view === "intelligence" && <FootballHistoricalIntelligenceCenter />}
+      {view === "learning" && <FootballPostmatchLearningPanel competition={competition} />}
 
       {view === "history" && <section style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

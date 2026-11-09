@@ -16,6 +16,7 @@ from prediction_audit_api import router as prediction_audit_router
 from football_api import router as football_router
 from football_archive import router as football_archive_router
 from football_evaluation_api import router as football_evaluation_router
+from football_learning import router as football_learning_router
 
 from analyzer import analyze_mlb_game
 from nfl_api import router as nfl_router
@@ -54,6 +55,7 @@ app.include_router(prediction_audit_router)
 app.include_router(football_router)
 app.include_router(football_archive_router)
 app.include_router(football_evaluation_router)
+app.include_router(football_learning_router)
 
 # =========================================================
 # NFL ROUTER
