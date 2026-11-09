@@ -1538,7 +1538,7 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
 
   return <section style={{ margin: "10px 0", padding: 11, borderRadius: 9, border: "1px solid #0e7490", background: "#0c1b2a" }}>
     <strong style={{ color: "#67e8f9" }}>🧠 Lecciones del modelo</strong>
-    <p style={{ color: "#94a3b8", fontSize: 11, margin: "4px 0 8px" }}>Patrones descriptivos previos al partido. No cambian las probabilidades oficiales.</p>
+    <p style={{ color: "#94a3b8", fontSize: 11, margin: "4px 0 8px" }}>Ventana móvil de 90 días antes del kickoff. Patrones descriptivos; no cambian las probabilidades oficiales.</p>
     {loading && !data && <p style={{ color: "#cbd5e1", fontSize: 12 }}>Consultando histórico anterior al encuentro…</p>}
     {error && <p role="alert" style={{ color: "#fecaca", fontSize: 11 }}>{error}</p>}
     {data && <>
