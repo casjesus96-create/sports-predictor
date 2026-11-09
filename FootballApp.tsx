@@ -1733,6 +1733,34 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
           {segmented.excluded_missing_competition_or_season > 0 && <p style={{ color: "#fbbf24", fontSize: 11 }}>Excluidos de la segmentación por competición/temporada no identificable: {segmented.excluded_missing_competition_or_season}.</p>}
         </div>;
       })()}
+      <h3 style={{ marginBottom: 6 }}>Diagnóstico estructural de errores</h3>
+      {(() => {
+        const diagnostic = report.error_diagnostics || {};
+        const matrix = diagnostic.confusion_matrix?.predicted_rows_actual_columns || {};
+        const labels: Record<string, string> = { HOME: "Victoria local", DRAW: "Empate", AWAY: "Victoria visitante" };
+        const residuals = diagnostic.goal_residuals || {};
+        return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 10, marginBottom: 14 }}>
+          <div style={{ padding: 10, borderRadius: 8, background: "#111827", minWidth: 0 }}>
+            <strong>Matriz de confusión 1X2</strong>
+            <p style={{ color: "#9ca3af", fontSize: 10 }}>Filas = pronóstico más probable · columnas = resultado real · N={diagnostic.confusion_matrix?.sample_size ?? 0}</p>
+            <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Pronóstico ↓ / Real →</th>{(["HOME", "DRAW", "AWAY"] as const).map(key => <th key={key} style={cellStyle}>{key}</th>)}</tr></thead>
+              <tbody>{(["HOME", "DRAW", "AWAY"] as const).map(predicted => <tr key={predicted}><td style={cellStyle}>{labels[predicted]}</td>{(["HOME", "DRAW", "AWAY"] as const).map(actual => <td key={actual} style={cellStyle}>{matrix[predicted]?.[actual] ?? 0}</td>)}</tr>)}</tbody>
+            </table></div>
+          </div>
+          <div style={{ padding: 10, borderRadius: 8, background: "#111827", minWidth: 0 }}>
+            <strong>Residuo de goles esperados</strong>
+            <p style={{ color: "#9ca3af", fontSize: 10 }}>Sesgo = real − esperado; positivo = subestimación, negativo = sobreestimación. Se requieren {diagnostic.minimum_goal_sample ?? 30} partidos por métrica.</p>
+            <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Dimensión</th><th style={cellStyle}>N</th><th style={cellStyle}>Sesgo</th><th style={cellStyle}>MAE</th><th style={cellStyle}>RMSE</th></tr></thead>
+              <tbody>{([["home_goals", "Goles local"], ["away_goals", "Goles visitante"], ["total_goals", "Goles totales"]] as const).map(([key, label]) => {
+                const item = residuals[key];
+                return <tr key={key}><td style={cellStyle}>{label}</td><td style={cellStyle}>{item?.sample_size ?? 0}</td><td style={cellStyle}>{item?.eligible ? item.bias_actual_minus_expected.toFixed(3) : "N insuficiente"}</td><td style={cellStyle}>{item?.eligible ? item.mae.toFixed(3) : "—"}</td><td style={cellStyle}>{item?.eligible ? item.rmse.toFixed(3) : "—"}</td></tr>;
+              })}</tbody>
+            </table></div>
+          </div>
+        </div>;
+      })()}
       <h3 style={{ marginBottom: 6 }}>¿La confianza coincide con lo que ocurre?</h3>
       <div style={{ overflowX: "auto" }}><table style={tableStyle}>
         <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>

@@ -177,6 +177,56 @@ def _build_segmented_calibration(valid: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+ERROR_DIAGNOSTIC_MINIMUM_SAMPLE = 30
+
+
+def _build_error_diagnostics(valid: list[dict[str, Any]]) -> dict[str, Any]:
+    """Describe classification and goal residuals without changing the model."""
+    matrix = {
+        predicted: {
+            actual: sum(1 for item in valid if item["predicted"] == predicted and item["actual"] == actual)
+            for actual in OUTCOMES
+        }
+        for predicted in OUTCOMES
+    }
+    goal_metrics = {}
+    dimensions = (
+        ("home_goals", "expected_home", "home_score"),
+        ("away_goals", "expected_away", "away_score"),
+        ("total_goals", "expected_total", None),
+    )
+    for key, expected_key, actual_key in dimensions:
+        pairs = []
+        for item in valid:
+            expected = item.get(expected_key)
+            actual = item["home_score"] + item["away_score"] if actual_key is None else item[actual_key]
+            if expected is not None and math.isfinite(expected):
+                pairs.append((float(expected), float(actual)))
+        n = len(pairs)
+        eligible = n >= ERROR_DIAGNOSTIC_MINIMUM_SAMPLE
+        residuals = [actual - expected for expected, actual in pairs]
+        goal_metrics[key] = {
+            "sample_size": n,
+            "minimum_sample": ERROR_DIAGNOSTIC_MINIMUM_SAMPLE,
+            "eligible": eligible,
+            "bias_actual_minus_expected": round(sum(residuals) / n, 4) if eligible else None,
+            "mae": round(sum(abs(value) for value in residuals) / n, 4) if eligible else None,
+            "rmse": round(math.sqrt(sum(value * value for value in residuals) / n), 4) if eligible else None,
+        }
+    return {
+        "confusion_matrix": {
+            "predicted_rows_actual_columns": matrix,
+            "sample_size": len(valid),
+            "labels": {"HOME": "Victoria local", "DRAW": "Empate", "AWAY": "Victoria visitante"},
+        },
+        "goal_residuals": goal_metrics,
+        "minimum_goal_sample": ERROR_DIAGNOSTIC_MINIMUM_SAMPLE,
+        "interpretation": "Sesgo = goles reales menos esperados; positivo indica subestimación y negativo sobreestimación. Métricas de goles solo se publican con N suficiente.",
+        "read_only": True,
+        "model_changed": False,
+    }
+
+
 def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str | None = None) -> dict[str, Any]:
     """Score immutable settled official snapshots and expose descriptive error patterns."""
     valid = []
@@ -229,6 +279,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "outcome_calibration": {"sample_size": 0, "multiclass_brier_score": None, "multiclass_log_loss": None,
                                     "outcomes": {key.lower(): _binary_market_metrics([], f"{key.lower()}_p", f"actual_{key.lower()}") for key in OUTCOMES}},
             "segmented_calibration": _build_segmented_calibration([]),
+            "error_diagnostics": _build_error_diagnostics([]),
             "signals": [
                 "Todavía no hay suficientes snapshots oficiales liquidados y válidos para extraer patrones."
             ],
@@ -333,6 +384,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
         "market_calibration": {"btts_yes": btts_report, "over_2_5": over25_report},
         "outcome_calibration": outcome_calibration,
         "segmented_calibration": _build_segmented_calibration(valid),
+        "error_diagnostics": _build_error_diagnostics(valid),
         "data_scope": "Solo snapshots oficiales inmutables FOOTBALL-POISSON-0.5.0 con resultado SETTLED; no usa resultados sin pronóstico prepartido.",
         "learning_policy": "Aprendizaje diagnóstico: mide errores, calibración, sorpresas y residuos de goles. No entrena, recalibra ni modifica probabilidades oficiales.",
         "model_changed": False, "snapshots_written": 0, "provider_calls": 0,
