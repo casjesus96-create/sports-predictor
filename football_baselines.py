@@ -71,11 +71,16 @@ def _actual(row: dict[str, Any]) -> tuple[str, int, int] | None:
 def _market_probability(payload: Any, market: str) -> float | None:
     if not isinstance(payload, dict):
         return None
-    goals = payload.get("goal_markets") or {}
+    goals = payload.get("goal_markets")
+    if not isinstance(goals, dict):
+        return None
     if market == "btts_yes":
-        value = (((goals.get("both_teams_to_score") or {}).get("yes") or {}).get("probability"))
+        market_data = goals.get("both_teams_to_score")
+        side_data = market_data.get("yes") if isinstance(market_data, dict) else None
     else:
-        value = (((goals.get("total_goals") or {}).get("over_2_5") or {}).get("probability"))
+        market_data = goals.get("total_goals")
+        side_data = market_data.get("over_2_5") if isinstance(market_data, dict) else None
+    value = side_data.get("probability") if isinstance(side_data, dict) else None
     try:
         parsed = float(value)
     except (TypeError, ValueError):
