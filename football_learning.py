@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from typing import Any
 
@@ -288,21 +288,27 @@ def football_match_learning_context(
     home_team: str = Query(..., min_length=1, max_length=120),
     away_team: str = Query(..., min_length=1, max_length=120),
     kickoff_at: str = Query(..., min_length=10, max_length=40),
-    limit: int = Query(5000, ge=1, le=5000),
+    limit: int = Query(1000, ge=1, le=1000),
 ):
-    """Return descriptive pre-match lessons without future-data leakage."""
+    """Return descriptive pre-match lessons from the prior 90 days only."""
     try:
         code = competition.strip().upper()
+        target = _utc_datetime(kickoff_at)
+        if target is None:
+            raise HTTPException(status_code=422, detail="kickoff_at debe incluir una zona horaria válida.")
+        window_start = target - timedelta(days=90)
         query = get_supabase_client().table("football_prediction_snapshots").select(
             "provider_match_id,competition_code,kickoff_at,home_team,away_team,model_version,"
             "home_probability,draw_probability,away_probability,expected_goals,prediction_payload,"
             "result_status,actual_home_score,actual_away_score,actual_outcome,settled_at"
         ).eq("competition_code", code).eq("model_version", MODEL_VERSION).eq("result_status", "SETTLED")
-        query = query.lt("kickoff_at", kickoff_at)
+        query = query.gte("kickoff_at", window_start.isoformat()).lt("kickoff_at", kickoff_at)
         result = query.order("kickoff_at", desc=True).limit(limit).execute()
         rows = result.data or []
         report = build_match_learning_context(rows, code, home_team, away_team, kickoff_at)
         report["records_returned"] = len(rows)
+        report["window_days"] = 90
+        report["window_start"] = window_start.isoformat()
         return report
     except Exception as exc:
         import logging
