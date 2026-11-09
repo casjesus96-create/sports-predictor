@@ -104,6 +104,10 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
                 "Todavía no hay suficientes snapshots oficiales liquidados y válidos para extraer patrones."
             ],
             "learning_policy": "Diagnóstico descriptivo; no modifica ni recalibra el modelo oficial.",
+            "data_scope": "Solo snapshots oficiales inmutables FOOTBALL-POISSON-0.5.0 con resultado SETTLED; no usa resultados sin pronóstico prepartido.",
+            "model_changed": False,
+            "snapshots_written": 0,
+            "provider_calls": 0,
         }
 
     accuracy = sum(item["correct"] for item in valid) / n
