@@ -112,3 +112,28 @@ def test_low_confidence_miss_is_not_counted_as_favorite_upset():
     assert low_band["misses"] == 1
     assert low_band["upsets"] == 0
     assert report["metrics"]["upset_count"] == 0
+
+
+def test_binary_market_calibration_scores_and_bins():
+    rows = [snapshot(0.60, 0.25, 0.15, 2, 1), snapshot(0.60, 0.25, 0.15, 0, 1, 2)]
+    for row in rows:
+        row["prediction_payload"]["goal_markets"]["both_teams_to_score"]["yes"]["probability"] = 0.8
+        row["prediction_payload"]["goal_markets"]["total_goals"]["over_2_5"]["probability"] = 0.7
+    report = build_postmatch_learning_report(rows, "PL")
+    btts = report["market_calibration"]["btts_yes"]
+    over25 = report["market_calibration"]["over_2_5"]
+    assert btts["sample_size"] == 2
+    assert btts["brier_score"] == 0.34
+    assert btts["calibration_bins"][-1]["observed_rate"] == 0.5
+    assert over25["sample_size"] == 2
+    assert over25["brier_score"] == 0.29
+    assert report["model_changed"] is False
+
+
+def test_market_calibration_excludes_invalid_probabilities():
+    row = snapshot(0.6, 0.25, 0.15, 2, 1)
+    row["prediction_payload"]["goal_markets"]["both_teams_to_score"]["yes"]["probability"] = 1.2
+    report = build_postmatch_learning_report([row], "PL")
+    market = report["market_calibration"]["btts_yes"]
+    assert market["sample_size"] == 0
+    assert market["brier_score"] is None
