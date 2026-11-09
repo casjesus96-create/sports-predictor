@@ -153,7 +153,10 @@ def test_baseline_endpoint_reads_official_snapshots_and_owned_archive(monkeypatc
 
     captured = []
     snapshot_rows = snapshots()
+    for row in snapshot_rows:
+        row["home_team"] = "Alpha Reserve"
     archive_rows = archive_history()
+    alias_rows = [{"alias_key": "alpha reserve", "canonical_team_key": "alpha"}]
 
     class Query:
         def __init__(self, table):
@@ -178,7 +181,11 @@ def test_baseline_endpoint_reads_official_snapshots_and_owned_archive(monkeypatc
             return self
         def execute(self):
             captured.append((self.table_name, self.filters, self.ordering))
-            source = snapshot_rows if self.table_name == "football_prediction_snapshots" else archive_rows
+            source = (
+                snapshot_rows if self.table_name == "football_prediction_snapshots"
+                else alias_rows if self.table_name == "football_team_aliases"
+                else archive_rows
+            )
             return type("Result", (), {"data": source[self.offset:self.offset + self.page_limit]})()
 
     class Client:
@@ -196,6 +203,7 @@ def test_baseline_endpoint_reads_official_snapshots_and_owned_archive(monkeypatc
     assert ("competition_code", "PL") in snapshot_filters
     assert ("model_version", MODEL_VERSION) in snapshot_filters
     assert ("result_status", "SETTLED") in snapshot_filters
+    assert report["development"]["paired_1x2_sample_size"] == 12
 
 
 def test_baseline_endpoint_rejects_unsupported_competition():
@@ -220,3 +228,14 @@ def test_verified_team_aliases_are_used_to_find_recent_archive_form():
 
     assert report["development"]["recent_form_baseline_eligible_targets"] == 12
     assert report["development"]["paired_1x2_sample_size"] == 12
+
+
+
+def test_malformed_market_payload_does_not_discard_valid_1x2_snapshot():
+    rows = snapshots()
+    rows[0]["prediction_payload"] = {"goal_markets": []}
+    report = build_baseline_comparison(rows, archive_history(), "PL", "Europe/London")
+
+    assert report["development"]["paired_1x2_sample_size"] == 12
+    assert report["development"]["markets"]["btts_yes"]["sample_size"] == 11
+    assert report["development"]["markets"]["over_2_5"]["sample_size"] == 11
