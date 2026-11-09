@@ -118,24 +118,53 @@ def _smoothed_binary(rows: list[dict[str, Any]], key: str) -> float:
     return (positives + 1) / (len(rows) + 2)
 
 
-def _league_baseline(history: list[dict[str, Any]]) -> dict[str, Any] | None:
-    if len(history) < MIN_COMPETITION_HISTORY:
-        return None
+def _build_archive_index(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build prefix counts and per-team venue indexes for bounded-time lookups."""
+    outcome_prefix = {key: [0] for key in OUTCOMES}
+    btts_prefix = [0]
+    over_prefix = [0]
+    home_by_team: dict[str, list[dict[str, Any]]] = {}
+    away_by_team: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        for key in OUTCOMES:
+            outcome_prefix[key].append(outcome_prefix[key][-1] + int(row["outcome"] == key))
+        btts_prefix.append(btts_prefix[-1] + int(row["btts"]))
+        over_prefix.append(over_prefix[-1] + int(row["over_2_5"]))
+        home_by_team.setdefault(row["home_key"], []).append(row)
+        away_by_team.setdefault(row["away_key"], []).append(row)
     return {
-        "one_x_two": _smoothed_outcome_rates(history),
-        "btts_yes": _smoothed_binary(history, "btts"),
-        "over_2_5": _smoothed_binary(history, "over_2_5"),
-        "history_sample": len(history),
+        "rows": rows,
+        "dates": [row["day"] for row in rows],
+        "outcome_prefix": outcome_prefix,
+        "btts_prefix": btts_prefix,
+        "over_prefix": over_prefix,
+        "home_by_team": home_by_team,
+        "away_by_team": away_by_team,
     }
 
 
-def _team_venue_rows(history: list[dict[str, Any]], team_key: str, venue: str) -> list[dict[str, Any]]:
-    if venue == "home":
-        selected = [row for row in history if row["home_key"] == team_key]
-    else:
-        selected = [row for row in history if row["away_key"] == team_key]
-    return selected[-TEAM_VENUE_WINDOW:]
+def _league_baseline(index: dict[str, Any], cutoff: date) -> dict[str, Any] | None:
+    end = bisect_left(index["dates"], cutoff)
+    if end < MIN_COMPETITION_HISTORY:
+        return None
+    counts = {key: index["outcome_prefix"][key][end] + 1 for key in OUTCOMES}
+    denominator = end + len(OUTCOMES)
+    return {
+        "one_x_two": {key: counts[key] / denominator for key in OUTCOMES},
+        "btts_yes": (index["btts_prefix"][end] + 1) / (end + 2),
+        "over_2_5": (index["over_prefix"][end] + 1) / (end + 2),
+        "history_sample": end,
+    }
 
+
+def _team_venue_rows(index: dict[str, Any], team_key: str, venue: str, cutoff: date) -> list[dict[str, Any]]:
+    lookup = index["home_by_team"] if venue == "home" else index["away_by_team"]
+    rows = lookup.get(team_key, [])
+    if not rows:
+        return []
+    dates = [row["day"] for row in rows]
+    end = bisect_left(dates, cutoff)
+    return rows[max(0, end - TEAM_VENUE_WINDOW):end]
 
 def _team_rates(rows: list[dict[str, Any]], venue: str) -> dict[str, float] | None:
     if len(rows) < MIN_TEAM_VENUE_HISTORY:
@@ -160,10 +189,10 @@ def _team_rates(rows: list[dict[str, Any]], venue: str) -> dict[str, float] | No
 
 
 def _recent_form_baseline(
-    history: list[dict[str, Any]], home_key: str, away_key: str
+    index: dict[str, Any], home_key: str, away_key: str, cutoff: date
 ) -> dict[str, Any] | None:
-    home_rows = _team_venue_rows(history, home_key, "home")
-    away_rows = _team_venue_rows(history, away_key, "away")
+    home_rows = _team_venue_rows(index, home_key, "home", cutoff)
+    away_rows = _team_venue_rows(index, away_key, "away", cutoff)
     home = _team_rates(home_rows, "home")
     away = _team_rates(away_rows, "away")
     if home is None or away is None:
@@ -297,8 +326,7 @@ def _prepare_targets(
 
 def _evaluate_slice(
     targets: list[dict[str, Any]],
-    archive_rows: list[dict[str, Any]],
-    archive_dates: list[date],
+    archive_index: dict[str, Any],
     *,
     frozen_cutoff: date | None = None,
 ) -> dict[str, Any]:
@@ -307,10 +335,8 @@ def _evaluate_slice(
     recent_eligible = 0
     for target in targets:
         cutoff = frozen_cutoff if frozen_cutoff is not None else target["day"]
-        history_end = bisect_left(archive_dates, cutoff)
-        history = archive_rows[:history_end]
-        league = _league_baseline(history)
-        recent = _recent_form_baseline(history, target["home_key"], target["away_key"])
+        league = _league_baseline(archive_index, cutoff)
+        recent = _recent_form_baseline(archive_index, target["home_key"], target["away_key"], cutoff)
         if league is not None:
             league_eligible += 1
         if recent is not None:
@@ -362,7 +388,7 @@ def build_baseline_comparison(
     """Compare immutable official snapshots with two strictly pre-match baselines."""
     targets, excluded = _prepare_targets(snapshots, competition_timezone)
     history = _normalize_archive(archive)
-    history_dates = [row["day"] for row in history]
+    archive_index = _build_archive_index(history)
 
     split = max(1, int(len(targets) * 0.8)) if targets else 0
     while 0 < split < len(targets) and targets[split - 1]["day"] == targets[split]["day"]:
@@ -371,9 +397,9 @@ def build_baseline_comparison(
     holdout = targets[split:]
     holdout_start = holdout[0]["day"] if holdout else None
 
-    development_report = _evaluate_slice(development, history, history_dates)
+    development_report = _evaluate_slice(development, archive_index)
     holdout_report = _evaluate_slice(
-        holdout, history, history_dates, frozen_cutoff=holdout_start
+        holdout, archive_index, frozen_cutoff=holdout_start
     ) if holdout_start else {
         "official_valid_targets": 0, "league_baseline_eligible_targets": 0,
         "recent_form_baseline_eligible_targets": 0, "paired_1x2_sample_size": 0,
