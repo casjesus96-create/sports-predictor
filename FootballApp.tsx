@@ -1689,10 +1689,12 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
             ...[["home", "Victoria local"], ["draw", "Empate"], ["away", "Victoria visitante"]].map(([key, name]) => ({
               name, sample: outcomes[key]?.sample_size ?? 0, eligible: outcomes[key]?.eligible,
               brier: outcomes[key]?.metrics?.brier_score, logLoss: outcomes[key]?.metrics?.log_loss,
+              bins: outcomes[key]?.metrics?.calibration_bins || [],
             })),
             ...[["btts_yes", "BTTS Sí"], ["over_2_5", "Over 2.5"]].map(([key, name]) => ({
               name, sample: markets[key]?.sample_size ?? 0, eligible: markets[key]?.eligible,
               brier: markets[key]?.metrics?.brier_score, logLoss: markets[key]?.metrics?.log_loss,
+              bins: markets[key]?.metrics?.calibration_bins || [],
             })),
           ];
           return <div key={label} style={{ padding: 10, marginTop: 8, borderRadius: 8, background: "#111827" }}>
@@ -1710,6 +1712,16 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
                 <td style={cellStyle}>{row.eligible ? "Evaluable" : "N insuficiente"}</td>
               </tr>)}</tbody>
             </table></div>
+            <details style={{ marginTop: 6 }}>
+              <summary style={{ cursor: "pointer", color: "#cbd5e1", fontSize: 11 }}>Ver bandas de calibración por resultado y mercado</summary>
+              {rows.map((row) => <div key={row.name} style={{ marginTop: 6 }}>
+                <strong style={{ fontSize: 11 }}>{row.name}</strong>
+                <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Prob. media</th><th style={cellStyle}>Frecuencia real</th></tr></thead>
+                  <tbody>{row.bins.map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td></tr>)}</tbody>
+                </table></div>
+              </div>)}
+            </details>
           </div>;
         };
         return <div style={{ marginBottom: 14 }}>
