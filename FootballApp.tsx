@@ -1709,6 +1709,8 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
             { label: "Frecuencia histórica de liga", value: comparison?.league_frequency_baseline },
             { label: "Forma reciente local/visitante", value: comparison?.recent_form_baseline },
           ];
+          const ci = comparison?.paired_delta_ci_95 || {};
+          const formatInterval = (value: any) => Array.isArray(value) ? `[${value[0]}, ${value[1]}]` : "no estimable";
           return <div key={key} style={{ padding: 9, borderRadius: 8, background: "#111827", marginTop: 8 }}>
             <strong>{label} · N emparejada: {comparison?.sample_size ?? 0}</strong>
             <div style={{ overflowX: "auto" }}><table style={tableStyle}>
@@ -1720,11 +1722,12 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
                 <td style={cellStyle}>{typeof row.value?.log_loss === "number" ? row.value.log_loss.toFixed(4) : "—"}</td>
               </tr>)}</tbody>
             </table></div>
+            <p style={{ color: "#cbd5e1", fontSize: 10, marginBottom: 0 }}>IC95% Δ Brier oficial − liga: {formatInterval(ci.vs_league?.brier_score)} · oficial − forma: {formatInterval(ci.vs_recent?.brier_score)}</p>
           </div>;
         };
         const deltaLeague = oneXTwo.delta_official_minus_league || {};
         const deltaRecent = oneXTwo.delta_official_minus_recent || {};
-        const deltaText = (label: string, delta: any) => `${label}: Δ Brier ${typeof delta.brier_score === "number" ? delta.brier_score.toFixed(4) : "—"} · Δ Log Loss ${typeof delta.log_loss === "number" ? delta.log_loss.toFixed(4) : "—"} · Δ acierto ${typeof delta.accuracy === "number" ? `${delta.accuracy > 0 ? "+" : ""}${(delta.accuracy * 100).toFixed(2)} pp` : "—"}`;
+        const deltaText = (label: string, delta: any, interval: any) => `${label}: Δ Brier ${typeof delta.brier_score === "number" ? delta.brier_score.toFixed(4) : "—"} · IC95% [${interval?.brier_score?.[0] ?? "—"}, ${interval?.brier_score?.[1] ?? "—"}] · Δ Log Loss ${typeof delta.log_loss === "number" ? delta.log_loss.toFixed(4) : "—"} · IC95% [${interval?.log_loss?.[0] ?? "—"}, ${interval?.log_loss?.[1] ?? "—"}] · Δ acierto ${typeof delta.accuracy === "number" ? `${delta.accuracy > 0 ? "+" : ""}${(delta.accuracy * 100).toFixed(2)} pp` : "—"}`;
         return <div key={title} style={{ marginTop: 12, padding: 10, borderRadius: 8, background: "#0b1220", border: "1px solid #475569" }}>
           <h4 style={{ margin: "0 0 6px" }}>{title}</h4>
           <p style={{ color: "#cbd5e1", fontSize: 11, margin: "4px 0" }}>Objetivos oficiales válidos: {slice?.official_valid_targets ?? 0} · Comparación 1X2 emparejada: {oneXTwo?.sample_size ?? 0} · Elegibles por frecuencia de liga: {slice?.league_baseline_eligible_targets ?? 0} · Elegibles por forma reciente: {slice?.recent_form_baseline_eligible_targets ?? 0}</p>
@@ -1737,7 +1740,7 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
               <td style={cellStyle}>{typeof row.value?.log_loss === "number" ? row.value.log_loss.toFixed(4) : "—"}</td>
             </tr>)}</tbody>
           </table></div>
-          <p style={{ color: "#cbd5e1", fontSize: 11, margin: "6px 0" }}>{deltaText("Oficial − liga", deltaLeague)}<br />{deltaText("Oficial − forma reciente", deltaRecent)}</p>
+          <p style={{ color: "#cbd5e1", fontSize: 11, margin: "6px 0" }}>{deltaText("Oficial − liga", deltaLeague, oneXTwo.paired_delta_ci_95?.vs_league)}<br />{deltaText("Oficial − forma reciente", deltaRecent, oneXTwo.paired_delta_ci_95?.vs_recent)}</p>
           {renderMarket("btts_yes", slice?.markets?.btts_yes)}
           {renderMarket("over_2_5", slice?.markets?.over_2_5)}
         </div>;
