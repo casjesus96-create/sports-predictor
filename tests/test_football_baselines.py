@@ -155,7 +155,7 @@ def test_baseline_endpoint_reads_official_snapshots_and_owned_archive(monkeypatc
         def __init__(self, table):
             self.table_name = table
             self.offset = 0
-            self.limit = 1000
+            self.page_limit = 1000
             self.filters = []
         def select(self, columns):
             return self
@@ -166,12 +166,15 @@ def test_baseline_endpoint_reads_official_snapshots_and_owned_archive(monkeypatc
             self.ordering = (column, desc)
             return self
         def range(self, start, end):
-            self.offset, self.limit = start, end - start + 1
+            self.offset, self.page_limit = start, end - start + 1
+            return self
+        def limit(self, value):
+            self.page_limit = value
             return self
         def execute(self):
             captured.append((self.table_name, self.filters, self.ordering))
             source = snapshot_rows if self.table_name == "football_prediction_snapshots" else archive_rows
-            return type("Result", (), {"data": source[self.offset:self.offset + self.limit]})()
+            return type("Result", (), {"data": source[self.offset:self.offset + self.page_limit]})()
 
     class Client:
         def table(self, name):
@@ -183,7 +186,7 @@ def test_baseline_endpoint_reads_official_snapshots_and_owned_archive(monkeypatc
     assert report["success"] is True
     assert report["provider_calls"] == 0
     assert report["model_changed"] is False
-    assert {item[0] for item in captured} == {"football_prediction_snapshots", "football_match_archive"}
+    assert {item[0] for item in captured} == {"football_prediction_snapshots", "football_match_archive", "football_team_aliases"}
     snapshot_filters = next(item[1] for item in captured if item[0] == "football_prediction_snapshots")
     assert ("competition_code", "PL") in snapshot_filters
     assert ("model_version", MODEL_VERSION) in snapshot_filters
@@ -198,3 +201,17 @@ def test_baseline_endpoint_rejects_unsupported_competition():
     with pytest.raises(HTTPException) as error:
         football_learning.football_baseline_comparison("XYZ")
     assert error.value.status_code == 400
+
+
+
+def test_verified_team_aliases_are_used_to_find_recent_archive_form():
+    rows = snapshots()
+    for row in rows:
+        row["home_team"] = "Alpha Reserve"
+    report = build_baseline_comparison(
+        rows, archive_history(), "PL", "Europe/London",
+        team_aliases={"alpha reserve": "alpha"},
+    )
+
+    assert report["development"]["recent_form_baseline_eligible_targets"] == 12
+    assert report["development"]["paired_1x2_sample_size"] == 12
