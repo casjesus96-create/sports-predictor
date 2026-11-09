@@ -288,7 +288,8 @@ def _comparison(rows: list[dict[str, Any]], kind: str, actual_key: str | None = 
 
 
 def _prepare_targets(
-    snapshots: list[dict[str, Any]], competition_timezone: str
+    snapshots: list[dict[str, Any]], competition_timezone: str,
+    team_aliases: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     valid = []
     excluded = 0
@@ -304,8 +305,11 @@ def _prepare_targets(
             excluded += 1
             continue
         stamp, day = kickoff
-        home_key = normalize_team_key(row.get("home_team") or "")
-        away_key = normalize_team_key(row.get("away_team") or "")
+        aliases = team_aliases or {}
+        home_normalized = normalize_team_key(row.get("home_team") or "")
+        away_normalized = normalize_team_key(row.get("away_team") or "")
+        home_key = aliases.get(home_normalized, home_normalized)
+        away_key = aliases.get(away_normalized, away_normalized)
         if not home_key or not away_key or home_key == away_key:
             excluded += 1
             continue
@@ -382,11 +386,12 @@ def build_baseline_comparison(
     competition: str,
     competition_timezone: str,
     *,
+    team_aliases: dict[str, str] | None = None,
     snapshot_truncated: bool = False,
     archive_truncated: bool = False,
 ) -> dict[str, Any]:
     """Compare immutable official snapshots with two strictly pre-match baselines."""
-    targets, excluded = _prepare_targets(snapshots, competition_timezone)
+    targets, excluded = _prepare_targets(snapshots, competition_timezone, team_aliases)
     history = _normalize_archive(archive)
     archive_index = _build_archive_index(history)
 
