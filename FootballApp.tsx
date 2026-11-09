@@ -1614,6 +1614,22 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
         {metricCard("Sorpresas", String(metrics.upset_count ?? 0))}
         {metricCard("Error medio goles totales", typeof metrics.expected_total_goals_mae === "number" ? metrics.expected_total_goals_mae.toFixed(2) : "—")}
       </div>
+      <h3 style={{ marginBottom: 6 }}>Calibración de mercados principales</h3>
+      <p style={{ color: "#9ca3af", fontSize: 11 }}>Compara la probabilidad estimada con la frecuencia observada. Cada mercado usa su propia muestra.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 8, marginBottom: 12 }}>
+        {(["btts_yes", "over_2_5"] as const).map((key) => {
+          const market = report.market_calibration?.[key];
+          const label = key === "btts_yes" ? "Ambos equipos marcan · Sí" : "Más de 2.5 goles";
+          return <div key={key} style={{ padding: 10, borderRadius: 8, background: "#111827" }}>
+            <strong>{label}</strong>
+            <div style={{ color: "#cbd5e1", fontSize: 11 }}>N: {market?.sample_size ?? 0} · Brier: {market?.brier_score ?? "—"} · Log Loss: {market?.log_loss ?? "—"}</div>
+            <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Real</th></tr></thead>
+              <tbody>{(market?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td></tr>)}</tbody>
+            </table></div>
+          </div>;
+        })}
+      </div>
       <h3 style={{ marginBottom: 6 }}>¿La confianza coincide con lo que ocurre?</h3>
       <div style={{ overflowX: "auto" }}><table style={tableStyle}>
         <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>
