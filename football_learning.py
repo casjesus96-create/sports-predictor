@@ -430,8 +430,18 @@ def football_baseline_comparison(
             if len(page) < page_size:
                 break
 
+        alias_rows = client.table("football_team_aliases").select(
+            "alias_key,canonical_team_key"
+        ).eq("competition_code", code).limit(5000).execute().data or []
+        team_aliases = {
+            str(row["alias_key"]): str(row["canonical_team_key"])
+            for row in alias_rows
+            if row.get("alias_key") and row.get("canonical_team_key")
+        }
+
         report = build_baseline_comparison(
             snapshot_rows, archive_rows, code, config["timezone"],
+            team_aliases=team_aliases,
             snapshot_truncated=len(snapshot_rows) >= snapshot_limit,
             archive_truncated=len(archive_rows) >= archive_limit,
         )
