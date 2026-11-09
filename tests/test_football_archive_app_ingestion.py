@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -83,7 +85,7 @@ def test_app_finalized_payload_requires_confirmed_teams_and_uses_archive_identit
     {"status": "IN_PLAY"},
     {"status": "AWARDED"},
     {"utc_date": "2026-11-07T20:00:00.000"},
-    {"utc_date": "2026-11-09T20:00:00Z"},
+    {"utc_date": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat().replace("+00:00", "Z")},
     {"home_score": -1},
     {"away_score": 31},
 ])
