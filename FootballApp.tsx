@@ -1477,7 +1477,7 @@ function FootballArchiveBrowser() {
   </section>;
 }
 
-export default function FootballPostmatchLearningPanel({ competition }: { competition: string }) {
+function FootballPostmatchLearningPanel({ competition }: { competition: string }) {
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1539,7 +1539,7 @@ export default function FootballPostmatchLearningPanel({ competition }: { compet
   </section>;
 }
 
-function FootballApp() {
+export default function FootballApp() {
   const [competition, setCompetition] = useState("PL");
   const [selectedDate, setSelectedDate] = useState(todayInput());
   const [availability, setAvailability] = useState<CompetitionStatus[]>([]);
