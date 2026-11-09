@@ -461,6 +461,29 @@ def _evaluate_slice(
     }
 
 
+def _season_label(local_day: date) -> str:
+    start_year = local_day.year if local_day.month >= 7 else local_day.year - 1
+    return f"{start_year}/{str(start_year + 1)[-2:]}"
+
+def _season_breakdown(development, holdout, archive_index, holdout_start):
+    """Compare seasons independently while preserving the global frozen split."""
+    development_by_season = defaultdict(list)
+    holdout_by_season = defaultdict(list)
+    for target in development:
+        development_by_season[_season_label(target["day"])].append(target)
+    for target in holdout:
+        holdout_by_season[_season_label(target["day"])].append(target)
+    results = []
+    for season in sorted(set(development_by_season) | set(holdout_by_season)):
+        dev_rows = development_by_season.get(season, [])
+        hold_rows = holdout_by_season.get(season, [])
+        dev_report = _evaluate_slice(dev_rows, archive_index)
+        hold_report = (_evaluate_slice(hold_rows, archive_index, frozen_cutoff=holdout_start)
+                       if hold_rows and holdout_start else None)
+        results.append({"season": season, "development_matches": len(dev_rows),
+                        "holdout_matches": len(hold_rows), "development": dev_report,
+                        "holdout": hold_report})
+    return results
 def build_baseline_comparison(
     snapshots: list[dict[str, Any]],
     archive: list[dict[str, Any]],
@@ -526,6 +549,11 @@ def build_baseline_comparison(
         },
         "development": development_report,
         "holdout": holdout_report,
+        "season_breakdown": {
+            "definition": "Temporada local julio–junio; conserva el corte cronológico global 80/20.",
+            "by_season": _season_breakdown(development, holdout, archive_index, holdout_start),
+            "holdout_policy": "Cada segmento de holdout usa las líneas base congeladas antes de la primera fecha del holdout global; no se recalcula con resultados del tramo reservado.",
+        },
         "data_scope": (
             "Solo snapshots oficiales SETTLED de FOOTBALL-POISSON-0.5.0 y resultados del archivo propio. "
             "La frecuencia de liga usa todo el historial anterior; la forma reciente usa hasta 10 partidos "
