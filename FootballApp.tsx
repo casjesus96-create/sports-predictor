@@ -1630,6 +1630,34 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
           </div>;
         })}
       </div>
+      <h3 style={{ marginBottom: 6 }}>Calibración del resultado 1X2</h3>
+      {(() => {
+        const calibration = report.outcome_calibration;
+        const outcomes = [
+          { key: "home", label: "Victoria local" },
+          { key: "draw", label: "Empate" },
+          { key: "away", label: "Victoria visitante" },
+        ];
+        return <>
+          <p style={{ color: "#cbd5e1", fontSize: 11 }}>
+            Muestra 1X2: {calibration?.sample_size ?? 0} partidos · Brier multiclase: {typeof calibration?.multiclass_brier_score === "number" ? calibration.multiclass_brier_score.toFixed(5) : "—"} · Log Loss multiclase: {typeof calibration?.multiclass_log_loss === "number" ? calibration.multiclass_log_loss.toFixed(5) : "—"}.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 8, marginBottom: 12 }}>
+            {outcomes.map(({ key, label }) => {
+              const item = calibration?.outcomes?.[key];
+              return <div key={key} style={{ padding: 10, borderRadius: 8, background: "#111827", minWidth: 0 }}>
+                <strong>{label}</strong>
+                <div style={{ color: "#cbd5e1", fontSize: 11 }}>N: {item?.sample_size ?? 0} · Brier (uno contra resto): {typeof item?.brier_score === "number" ? item.brier_score.toFixed(5) : "—"} · Log Loss: {typeof item?.log_loss === "number" ? item.log_loss.toFixed(5) : "—"}</div>
+                <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Frecuencia real</th></tr></thead>
+                  <tbody>{(item?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td></tr>)}</tbody>
+                </table></div>
+              </div>;
+            })}
+          </div>
+          <p style={{ color: "#fbbf24", fontSize: 11 }}>Cada resultado se evalúa como evento binario (ocurre / no ocurre), además de las métricas multiclase del 1X2. Las bandas con pocos partidos son inestables; esta auditoría no recalibra ni modifica el pronóstico oficial.</p>
+        </>;
+      })()}
       <h3 style={{ marginBottom: 6 }}>¿La confianza coincide con lo que ocurre?</h3>
       <div style={{ overflowX: "auto" }}><table style={tableStyle}>
         <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>

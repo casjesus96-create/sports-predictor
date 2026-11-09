@@ -137,3 +137,37 @@ def test_market_calibration_excludes_invalid_probabilities():
     market = report["market_calibration"]["btts_yes"]
     assert market["sample_size"] == 0
     assert market["brier_score"] is None
+
+
+
+def test_1x2_calibration_reports_multiclass_and_each_outcome_separately():
+    rows = [
+        snapshot(0.60, 0.25, 0.15, 2, 0, 101),
+        snapshot(0.60, 0.25, 0.15, 1, 1, 102),
+        snapshot(0.60, 0.25, 0.15, 0, 2, 103),
+    ]
+    report = build_postmatch_learning_report(rows, "PL")
+    calibration = report["outcome_calibration"]
+
+    assert calibration["sample_size"] == 3
+    assert calibration["multiclass_brier_score"] == report["metrics"]["brier_score"]
+    assert calibration["multiclass_log_loss"] == report["metrics"]["log_loss"]
+    assert calibration["outcomes"]["home"]["sample_size"] == 3
+    assert calibration["outcomes"]["home"]["brier_score"] == 0.29333
+    assert calibration["outcomes"]["home"]["calibration_bins"][2]["observed_rate"] == 0.3333
+    assert calibration["outcomes"]["draw"]["sample_size"] == 3
+    assert calibration["outcomes"]["away"]["sample_size"] == 3
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_1x2_calibration_has_stable_empty_schema():
+    report = build_postmatch_learning_report([], "PL")
+    calibration = report["outcome_calibration"]
+
+    assert calibration["sample_size"] == 0
+    assert calibration["multiclass_brier_score"] is None
+    assert calibration["multiclass_log_loss"] is None
+    assert set(calibration["outcomes"]) == {"home", "draw", "away"}
+    assert all(item["sample_size"] == 0 for item in calibration["outcomes"].values())

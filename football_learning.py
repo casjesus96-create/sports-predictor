@@ -113,6 +113,8 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "expected_home": expected_home, "expected_away": expected_away,
             "expected_total": expected_total, "btts_p": btts_p, "over25_p": over25_p,
             "actual_btts": actual_btts, "actual_over25": actual_over25,
+            "home_p": probs["HOME"], "draw_p": probs["DRAW"], "away_p": probs["AWAY"],
+            "actual_home": actual == "HOME", "actual_draw": actual == "DRAW", "actual_away": actual == "AWAY",
         })
 
     n = len(valid)
@@ -124,6 +126,8 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "confidence_bands": [], "surprises": [],
             "market_calibration": {"btts_yes": _binary_market_metrics([], "btts_p", "actual_btts"),
                                    "over_2_5": _binary_market_metrics([], "over25_p", "actual_over25")},
+            "outcome_calibration": {"sample_size": 0, "multiclass_brier_score": None, "multiclass_log_loss": None,
+                                    "outcomes": {key.lower(): _binary_market_metrics([], f"{key.lower()}_p", f"actual_{key.lower()}") for key in OUTCOMES}},
             "signals": [
                 "Todavía no hay suficientes snapshots oficiales liquidados y válidos para extraer patrones."
             ],
@@ -179,6 +183,16 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
     over25_report = _binary_market_metrics(valid, "over25_p", "actual_over25")
     btts_brier = btts_report["brier_score"]
     over25_brier = over25_report["brier_score"]
+    outcome_calibration = {
+        "sample_size": n,
+        "multiclass_brier_score": round(brier, 5),
+        "multiclass_log_loss": round(log_loss, 5),
+        "outcomes": {
+            "home": _binary_market_metrics(valid, "home_p", "actual_home"),
+            "draw": _binary_market_metrics(valid, "draw_p", "actual_draw"),
+            "away": _binary_market_metrics(valid, "away_p", "actual_away"),
+        },
+    }
 
     signals = []
     high = [item for item in valid if item["confidence"] >= 0.70]
@@ -216,6 +230,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
         },
         "confidence_bands": bands, "surprises": surprises, "signals": signals,
         "market_calibration": {"btts_yes": btts_report, "over_2_5": over25_report},
+        "outcome_calibration": outcome_calibration,
         "data_scope": "Solo snapshots oficiales inmutables FOOTBALL-POISSON-0.5.0 con resultado SETTLED; no usa resultados sin pronóstico prepartido.",
         "learning_policy": "Aprendizaje diagnóstico: mide errores, calibración, sorpresas y residuos de goles. No entrena, recalibra ni modifica probabilidades oficiales.",
         "model_changed": False, "snapshots_written": 0, "provider_calls": 0,
