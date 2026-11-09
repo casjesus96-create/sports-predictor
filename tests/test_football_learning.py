@@ -154,7 +154,7 @@ def test_1x2_calibration_reports_multiclass_and_each_outcome_separately():
     assert calibration["multiclass_log_loss"] == report["metrics"]["log_loss"]
     assert calibration["outcomes"]["home"]["sample_size"] == 3
     assert calibration["outcomes"]["home"]["brier_score"] == 0.25333
-    assert calibration["outcomes"]["home"]["calibration_bins"][2]["observed_rate"] == 1 / 3
+    assert calibration["outcomes"]["home"]["calibration_bins"][2]["observed_rate"] == 0.3333
     assert calibration["outcomes"]["draw"]["sample_size"] == 3
     assert calibration["outcomes"]["away"]["sample_size"] == 3
     assert report["model_changed"] is False
