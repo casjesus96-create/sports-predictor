@@ -136,8 +136,65 @@ def test_invalid_or_timezone_naive_snapshots_are_excluded():
 def test_local_competition_date_is_used_for_archive_cutoffs():
     rows = snapshots(2)
     rows[0]["kickoff_at"] = "2026-01-01T23:30:00Z"
-    rows[1]["kickoff_at"] = "2026-01-02T12:00:00Z"
-    report = build_baseline_comparison(rows, archive_history(), "PL", "Europe/London")
+    rows[1]["kickoff_at"] = "2026-01-03T00:00:00Z"
+    report = build_baseline_comparison(rows, archive_history(), "PL", "Europe/Paris")
 
     assert report["split"]["development_matches"] == 1
     assert report["split"]["holdout_start_local_date"] == "2026-01-02"
+
+
+
+def test_baseline_endpoint_reads_official_snapshots_and_owned_archive(monkeypatch):
+    import football_learning
+
+    captured = []
+    snapshot_rows = snapshots()
+    archive_rows = archive_history()
+
+    class Query:
+        def __init__(self, table):
+            self.table_name = table
+            self.offset = 0
+            self.limit = 1000
+            self.filters = []
+        def select(self, columns):
+            return self
+        def eq(self, column, value):
+            self.filters.append((column, value))
+            return self
+        def order(self, column, desc=False):
+            self.ordering = (column, desc)
+            return self
+        def range(self, start, end):
+            self.offset, self.limit = start, end - start + 1
+            return self
+        def execute(self):
+            captured.append((self.table_name, self.filters, self.ordering))
+            source = snapshot_rows if self.table_name == "football_prediction_snapshots" else archive_rows
+            return type("Result", (), {"data": source[self.offset:self.offset + self.limit]})()
+
+    class Client:
+        def table(self, name):
+            return Query(name)
+
+    monkeypatch.setattr(football_learning, "get_supabase_client", lambda: Client())
+    report = football_learning.football_baseline_comparison("PL")
+
+    assert report["success"] is True
+    assert report["provider_calls"] == 0
+    assert report["model_changed"] is False
+    assert {item[0] for item in captured} == {"football_prediction_snapshots", "football_match_archive"}
+    snapshot_filters = next(item[1] for item in captured if item[0] == "football_prediction_snapshots")
+    assert ("competition_code", "PL") in snapshot_filters
+    assert ("model_version", MODEL_VERSION) in snapshot_filters
+    assert ("result_status", "SETTLED") in snapshot_filters
+
+
+def test_baseline_endpoint_rejects_unsupported_competition():
+    import pytest
+    from fastapi import HTTPException
+    import football_learning
+
+    with pytest.raises(HTTPException) as error:
+        football_learning.football_baseline_comparison("XYZ")
+    assert error.value.status_code == 400
