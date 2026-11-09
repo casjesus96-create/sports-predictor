@@ -1,4 +1,4 @@
-from football_learning import build_postmatch_learning_report
+from football_learning import build_match_learning_context, build_postmatch_learning_report
 from football_model import MODEL_VERSION
 
 
@@ -63,3 +63,52 @@ def test_postmatch_learning_excludes_invalid_probability_rows():
     assert report["model_changed"] is False
     assert report["snapshots_written"] == 0
     assert report["provider_calls"] == 0
+
+
+
+def test_match_learning_context_excludes_same_time_and_future_snapshots():
+    cutoff = "2026-11-15T12:00:00Z"
+    previous = snapshot(0.60, 0.25, 0.15, 2, 1, 10)
+    previous["kickoff_at"] = "2026-11-08T15:00:00+00:00"
+    same_time = snapshot(0.80, 0.10, 0.10, 1, 0, 11)
+    same_time["kickoff_at"] = cutoff
+    future = snapshot(0.80, 0.10, 0.10, 1, 0, 12)
+    future["kickoff_at"] = "2026-11-16T15:00:00Z"
+
+    report = build_match_learning_context(
+        [previous, same_time, future], "PL", "Manchester City", "Chelsea", cutoff
+    )
+
+    assert report["competition_context"]["sample_size"] == 1
+    assert report["home_team"]["sample_size"] == 1
+    assert report["away_team"]["sample_size"] == 1
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_match_learning_context_requires_minimum_team_sample():
+    rows = []
+    for index in range(5):
+        row = snapshot(0.60, 0.25, 0.15, 2, 1, index + 20)
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    report = build_match_learning_context(
+        rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z"
+    )
+
+    assert report["home_team"]["sample_size"] == 5
+    assert report["home_team"]["eligible"] is True
+    assert report["away_team"]["eligible"] is True
+    assert report["competition_context"]["eligible"] is False
+
+
+def test_low_confidence_miss_is_not_counted_as_favorite_upset():
+    row = snapshot(0.43, 0.32, 0.25, 0, 1)
+    report = build_postmatch_learning_report([row], "PL")
+    low_band = next(item for item in report["confidence_bands"] if item["range"] == "0–50%")
+
+    assert low_band["misses"] == 1
+    assert low_band["upsets"] == 0
+    assert report["metrics"]["upset_count"] == 0

@@ -1477,6 +1477,89 @@ function FootballArchiveBrowser() {
   </section>;
 }
 
+function ProbabilitySignal({ label, value }: { label: string; value?: number }) {
+  const valid = typeof value === "number" && Number.isFinite(value);
+  const pct = valid ? Math.max(0, Math.min(100, value * 100)) : 0;
+  const color = pct >= 70 ? "#22c55e" : pct >= 55 ? "#14b8a6" : pct >= 45 ? "#f59e0b" : "#64748b";
+  const level = !valid ? "Sin dato" : pct >= 70 ? "Alta" : pct >= 55 ? "Media" : "Baja";
+  return <div style={{ minWidth: 0, padding: 9, borderRadius: 8, background: "#0f172a" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
+      <span style={{ color: "#cbd5e1", fontSize: 11 }}>{label}</span>
+      <strong style={{ fontSize: 18, color: valid ? "#f8fafc" : "#94a3b8" }}>{valid ? percent(value) : "—"}</strong>
+    </div>
+    <div style={{ height: 7, background: "#334155", borderRadius: 8, overflow: "hidden", marginTop: 7 }}>
+      <div style={{ width: valid ? pct + "%" : "0%", height: "100%", background: color, borderRadius: 8 }} />
+    </div>
+    <div style={{ color, fontSize: 10, marginTop: 4, fontWeight: 700 }}>{level}</div>
+  </div>;
+}
+
+function FootballMatchLessonsPanel({ competition, match }: { competition: string; match: Match }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const home = match.homeTeam?.name || "";
+  const away = match.awayTeam?.name || "";
+  const kickoff = match.utcDate || "";
+  const status = String(match.status || "").toUpperCase();
+
+  useEffect(() => {
+    if (!home || !away || !kickoff || ["FINISHED", "AWARDED", "CANCELLED", "CANCELED"].includes(status)) return;
+    let active = true;
+    async function load() {
+      setLoading(true); setError(""); setData(null);
+      try {
+        const params = new URLSearchParams({ competition, home_team: home, away_team: away, kickoff_at: kickoff });
+        const response = await fetch(API + "/learning/match-context?" + params.toString());
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || "No se pudieron consultar las lecciones históricas.");
+        if (active) setData(body);
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : "Error consultando las lecciones.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+    return () => { active = false; };
+  }, [competition, home, away, kickoff, status]);
+
+  if (["FINISHED", "AWARDED", "CANCELLED", "CANCELED"].includes(status)) return null;
+  const renderTeam = (team: any) => <div style={{ padding: 9, borderRadius: 8, background: "#0b1220" }}>
+    <strong>{team.team}</strong>
+    <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 3 }}>{team.sample_size} partidos previos {team.eligible ? "· muestra descriptiva disponible" : "· se requieren " + team.minimum_sample}</div>
+    {team.eligible ? <>
+      <div style={{ fontSize: 12, marginTop: 6 }}>Probabilidad media de victoria: <strong>{percent(team.mean_win_probability)}</strong></div>
+      <div style={{ fontSize: 12 }}>Victorias observadas: <strong>{percent(team.observed_win_rate)}</strong></div>
+      {typeof team.goals_for_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Goles a favor frente a lo esperado: {team.goals_for_bias > 0 ? "+" : ""}{team.goals_for_bias.toFixed(2)}</div>}
+      {typeof team.goals_against_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Goles recibidos frente a lo esperado: {team.goals_against_bias > 0 ? "+" : ""}{team.goals_against_bias.toFixed(2)}</div>}
+    </> : <p style={{ color: "#94a3b8", fontSize: 11, marginBottom: 0 }}>Todavía no hay suficientes predicciones oficiales liquidadas de este equipo para extraer una señal fiable.</p>}
+  </div>;
+
+  return <section style={{ margin: "10px 0", padding: 11, borderRadius: 9, border: "1px solid #0e7490", background: "#0c1b2a" }}>
+    <strong style={{ color: "#67e8f9" }}>🧠 Lecciones del modelo</strong>
+    <p style={{ color: "#94a3b8", fontSize: 11, margin: "4px 0 8px" }}>Ventana móvil de 90 días antes del kickoff. Patrones descriptivos; no cambian las probabilidades oficiales.</p>
+    {loading && !data && <p style={{ color: "#cbd5e1", fontSize: 12 }}>Consultando histórico anterior al encuentro…</p>}
+    {error && <p role="alert" style={{ color: "#fecaca", fontSize: 11 }}>{error}</p>}
+    {data && <>
+      <div style={{ padding: 9, background: "#111827", borderRadius: 8, marginBottom: 8 }}>
+        <strong style={{ fontSize: 12 }}>Contexto de {competition}</strong>
+        <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{data.competition_context.sample_size} partidos liquidados anteriores a este encuentro.</div>
+        {data.competition_context.eligible ? <>
+          <div style={{ fontSize: 12, marginTop: 5 }}>Confianza media del favorito: <strong>{percent(data.competition_context.mean_favorite_confidence)}</strong> · Acierto: <strong>{percent(data.competition_context.favorite_accuracy)}</strong></div>
+          {typeof data.competition_context.expected_total_goals_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Sesgo de goles totales (real − esperado): {data.competition_context.expected_total_goals_bias > 0 ? "+" : ""}{data.competition_context.expected_total_goals_bias.toFixed(2)}</div>}
+        </> : <p style={{ color: "#fbbf24", fontSize: 11, marginBottom: 0 }}>Muestra insuficiente: se requieren al menos {data.competition_context.minimum_sample} partidos para mostrar señales de competición.</p>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 8 }}>
+        {renderTeam(data.home_team)}
+        {renderTeam(data.away_team)}
+      </div>
+      <p style={{ color: "#64748b", fontSize: 10, marginBottom: 0 }}>Solo snapshots oficiales liquidados anteriores al kickoff · sin proveedores externos · solo lectura.</p>
+    </>}
+  </section>;
+}
+
+
 function FootballPostmatchLearningPanel({ competition }: { competition: string }) {
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -1524,8 +1607,8 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
       </div>
       <h3 style={{ marginBottom: 6 }}>¿La confianza coincide con lo que ocurre?</h3>
       <div style={{ overflowX: "auto" }}><table style={tableStyle}>
-        <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Sorpresas</th></tr></thead>
-        <tbody>{(report.confidence_bands || []).map((band: any) => <tr key={band.range}><td style={cellStyle}>{band.range}</td><td style={cellStyle}>{band.sample_size}</td><td style={cellStyle}>{percent(band.mean_confidence)}</td><td style={cellStyle}>{percent(band.accuracy)}</td><td style={cellStyle}>{band.upsets}</td></tr>)}</tbody>
+        <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>
+        <tbody>{(report.confidence_bands || []).map((band: any) => <tr key={band.range}><td style={cellStyle}>{band.range}</td><td style={cellStyle}>{band.sample_size}</td><td style={cellStyle}>{percent(band.mean_confidence)}</td><td style={cellStyle}>{percent(band.accuracy)}</td><td style={cellStyle}>{band.misses ?? band.upsets}</td><td style={cellStyle}>{band.upsets}</td></tr>)}</tbody>
       </table></div>
       <h3 style={{ marginBottom: 6 }}>Sorpresas que merecen revisión</h3>
       {(report.surprises || []).length ? (report.surprises || []).map((item: any) => <article key={item.match_id} style={{ padding: 10, marginTop: 8, borderRadius: 8, background: "#0b1220", border: "1px solid #475569" }}>
@@ -1968,13 +2051,14 @@ export default function FootballApp() {
               </button>
               {archiveMessages[match.id] && <p role="status" style={{ fontSize: 11, color: archiveMessages[match.id].startsWith("No se puede") || archiveMessages[match.id].includes("No se pudo") || archiveMessages[match.id].includes("no se registró") || archiveMessages[match.id].includes("conflicto") ? "#fca5a5" : "#86efac", margin: "7px 0 0" }}>{archiveMessages[match.id]}</p>}
             </section>}
+                <FootballMatchLessonsPanel competition={competition} match={match} />
                 <HeadToHeadPanel competition={competition} match={match} />
                 {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <TeamRecentFormPanel competition={competition} match={match} />}
                 {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <FootballMarketPatternsPanel competition={competition} match={match} />}
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
               <strong>Probabilidades 1X2</strong>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>
-                {[{ label: "Gana local", value: prediction.probabilities.home }, { label: "Empate", value: prediction.probabilities.draw }, { label: "Gana visitante", value: prediction.probabilities.away }].map((item) => <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: 9, textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><div style={{ fontSize: 19, fontWeight: 800 }}>{percent(item.value)}</div><div style={{ height: 5, borderRadius: 5, background: "#334155", marginTop: 6 }}><div style={{ height: 5, borderRadius: 5, background: "#60a5fa", width: percent(item.value) }} /></div></div>)}
+                {[{ label: "Gana local", value: prediction.probabilities.home }, { label: "Empate", value: prediction.probabilities.draw }, { label: "Gana visitante", value: prediction.probabilities.away }].map((item) => <ProbabilitySignal key={item.label} label={item.label} value={item.value} />)}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
                 {[{ label: "Goles local", value: prediction.expected_goals.home }, { label: "Goles visitante", value: prediction.expected_goals.away }, { label: "Total esperado", value: prediction.expected_goals.total ?? (prediction.expected_goals.home + prediction.expected_goals.away) }].map((item) => <div key={item.label} style={{ padding: 9, borderRadius: 8, background: "#0f172a", textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 20 }}>{item.value.toFixed(2)}</strong></div>)}
