@@ -239,3 +239,28 @@ def test_malformed_market_payload_does_not_discard_valid_1x2_snapshot():
     assert report["development"]["paired_1x2_sample_size"] == 12
     assert report["development"]["markets"]["btts_yes"]["sample_size"] == 11
     assert report["development"]["markets"]["over_2_5"]["sample_size"] == 11
+
+
+def test_baseline_comparison_exposes_season_slices_without_changing_global_holdout():
+    rows = snapshots(15)
+    for index, row in enumerate(rows):
+        day = date(2025, 6, 20) + timedelta(days=index * 3)
+        row["kickoff_at"] = f"{day.isoformat()}T15:00:00Z"
+    report = build_baseline_comparison(rows, archive_history(), "PL", "Europe/London")
+    seasons = {item["season"]: item for item in report["season_breakdown"]["by_season"]}
+    assert report["split"]["development_matches"] == 12
+    assert report["split"]["holdout_matches"] == 3
+    assert set(seasons) == {"2024/25", "2025/26"}
+    assert sum(item["development_matches"] for item in seasons.values()) == 12
+    assert sum(item["holdout_matches"] for item in seasons.values()) == 3
+    assert seasons["2025/26"]["holdout"] is not None
+    assert report["season_breakdown"]["holdout_policy"].find("primera fecha") >= 0
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_season_breakdown_is_empty_when_no_valid_snapshots_exist():
+    report = build_baseline_comparison([], archive_history(), "PL", "Europe/London")
+    assert report["season_breakdown"]["by_season"] == []

@@ -1808,6 +1808,30 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
         {baselineReport.history_truncated && <p style={{ color: "#fbbf24", fontSize: 11 }}>Aviso: el archivo alcanzó el límite de historial; la cobertura puede estar truncada.</p>}
         {renderSlice("Desarrollo cronológico · 80%", baselineReport.development)}
         {renderSlice("Holdout final · 20% reservado", baselineReport.holdout)}
+        <h4 style={{ margin: "12px 0 5px" }}>Comparación por temporada · mismo corte 80/20</h4>
+        <p style={{ color: "#94a3b8", fontSize: 10 }}>Cada temporada se desglosa dentro del corte cronológico global. El holdout de todas las temporadas mantiene la línea base congelada antes del primer día reservado; no se recalcula usando resultados del holdout.</p>
+        {(baselineReport.season_breakdown?.by_season || []).length ? (baselineReport.season_breakdown.by_season || []).map((season: any) => {
+          const renderSeasonMetric = (label: string, comparison: any) => {
+            const official = comparison?.official_model || {};
+            const league = comparison?.delta_official_minus_league || {};
+            const recent = comparison?.delta_official_minus_recent || {};
+            const ciLeague = comparison?.paired_delta_ci_95?.vs_league?.brier_score;
+            const ciRecent = comparison?.paired_delta_ci_95?.vs_recent?.brier_score;
+            const interval = (value: any) => Array.isArray(value) ? `[${value[0]}, ${value[1]}]` : "no estimable";
+            return <div style={{ fontSize: 10, color: "#cbd5e1", marginTop: 3 }}>
+              {label} · N={comparison?.sample_size ?? 0} · Brier oficial {typeof official.brier_score === "number" ? official.brier_score.toFixed(4) : "—"} · ΔB vs liga {typeof league.brier_score === "number" ? league.brier_score.toFixed(4) : "—"} (IC95 {interval(ciLeague)}) · ΔB vs forma {typeof recent.brier_score === "number" ? recent.brier_score.toFixed(4) : "—"} (IC95 {interval(ciRecent)})
+            </div>;
+          };
+          return <div key={season.season} style={{ padding: 9, marginTop: 7, borderRadius: 8, background: "#111827" }}>
+            <strong>{season.season} · desarrollo {season.development_matches} · holdout {season.holdout_matches}</strong>
+            {renderSeasonMetric("1X2 desarrollo", season.development?.one_x_two)}
+            {renderSeasonMetric("1X2 holdout", season.holdout?.one_x_two)}
+            {renderSeasonMetric("BTTS desarrollo", season.development?.markets?.btts_yes)}
+            {renderSeasonMetric("BTTS holdout", season.holdout?.markets?.btts_yes)}
+            {renderSeasonMetric("Over 2.5 desarrollo", season.development?.markets?.over_2_5)}
+            {renderSeasonMetric("Over 2.5 holdout", season.holdout?.markets?.over_2_5)}
+          </div>;
+        }) : <p style={{ color: "#94a3b8", fontSize: 11 }}>No hay temporadas con snapshots oficiales válidos.</p>}
         <p style={{ color: "#fbbf24", fontSize: 11, marginBottom: 0 }}>El holdout usa líneas base congeladas antes de su primera fecha: ningún resultado del tramo final alimenta sus probabilidades. Δ negativo favorece al modelo en Brier/Log Loss; Δ positivo favorece al modelo en acierto. Es una comparación descriptiva, no prueba de rentabilidad ni autorización para recalibrar.</p>
       </section>;
     })()}
