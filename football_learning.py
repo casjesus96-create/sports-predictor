@@ -214,7 +214,6 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "actual_btts": actual_btts, "actual_over25": actual_over25,
             "home_p": probs["HOME"], "draw_p": probs["DRAW"], "away_p": probs["AWAY"],
             "actual_home": actual == "HOME", "actual_draw": actual == "DRAW", "actual_away": actual == "AWAY",
-            "btts_p": btts_p, "over25_p": over25_p,
         })
 
     n = len(valid)
