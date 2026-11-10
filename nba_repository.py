@@ -4,6 +4,7 @@ import math
 
 from repository import get_supabase_client
 from nba_prediction import MODEL_VERSION
+from nba_calibration import build_confidence_calibration
 
 SPORT = "basketball"
 LEAGUE = "NBA"
@@ -183,6 +184,7 @@ def get_nba_performance():
     decisive = correct + incorrect
     brier = []
     log_loss = []
+    calibration_rows = []
     for row in settled:
         if row.get("prediction_result") == "PUSH":
             continue
@@ -195,6 +197,14 @@ def get_nba_performance():
         features = row.get("features") or {}
         game = features.get("game") or {}
         actual = 1.0 if str(row.get("actual_winner") or "").casefold() == str(game.get("home") or "").casefold() else 0.0
+        away_probability = row.get("away_probability")
+        try:
+            away_probability = float(away_probability)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(away_probability) or not 0.0 <= p <= 1.0 or not 0.0 <= away_probability <= 1.0:
+            continue
+        calibration_rows.append({"confidence": max(p, away_probability), "correct": row.get("prediction_result") == "CORRECT"})
         p = max(0.001, min(0.999, p))
         brier.append((p - actual) ** 2)
         log_loss.append(-(actual * math.log(p) + (1 - actual) * math.log(1 - p)))
@@ -209,5 +219,6 @@ def get_nba_performance():
             "accuracy_percentage": round(correct / decisive * 100, 2) if decisive else 0.0,
             "brier_score": round(sum(brier) / len(brier), 6) if brier else None,
             "log_loss": round(sum(log_loss) / len(log_loss), 6) if log_loss else None,
+            "confidence_calibration": build_confidence_calibration(calibration_rows),
         },
     }
