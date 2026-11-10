@@ -14,6 +14,8 @@ def build_decision_outcome_audit(evaluations: list[dict], snapshots: list[dict],
     excluded = 0
     rows = []
     for item in evaluations:
+        if str(item.get("status") or "ACTIVE").upper() == "VOIDED":
+            continue
         snapshot_id = item.get("prediction_snapshot_id")
         snapshot = by_id.get(str(snapshot_id)) if snapshot_id else None
         if not snapshot or str(snapshot.get("result_status") or "").upper() != "SETTLED":

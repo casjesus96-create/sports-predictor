@@ -33,3 +33,12 @@ def test_coverage_ignores_other_sports():
     )
     assert report["coverage"]["total_evaluations"] == 0
     assert report["by_model"] == []
+
+def test_coverage_ignores_voided_evaluations():
+    evaluations = [
+        {"status": "VOIDED", "sport": "MLB", "prediction_snapshot_id": None},
+        {"status": "ACTIVE", "sport": "MLB", "prediction_snapshot_id": None},
+    ]
+    report = build_decision_audit_coverage(evaluations, [])
+    assert report["coverage"]["total_evaluations"] == 1
+    assert report["coverage"]["manual_evaluations"] == 1

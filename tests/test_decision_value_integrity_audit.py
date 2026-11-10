@@ -60,3 +60,13 @@ def test_integrity_audit_ignores_other_sports():
     )
     assert report["audit"]["evaluations_examined"] == 0
     assert report["by_model"] == []
+
+def test_integrity_audit_ignores_voided_evaluations():
+    evaluations = [
+        {"id": "voided", "status": "VOIDED", "sport": "MLB", "model_probability": 0.5,
+         "decimal_odds": 2.0, "expected_value_percent": 0.0},
+        {"id": "active", "status": "ACTIVE", "sport": "MLB", "model_probability": 0.5,
+         "decimal_odds": 2.0, "expected_value_percent": 0.0},
+    ]
+    report = build_decision_value_integrity_audit(evaluations, [])
+    assert report["audit"]["evaluations_examined"] == 1

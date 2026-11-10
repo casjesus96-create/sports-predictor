@@ -30,6 +30,9 @@ type HistoryItem = {
   expected_value_percent: number;
   evaluated_at: string;
   outcome_status: string;
+  status?: string;
+  void_reason?: string | null;
+  voided_at?: string | null;
   actual_winner: string | null;
   actual_home_score?: number | string | null;
   actual_away_score?: number | string | null;
@@ -94,6 +97,7 @@ const colors: Record<string, string> = {
   BLOCKED_INCONSISTENT: "#991b1b",
 };
 const outcomeLabels: Record<string, string> = {
+  VOIDED: "Anulada",
   CORRECT: "Acierto",
   INCORRECT: "Error",
   PENDING: "Pendiente",
@@ -115,7 +119,7 @@ export default function DecisionCenter() {
   const [snapshotId, setSnapshotId] = useState("");
   const [selectedSide, setSelectedSide] = useState<Side>("home");
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [historySummary, setHistorySummary] = useState<{total: number; settled: number; correct: number; incorrect: number; accuracy_percentage: number | null} | null>(null);
+  const [historySummary, setHistorySummary] = useState<{total: number; voided: number; settled: number; correct: number; incorrect: number; accuracy_percentage: number | null} | null>(null);
   const [performance, setPerformance] = useState<{groups: Array<{sport: Sport; model_version: string; model_status: "OFFICIAL" | "HISTORICAL" | "RESEARCH"; sample_size: number; correct: number; incorrect: number; accuracy_percentage: number; brier_score: number; log_loss: number}>; settled_rows_excluded: number} | null>(null);
   const [result, setResult] = useState<DecisionResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -136,6 +140,7 @@ export default function DecisionCenter() {
       setHistory(data.evaluations || []);
       setHistorySummary({
         total: data.total || 0,
+        voided: data.voided || 0,
         settled: data.settled || 0,
         correct: data.correct || 0,
         incorrect: data.incorrect || 0,
@@ -146,6 +151,28 @@ export default function DecisionCenter() {
       setHistorySummary(null);
     }
   }, []);
+
+  const voidEvaluation = useCallback(async (item: HistoryItem) => {
+    const reason = window.prompt("Motivo de anulación (ej. cuota invertida o error de digitación):");
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      setError("El motivo debe tener al menos 3 caracteres.");
+      return;
+    }
+    setError("");
+    try {
+      const response = await fetch(`${API}/evaluations/${encodeURIComponent(item.id)}/void`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof data?.detail === "string" ? data.detail : "No se pudo anular la evaluación.");
+      await loadHistory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al anular la evaluación.");
+    }
+  }, [loadHistory]);
 
   const loadPerformance = useCallback(async () => {
     try {
@@ -449,14 +476,14 @@ export default function DecisionCenter() {
         <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Historial y validación</h2>
         {historySummary && (
           <p style={{ color: "#475569", lineHeight: 1.5 }}>
-            Evaluaciones registradas: <strong>{historySummary.total}</strong> · Liquidaciones verificables: <strong>{historySummary.settled}</strong> · Aciertos: <strong>{historySummary.correct}</strong> · Errores: <strong>{historySummary.incorrect}</strong>
+            Evaluaciones activas: <strong>{historySummary.total}</strong> · Anuladas: <strong>{historySummary.voided}</strong> · Liquidaciones verificables: <strong>{historySummary.settled}</strong> · Aciertos: <strong>{historySummary.correct}</strong> · Errores: <strong>{historySummary.incorrect}</strong>
             {historySummary.accuracy_percentage !== null ? <> · Precisión observada: <strong>{historySummary.accuracy_percentage.toFixed(2)}%</strong></> : " · Aún no hay suficientes evaluaciones liquidadas para calcular precisión."}
           </p>
         )}
         {history.length === 0 ? <p style={{ color: "#64748b" }}>No hay evaluaciones registradas visibles todavía. El historial aparecerá después de aplicar la migración de Supabase y guardar la primera evaluación.</p> : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead><tr>{["Fecha", "Deporte", "Selección", "Cuota", "EV teórico", "Resultado real", "Marcador", "Estado"].map((heading) => <th key={heading} style={{ textAlign: "left", padding: "9px 7px", borderBottom: "1px solid #cbd5e1" }}>{heading}</th>)}</tr></thead>
+              <thead><tr>{["Fecha", "Deporte", "Selección", "Cuota", "EV teórico", "Resultado real", "Marcador", "Estado", "Acción"].map((heading) => <th key={heading} style={{ textAlign: "left", padding: "9px 7px", borderBottom: "1px solid #cbd5e1" }}>{heading}</th>)}</tr></thead>
               <tbody>{history.map((item) => (
                 <tr key={item.id}>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{item.evaluated_at ? new Date(item.evaluated_at).toLocaleDateString() : "—"}</td>
@@ -466,7 +493,13 @@ export default function DecisionCenter() {
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{Number(item.expected_value_percent) >= 0 ? "+" : ""}{Number(item.expected_value_percent).toFixed(2)}%</td>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{item.actual_winner || (item.outcome_status === "PENDING" ? "Pendiente" : item.outcome_status === "MANUAL_UNTRACKED" ? "Sin seguimiento" : "—")}</td>
                   <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{item.actual_home_score != null && item.actual_away_score != null ? `${item.actual_away_score}–${item.actual_home_score}` : "—"}</td>
-                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>{outcomeLabels[item.outcome_status] || item.outcome_status}</td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>
+                    {outcomeLabels[item.outcome_status] || item.outcome_status}
+                    {item.outcome_status === "VOIDED" && item.void_reason && <small style={{ display: "block", color: "#64748b" }}>Motivo: {item.void_reason}</small>}
+                  </td>
+                  <td style={{ padding: "9px 7px", borderBottom: "1px solid #e2e8f0" }}>
+                    {item.outcome_status !== "VOIDED" && <button type="button" onClick={() => void voidEvaluation(item)} style={{ minHeight: 34, padding: "5px 9px", border: "1px solid #b91c1c", borderRadius: 7, background: "#fff", color: "#991b1b", fontWeight: 700 }}>Anular</button>}
+                  </td>
                 </tr>
               ))}</tbody>
             </table>

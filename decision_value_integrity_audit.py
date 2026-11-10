@@ -34,6 +34,8 @@ def build_decision_value_integrity_audit(
     recent = []
 
     for item in evaluations:
+        if str(item.get("status") or "ACTIVE").upper() == "VOIDED":
+            continue
         if str(item.get("sport") or "").upper() != sport_filter.upper():
             continue
         totals["evaluations_examined"] += 1
