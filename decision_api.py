@@ -315,6 +315,7 @@ def void_decision_evaluation(evaluation_id: str, request: DecisionEvaluationVoid
             })
             .eq("id", evaluation_id)
             .eq("status", "ACTIVE")
+            .select("id,status")
             .execute()
         )
         rows = response.data or []
@@ -678,7 +679,7 @@ def decision_value_integrity(
             supabase.table("decision_evaluations")
             .select(
                 "id,prediction_snapshot_id,sport,model_version,selected_side,"
-                "selected_team,model_probability,decimal_odds,expected_value_percent,evaluated_at"
+                "selected_team,model_probability,decimal_odds,expected_value_percent,evaluated_at,status"
             )
             .eq("sport", sport)
             .order("evaluated_at", desc=True)
