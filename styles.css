@@ -200,3 +200,22 @@ button:disabled{cursor:not-allowed;opacity:.55}
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* Porcentajes unificados: mismo lenguaje visual que el módulo de fútbol. */
+.percentage-signal-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:10px;margin-top:12px;min-width:0}
+.percentage-band-card{min-width:0;padding:12px;border:1px solid #20384f;border-radius:12px;background:#0d1d2d}
+.percentage-band-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.percentage-band-heading strong{font-size:.9rem;color:#eaf1f8}
+.percentage-band-heading span,.percentage-band-footer{font-size:.72rem;color:#8fa5b9}
+.percentage-band-signals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.percentage-signal{min-width:0;padding:10px;border-radius:9px;background:#0f172a}
+.percentage-signal-top{display:flex;justify-content:space-between;align-items:center;gap:7px}
+.percentage-signal-top span{font-size:.72rem;color:#cbd5e1;overflow-wrap:anywhere}
+.percentage-signal-top strong{font-size:1.12rem;color:#f8fafc;font-variant-numeric:tabular-nums;white-space:nowrap}
+.percentage-signal-track{height:7px;margin-top:8px;border-radius:8px;background:#334155;overflow:hidden}
+.percentage-signal-track span{display:block;height:100%;border-radius:8px;transition:width .2s ease}
+.percentage-signal small{display:block;margin-top:4px;font-size:.66rem;font-weight:700}
+.percentage-band-footer{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:10px;line-height:1.45}
+.percentage-band-footer strong{font-size:.72rem}
+@media(max-width:420px){.percentage-band-signals{grid-template-columns:1fr}.percentage-signal-top strong{font-size:1.05rem}}
