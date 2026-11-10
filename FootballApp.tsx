@@ -1644,8 +1644,8 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
             <strong>{label}</strong>
             <div style={{ color: "#cbd5e1", fontSize: 11 }}>N: {market?.sample_size ?? 0} · Brier: {market?.brier_score ?? "—"} · Log Loss: {market?.log_loss ?? "—"}</div>
             <div style={{ overflowX: "auto" }}><table style={tableStyle}>
-              <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Real</th></tr></thead>
-              <tbody>{(market?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td></tr>)}</tbody>
+              <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Real</th><th style={cellStyle}>IC 95%</th></tr></thead>
+              <tbody>{(market?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{bucket.observed_rate_ci_95 ? `${percent(bucket.observed_rate_ci_95.lower)}–${percent(bucket.observed_rate_ci_95.upper)}` : "—"}</td></tr>)}</tbody>
             </table></div>
           </div>;
         })}
@@ -1821,9 +1821,10 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
         </div>;
       })()}
       <h3 style={{ marginBottom: 6 }}>¿La confianza coincide con lo que ocurre?</h3>
+      <p style={{ color: "#9ca3af", fontSize: 11 }}>IC 95% de Wilson para la tasa observada. Intervalos amplios indican que la muestra todavía es imprecisa; no son garantía de rendimiento futuro.</p>
       <div style={{ overflowX: "auto" }}><table style={tableStyle}>
-        <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>
-        <tbody>{(report.confidence_bands || []).map((band: any) => <tr key={band.range}><td style={cellStyle}>{band.range}</td><td style={cellStyle}>{band.sample_size}</td><td style={cellStyle}>{percent(band.mean_confidence)}</td><td style={cellStyle}>{percent(band.accuracy)}</td><td style={cellStyle}>{band.misses ?? band.upsets}</td><td style={cellStyle}>{band.upsets}</td></tr>)}</tbody>
+        <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>
+        <tbody>{(report.confidence_bands || []).map((band: any) => <tr key={band.range}><td style={cellStyle}>{band.range}</td><td style={cellStyle}>{band.sample_size}</td><td style={cellStyle}>{percent(band.mean_confidence)}</td><td style={cellStyle}>{percent(band.accuracy)}</td><td style={cellStyle}>{band.accuracy_ci_95 ? `${percent(band.accuracy_ci_95.lower)}–${percent(band.accuracy_ci_95.upper)}` : "—"}</td><td style={cellStyle}>{band.misses ?? band.upsets}</td><td style={cellStyle}>{band.upsets}</td></tr>)}</tbody>
       </table></div>
       <h3 style={{ marginBottom: 6 }}>Sorpresas que merecen revisión</h3>
       {(report.surprises || []).length ? (report.surprises || []).map((item: any) => <article key={item.match_id} style={{ padding: 10, marginTop: 8, borderRadius: 8, background: "#0b1220", border: "1px solid #475569" }}>
