@@ -10,7 +10,8 @@ Esta aplicación está configurada para un único administrador. No existe regis
 4. En Authentication / Settings, desactiva los registros públicos (Allow new users to sign up) y activa la protección contra contraseñas filtradas si está disponible.
 5. Mantén habilitada la autenticación TOTP. Sports Predictor exige completar el segundo factor antes de permitir cualquier endpoint privado.
 6. En los ajustes de Auth, conserva límites de intentos de inicio de sesión estrictos y activa los controles de protección contra abuso disponibles.
-7. Configura el tiempo máximo de sesión y el tiempo de inactividad de acuerdo con el uso privado; se recomienda una sesión inactiva máxima de 12 horas.\n8. Reduce la duración del access token JWT a 15–30 minutos y confirma que la rotación de refresh tokens esté habilitada; esto reduce la ventana de exposición de un token copiado después de cerrar sesión.
+7. Configura el tiempo máximo de sesión y el tiempo de inactividad de acuerdo con el uso privado; se recomienda una sesión inactiva máxima de 12 horas.
+8. Reduce la duración del access token JWT a 15–30 minutos y confirma que la rotación de refresh tokens esté habilitada; esto reduce la ventana de exposición de un token copiado después de cerrar sesión.
 
 No compartas ni guardes la contraseña en GitHub, Render logs o código fuente.
 
