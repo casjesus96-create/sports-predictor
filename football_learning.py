@@ -268,6 +268,89 @@ def _build_segmented_error_diagnostics(valid: list[dict[str, Any]]) -> dict[str,
         "model_changed": False,
     }
 
+
+TEMPORAL_ERROR_WINDOW_MINIMUM_SAMPLE = 30
+
+
+def _build_temporal_error_stability(valid: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compare two non-overlapping chronological windows without splitting local match dates."""
+    from football_archive import COMPETITIONS
+
+    by_competition: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
+    excluded = 0
+    for item in valid:
+        row = item["row"]
+        competition = str(row.get("competition_code") or "").strip().upper()
+        config = COMPETITIONS.get(competition)
+        kickoff = row.get("kickoff_at")
+        try:
+            parsed = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00"))
+            if not config or parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError("unknown competition or timezone")
+            local_date = parsed.astimezone(ZoneInfo(config["timezone"])).date().isoformat()
+        except (TypeError, ValueError, KeyError):
+            excluded += 1
+            continue
+        by_competition[competition][local_date].append(item)
+
+    segments = []
+    for competition, dates in sorted(by_competition.items()):
+        ordered_dates = sorted(dates)
+        total = sum(len(dates[date]) for date in ordered_dates)
+        candidates = []
+        left_count = 0
+        for index, date in enumerate(ordered_dates[:-1], start=1):
+            left_count += len(dates[date])
+            right_count = total - left_count
+            if left_count >= TEMPORAL_ERROR_WINDOW_MINIMUM_SAMPLE and right_count >= TEMPORAL_ERROR_WINDOW_MINIMUM_SAMPLE:
+                candidates.append((abs(left_count - right_count), index, left_count, right_count))
+        if not candidates:
+            segments.append({
+                "competition": competition,
+                "sample_size": total,
+                "eligible": False,
+                "minimum_per_window": TEMPORAL_ERROR_WINDOW_MINIMUM_SAMPLE,
+                "windows": [],
+                "reason": "Se requieren al menos 30 partidos en cada una de dos ventanas cronológicas y fechas locales distintas.",
+            })
+            continue
+
+        _, split_index, left_count, right_count = min(candidates)
+        split_date = ordered_dates[split_index]
+        windows = (
+            ("earlier", ordered_dates[:split_index]),
+            ("later", ordered_dates[split_index:]),
+        )
+        window_results = []
+        for label, window_dates in windows:
+            items = [item for date in window_dates for item in dates[date]]
+            diagnostic = _build_error_diagnostics(items)
+            window_results.append({
+                "period": label,
+                "sample_size": len(items),
+                "start_local_date": window_dates[0],
+                "end_local_date": window_dates[-1],
+                "confusion_matrix": diagnostic["confusion_matrix"]["predicted_rows_actual_columns"],
+                "goal_residuals": diagnostic["goal_residuals"],
+            })
+        segments.append({
+            "competition": competition,
+            "sample_size": total,
+            "eligible": True,
+            "minimum_per_window": TEMPORAL_ERROR_WINDOW_MINIMUM_SAMPLE,
+            "split_before_local_date": split_date,
+            "windows": window_results,
+        })
+
+    return {
+        "minimum_per_window": TEMPORAL_ERROR_WINDOW_MINIMUM_SAMPLE,
+        "date_cluster": "Todos los partidos de una misma fecha local permanecen en la misma ventana.",
+        "by_competition": segments,
+        "excluded_missing_competition_or_kickoff": excluded,
+        "read_only": True,
+        "model_changed": False,
+    }
+
 def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str | None = None) -> dict[str, Any]:
     """Score immutable settled official snapshots and expose descriptive error patterns."""
     valid = []
@@ -322,6 +405,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "segmented_calibration": _build_segmented_calibration([]),
             "error_diagnostics": _build_error_diagnostics([]),
             "segmented_error_diagnostics": _build_segmented_error_diagnostics([]),
+            "temporal_error_stability": _build_temporal_error_stability([]),
             "signals": [
                 "Todavía no hay suficientes snapshots oficiales liquidados y válidos para extraer patrones."
             ],
@@ -428,6 +512,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
         "segmented_calibration": _build_segmented_calibration(valid),
         "error_diagnostics": _build_error_diagnostics(valid),
         "segmented_error_diagnostics": _build_segmented_error_diagnostics(valid),
+        "temporal_error_stability": _build_temporal_error_stability(valid),
         "data_scope": "Solo snapshots oficiales inmutables FOOTBALL-POISSON-0.5.0 con resultado SETTLED; no usa resultados sin pronóstico prepartido.",
         "learning_policy": "Aprendizaje diagnóstico: mide errores, calibración, sorpresas y residuos de goles. No entrena, recalibra ni modifica probabilidades oficiales.",
         "model_changed": False, "snapshots_written": 0, "provider_calls": 0,

@@ -1792,6 +1792,34 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
           {segmented.excluded_missing_competition_or_season > 0 && <p style={{ color: "#fbbf24", fontSize: 10 }}>Excluidos por competición o temporada no identificable: {segmented.excluded_missing_competition_or_season}.</p>}
         </div>;
       })()}
+      <h3 style={{ marginBottom: 6 }}>Estabilidad temporal de los errores</h3>
+      {(() => {
+        const stability = report.temporal_error_stability || {};
+        return <div style={{ marginBottom: 14 }}>
+          <p style={{ color: "#9ca3af", fontSize: 11 }}>Compara dos ventanas cronológicas consecutivas por competición. Todos los partidos de una misma fecha local quedan juntos; cada ventana necesita al menos {stability.minimum_per_window ?? 30} partidos. Es una comparación descriptiva, no una prueba causal.</p>
+          {(stability.by_competition || []).length ? stability.by_competition.map((segment: any) => <div key={segment.competition} style={{ padding: 10, borderRadius: 8, background: "#111827", marginTop: 8 }}>
+            <strong>{segment.competition} · N={segment.sample_size}</strong>
+            {!segment.eligible ? <p style={{ color: "#fbbf24", fontSize: 11 }}>{segment.reason}</p> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 8, marginTop: 8 }}>
+              {(segment.windows || []).map((window: any) => <div key={window.period} style={{ minWidth: 0, padding: 8, border: "1px solid #374151", borderRadius: 6 }}>
+                <strong>{window.period === "earlier" ? "Ventana anterior" : "Ventana reciente"} · N={window.sample_size}</strong>
+                <p style={{ color: "#9ca3af", fontSize: 10 }}>{window.start_local_date} — {window.end_local_date}</p>
+                <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+                  <thead><tr><th style={cellStyle}>Pronóstico / real</th><th style={cellStyle}>HOME</th><th style={cellStyle}>DRAW</th><th style={cellStyle}>AWAY</th></tr></thead>
+                  <tbody>{(["HOME", "DRAW", "AWAY"] as const).map((predicted) => <tr key={predicted}><td style={cellStyle}>{predicted}</td>{(["HOME", "DRAW", "AWAY"] as const).map((actual) => <td key={actual} style={cellStyle}>{window.confusion_matrix?.[predicted]?.[actual] ?? 0}</td>)}</tr>)}</tbody>
+                </table></div>
+                <div style={{ overflowX: "auto", marginTop: 6 }}><table style={tableStyle}>
+                  <thead><tr><th style={cellStyle}>Goles</th><th style={cellStyle}>N</th><th style={cellStyle}>Sesgo</th><th style={cellStyle}>MAE</th><th style={cellStyle}>RMSE</th></tr></thead>
+                  <tbody>{([["home_goals", "Local"], ["away_goals", "Visitante"], ["total_goals", "Total"]] as const).map(([key, label]) => {
+                    const metric = window.goal_residuals?.[key];
+                    return <tr key={key}><td style={cellStyle}>{label}</td><td style={cellStyle}>{metric?.sample_size ?? 0}</td><td style={cellStyle}>{metric?.eligible ? metric.bias_actual_minus_expected.toFixed(3) : "—"}</td><td style={cellStyle}>{metric?.eligible ? metric.mae.toFixed(3) : "—"}</td><td style={cellStyle}>{metric?.eligible ? metric.rmse.toFixed(3) : "—"}</td></tr>;
+                  })}</tbody>
+                </table></div>
+              </div>)}
+            </div>}
+          </div>) : <p style={{ color: "#9ca3af" }}>Sin datos temporales segmentables.</p>}
+          {stability.excluded_missing_competition_or_kickoff > 0 && <p style={{ color: "#fbbf24", fontSize: 10 }}>Excluidos por competición o fecha inválida: {stability.excluded_missing_competition_or_kickoff}.</p>}
+        </div>;
+      })()}
       <h3 style={{ marginBottom: 6 }}>¿La confianza coincide con lo que ocurre?</h3>
       <div style={{ overflowX: "auto" }}><table style={tableStyle}>
         <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>
