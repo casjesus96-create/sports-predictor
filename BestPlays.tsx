@@ -43,7 +43,7 @@ export default function BestPlays() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preserveMessage = false) => {
     setLoading(true); setError("");
     try {
       const [candidateResponse, historyResponse, statusResponse] = await Promise.all([
@@ -71,7 +71,7 @@ export default function BestPlays() {
       const historyMessage = !historyResponse.ok
         ? "No se pudo consultar el historial de recomendaciones. Puedes seleccionar partidos igualmente; verifica que la migración SQL del Centro de Mejores Jugadas esté aplicada en Supabase."
         : "";
-      setMessage([diagnosticsMessage, historyMessage].filter(Boolean).join(" "));
+      if (!preserveMessage) setMessage([diagnosticsMessage, historyMessage].filter(Boolean).join(" "));
       if (!statusResponse.ok) setMessage((current) => [current, "No se pudo consultar la configuración de cuotas automáticas."].filter(Boolean).join(" "));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error cargando el Centro de Mejores Jugadas.");
@@ -106,10 +106,18 @@ export default function BestPlays() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || "No se pudo guardar la recomendación.");
-      setMessage(data.message || "Solicitud procesada.");
-      setOdds("");
-      setOpponentOdds("");
-      await load();
+      const saved = data.saved === true;
+      setMessage(data.message || (saved
+        ? "Recomendación guardada correctamente."
+        : "La evaluación terminó, pero no se guardó una recomendación."));
+      // Keep the entered quote when the decision engine rejects the pick,
+      // so the user can review the reason or try a different real quote.
+      if (saved) {
+        setOdds("");
+        setOpponentOdds("");
+      }
+      // Refresh the list without erasing the API's explicit saved/rejected result.
+      await load(true);
     } catch (e) { setError(e instanceof Error ? e.message : "Error guardando la cuota manual."); }
     finally { setLoading(false); }
   }
