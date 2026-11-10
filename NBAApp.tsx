@@ -382,9 +382,21 @@ export default function NBAApp() {
             <span className="muted">{summary.confidence_calibration.sample_size ?? 0} muestras</span>
           </div>
           <p className="muted">Compara la confianza del favorito con el porcentaje de aciertos observado. IC95% Wilson; diagnóstico descriptivo, no modifica probabilidades ni el modelo.</p>
+          <div className="percentage-signal-grid">
+            <PercentageSignal
+              label="Acierto observado"
+              value={summary.confidence_calibration.observed_accuracy}
+            />
+            <PercentageSignal
+              label="IC95% · límite inferior"
+              value={summary.confidence_calibration.accuracy_ci_95?.lower}
+            />
+            <PercentageSignal
+              label="IC95% · límite superior"
+              value={summary.confidence_calibration.accuracy_ci_95?.upper}
+            />
+          </div>
           <div className="prediction-strip">
-            <div><span>Acierto observado</span><b>{summary.confidence_calibration.observed_accuracy != null ? pct(summary.confidence_calibration.observed_accuracy) : "—"}</b></div>
-            <div><span>Intervalo IC95%</span><b>{summary.confidence_calibration.accuracy_ci_95 ? (pct(summary.confidence_calibration.accuracy_ci_95.lower) + "–" + pct(summary.confidence_calibration.accuracy_ci_95.upper)) : "—"}</b></div>
             <div><span>Muestra mínima</span><b>{summary.confidence_calibration.minimum_sample_required ?? 30}</b></div>
           </div>
           <p className="muted">{summary.confidence_calibration.message || "Sin información adicional."}</p>
