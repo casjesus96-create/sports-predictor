@@ -30,7 +30,7 @@ def test_nfl_calibration_reports_wilson_and_excludes_pushes_and_invalid_rows(mon
         _row(0.99, 0.01, "CORRECT"),
         {"result_status": "PENDING", "home_probability": 0.8, "away_probability": 0.2},
     ]
-    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda: rows)
+    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda **kwargs: rows)
 
     result = nfl_repository.get_nfl_calibration(minimum_sample=30)
 
@@ -64,7 +64,7 @@ def test_nfl_calibration_marks_minimum_sample_without_recalibrating(monkeypatch)
 
 
 def test_nfl_calibration_handles_empty_history(monkeypatch):
-    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda: [])
+    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda **kwargs: [])
     result = nfl_repository.get_nfl_calibration()
     assert result["sample_size"] == 0
     assert result["observed_accuracy"] is None
