@@ -1,5 +1,3 @@
-import React from "react";
-
 type PercentageSignalProps = {
   label: string;
   value: number | null | undefined;
