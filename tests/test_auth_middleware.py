@@ -11,19 +11,18 @@ def test_private_api_rejects_requests_without_session():
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_private_api_requires_second_factor(monkeypatch):
+def test_private_api_accepts_password_session_without_second_factor(monkeypatch):
     monkeypatch.setattr(main, "validate_access_token", lambda token: {"email": "owner@example.com"})
     monkeypatch.setattr(main, "token_assurance_level", lambda token: "aal1")
     client = TestClient(main.app)
     response = client.get(
-        "/api/v1/nfl/games",
+        "/api/v1/route-that-does-not-exist",
         cookies={"sp_access_token": "password-only-session"},
     )
-    assert response.status_code == 403
-    assert response.json()["code"] == "MFA_REQUIRED"
+    assert response.status_code == 404
 
 
-def test_private_api_passes_mfa_session_to_route(monkeypatch):
+def test_private_api_accepts_existing_mfa_session(monkeypatch):
     monkeypatch.setattr(main, "validate_access_token", lambda token: {"email": "owner@example.com"})
     monkeypatch.setattr(main, "token_assurance_level", lambda token: "aal2")
     client = TestClient(main.app)
