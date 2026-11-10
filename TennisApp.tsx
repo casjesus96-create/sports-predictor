@@ -1,3 +1,4 @@
+import PercentageSignal from "./PercentageSignal";
 import { useCallback, useEffect, useState } from "react";
 
 type Player = {
@@ -577,9 +578,15 @@ export default function TennisApp() {
               <div role="status" style={{ marginTop: 14, padding: 14, border: "1px solid #2dd4bf", borderRadius: 10, background: "#102b32" }}>
                 <strong>{projectionResult.already_exists ? "Ya existía el pronóstico original" : projectionResult.settled ? "Pronóstico liquidado" : "Pronóstico guardado"}</strong>
                 <p style={{ color: "#b7c8d8", lineHeight: 1.5 }}>{projectionResult.notice || "Las probabilidades originales se conservaron en el registro."}</p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-                  <div><strong>{projectionResult.snapshot.player1_name}</strong><div>{formatPercent(projectionResult.snapshot.player1_probability)} · Elo {projectionResult.snapshot.player1_rating}</div></div>
-                  <div><strong>{projectionResult.snapshot.player2_name}</strong><div>{formatPercent(projectionResult.snapshot.player2_probability)} · Elo {projectionResult.snapshot.player2_rating}</div></div>
+                <div className="percentage-signal-grid">
+                  <div>
+                    <PercentageSignal label={projectionResult.snapshot.player1_name} value={projectionResult.snapshot.player1_probability} />
+                    <small style={{ display: "block", marginTop: 5, color: "#b7c8d8" }}>Elo {projectionResult.snapshot.player1_rating}</small>
+                  </div>
+                  <div>
+                    <PercentageSignal label={projectionResult.snapshot.player2_name} value={projectionResult.snapshot.player2_probability} />
+                    <small style={{ display: "block", marginTop: 5, color: "#b7c8d8" }}>Elo {projectionResult.snapshot.player2_rating}</small>
+                  </div>
                 </div>
                 <p style={{ marginBottom: 0, fontSize: 12, color: "#b7c8d8" }}>Modelo {projectionResult.snapshot.model_version} · Estado {projectionResult.snapshot.result_status}</p>
               </div>
