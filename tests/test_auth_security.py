@@ -139,12 +139,21 @@ def test_totp_verification_returns_only_aal2_session(auth_env, monkeypatch):
         })
 
     monkeypatch.setattr(auth_security.requests, "request", fake_request)
-    session = auth_security.verify_totp("password-session", "factor-1", "123456")
+    session = auth_security.verify_totp("password-session", "34e770dd-9ff9-416c-87fa-43b31d7ef225", "123456")
     assert session["refresh_token"] == "rotated-refresh"
     assert auth_security.token_assurance_level(session["access_token"]) == "aal2"
     assert len(calls) == 2
-    assert calls[0][1].endswith("/factors/factor-1/challenge")
+    assert calls[0][1].endswith("/factors/34e770dd-9ff9-416c-87fa-43b31d7ef225/challenge")
     assert calls[1][2]["json"]["code"] == "123456"
+
+
+def test_factor_id_is_validated_before_provider_request(auth_env, monkeypatch):
+    monkeypatch.setattr(
+        auth_security.requests,
+        "request",
+        lambda *args, **kwargs: pytest.fail("Invalid factor ID must not reach Supabase"),
+    )
+    assert auth_security.verify_totp("access", "../admin/users", "123456") is None
 
 
 def test_aal_claim_is_not_accepted_from_malformed_token():
