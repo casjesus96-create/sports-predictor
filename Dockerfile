@@ -9,6 +9,7 @@ WORKDIR /frontend
 COPY package.json ./
 
 COPY App.tsx ./
+COPY AuthGate.tsx ./
 COPY MLBApp.tsx ./
 COPY NFLApp.tsx ./
 COPY PercentageSignal.tsx ./
