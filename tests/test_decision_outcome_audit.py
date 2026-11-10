@@ -30,3 +30,18 @@ def test_audit_excludes_manual_and_pending_evaluations():
     assert report["matched_evaluations"] == 0
     assert report["excluded_evaluations"] == 2
     assert report["overall"]["flat_stake_roi_percentage"] is None
+
+def test_audit_ignores_voided_evaluations_even_when_source_is_settled():
+    evaluations = [
+        {"id": "voided", "status": "VOIDED", "prediction_snapshot_id": "s1", "sport": "MLB",
+         "selected_side": "away", "decimal_odds": 3.0, "model_probability": 0.6,
+         "expected_value_percent": 80},
+        {"id": "active", "status": "ACTIVE", "prediction_snapshot_id": "s1", "sport": "MLB",
+         "selected_side": "away", "decimal_odds": 2.0, "model_probability": 0.55,
+         "expected_value_percent": 10},
+    ]
+    snapshots = [{"id": "s1", "result_status": "SETTLED", "actual_home_score": 2, "actual_away_score": 3}]
+    report = build_decision_outcome_audit(evaluations, snapshots)
+    assert report["matched_evaluations"] == 1
+    assert report["overall"]["sample_size"] == 1
+    assert report["overall"]["flat_stake_profit_units"] == 1.0
