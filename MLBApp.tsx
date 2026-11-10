@@ -1,3 +1,4 @@
+import PercentageSignal from "./PercentageSignal";
 import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 
 type Game = any;
@@ -1031,31 +1032,19 @@ export default function MLBApp() {
                 Todavía no hay datos de calibración disponibles.
               </div>
             ) : (
-              <div style={{ overflowX: "auto", width: "100%" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "420px" }}>
-                  <thead>
-                    <tr>
-                      <th scope="col" style={{ textAlign: "left", padding: "10px 8px" }}>Rango</th>
-                      <th scope="col" style={{ textAlign: "right", padding: "10px 8px" }}>Muestra</th>
-                      <th scope="col" style={{ textAlign: "right", padding: "10px 8px" }}>Prob. media</th>
-                      <th scope="col" style={{ textAlign: "right", padding: "10px 8px" }}>Victorias reales</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bins.map((bin: any) => (
-                      <tr key={bin.range}>
-                        <td style={{ padding: "10px 8px" }}>{bin.range}</td>
-                        <td style={{ textAlign: "right", padding: "10px 8px" }}>{bin.sample_size}</td>
-                        <td style={{ textAlign: "right", padding: "10px 8px" }}>
-                          {bin.mean_predicted_probability == null ? "—" : pct(bin.mean_predicted_probability)}
-                        </td>
-                        <td style={{ textAlign: "right", padding: "10px 8px" }}>
-                          {bin.observed_home_win_rate == null ? "—" : pct(bin.observed_home_win_rate)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="percentage-signal-grid">
+                {bins.map((bin: any) => (
+                  <article className="percentage-band-card" key={bin.range}>
+                    <div className="percentage-band-heading">
+                      <strong>{bin.range}</strong>
+                      <span>N = {bin.sample_size}</span>
+                    </div>
+                    <div className="percentage-band-signals">
+                      <PercentageSignal label="Probabilidad media" value={bin.mean_predicted_probability} />
+                      <PercentageSignal label="Victorias observadas" value={bin.observed_home_win_rate} />
+                    </div>
+                  </article>
+                ))}
               </div>
             )}
           </section>
