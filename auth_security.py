@@ -11,6 +11,7 @@ import json
 import os
 import threading
 import time
+from uuid import UUID
 from typing import Any
 from urllib.parse import urlparse
 
@@ -173,7 +174,11 @@ def enroll_totp(access_token: str) -> dict[str, Any]:
 
 
 def verify_totp(access_token: str, factor_id: str, code: str) -> dict[str, Any] | None:
-    if not factor_id or not code or not code.isdigit() or len(code) != 6:
+    try:
+        factor_id = str(UUID(factor_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not access_token or not code or not code.isdigit() or len(code) != 6:
         return None
     challenge_status, challenge = _auth_request(
         "POST", f"factors/{factor_id}/challenge", token=access_token, payload={},
