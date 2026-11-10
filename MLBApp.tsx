@@ -2151,33 +2151,17 @@ function GameDetail({
                   value={num(strikeoutProjection.home_pitcher?.expected_strikeouts, 1)}
                 />
                 <Factor
-                  label="Prob. local · 5+ K"
-                  value={strikeoutProjection.home_pitcher?.probability_5_plus == null ? "—" : pct(strikeoutProjection.home_pitcher.probability_5_plus)}
-                />
-                <Factor
-                  label="Prob. local · 6+ K"
-                  value={strikeoutProjection.home_pitcher?.probability_6_plus == null ? "—" : pct(strikeoutProjection.home_pitcher.probability_6_plus)}
-                />
-                <Factor
-                  label="Prob. local · 7+ K"
-                  value={strikeoutProjection.home_pitcher?.probability_7_plus == null ? "—" : pct(strikeoutProjection.home_pitcher.probability_7_plus)}
-                />
-                <Factor
                   label={`K esperados · visitante · ${strikeoutProjection.away_pitcher?.pitcher_name || "Abridor no confirmado"}`}
                   value={num(strikeoutProjection.away_pitcher?.expected_strikeouts, 1)}
                 />
-                <Factor
-                  label="Prob. visitante · 5+ K"
-                  value={strikeoutProjection.away_pitcher?.probability_5_plus == null ? "—" : pct(strikeoutProjection.away_pitcher.probability_5_plus)}
-                />
-                <Factor
-                  label="Prob. visitante · 6+ K"
-                  value={strikeoutProjection.away_pitcher?.probability_6_plus == null ? "—" : pct(strikeoutProjection.away_pitcher.probability_6_plus)}
-                />
-                <Factor
-                  label="Prob. visitante · 7+ K"
-                  value={strikeoutProjection.away_pitcher?.probability_7_plus == null ? "—" : pct(strikeoutProjection.away_pitcher.probability_7_plus)}
-                />
+              </div>
+              <div className="percentage-signal-grid">
+                <PercentageSignal label="Local · 5+ K" value={strikeoutProjection.home_pitcher?.probability_5_plus} />
+                <PercentageSignal label="Local · 6+ K" value={strikeoutProjection.home_pitcher?.probability_6_plus} />
+                <PercentageSignal label="Local · 7+ K" value={strikeoutProjection.home_pitcher?.probability_7_plus} />
+                <PercentageSignal label="Visitante · 5+ K" value={strikeoutProjection.away_pitcher?.probability_5_plus} />
+                <PercentageSignal label="Visitante · 6+ K" value={strikeoutProjection.away_pitcher?.probability_6_plus} />
+                <PercentageSignal label="Visitante · 7+ K" value={strikeoutProjection.away_pitcher?.probability_7_plus} />
               </div>
               <p className="muted" style={{ marginTop: 8 }}>
                 Estimación mediante K/9, entradas por apertura y aproximación de Poisson.
@@ -3070,44 +3054,8 @@ function GameDetail({
  * =========================================================
  */
 
-function Probability({
-  name,
-  value,
-}: {
-  name: string;
-  value: any;
-}) {
-  return (
-    <div className="prob-card">
-
-      <div>
-
-        <span>
-          {name}
-        </span>
-
-        <b>
-          {pct(value)}
-        </b>
-
-      </div>
-
-      <div className="bar-track">
-
-        <i
-          style={{
-            width: `${
-              probabilityWidth(
-                value
-              )
-            }%`,
-          }}
-        />
-
-      </div>
-
-    </div>
-  );
+function Probability({ name, value }: { name: string; value: any }) {
+  return <PercentageSignal label={name} value={typeof value === "number" ? value : Number.isFinite(Number(value)) ? Number(value) : null} />;
 }
 
 /*
