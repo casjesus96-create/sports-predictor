@@ -1,5 +1,6 @@
 import base64
 import json
+import time
 
 import pytest
 
@@ -26,7 +27,7 @@ def auth_env(monkeypatch):
 
 def _jwt(aal="aal2"):
     payload = base64.urlsafe_b64encode(
-        json.dumps({"aal": aal}).encode()
+        json.dumps({"aal": aal, "exp": time.time() + 3600}).encode()
     ).decode().rstrip("=")
     return f"header.{payload}.signature"
 
@@ -77,10 +78,23 @@ def test_validate_access_token_uses_short_lived_cache(auth_env, monkeypatch):
         return FakeResponse(200, {"email": "owner@example.com", "factors": []})
 
     monkeypatch.setattr(auth_security.requests, "request", fake_request)
-    assert auth_security.validate_access_token("valid-access")["email"] == "owner@example.com"
+    assert auth_security.validate_access_token(_jwt("aal2"))["email"] == "owner@example.com"
     assert auth_security.validate_access_token("valid-access")["email"] == "owner@example.com"
     assert len(calls) == 1
 
+
+
+def test_expired_token_is_rejected_before_provider_validation(auth_env, monkeypatch):
+    expired_payload = base64.urlsafe_b64encode(
+        json.dumps({"aal": "aal2", "exp": time.time() - 60}).encode()
+    ).decode().rstrip("=")
+    expired_token = f"header.{expired_payload}.signature"
+    monkeypatch.setattr(
+        auth_security.requests,
+        "request",
+        lambda *args, **kwargs: pytest.fail("Expired token must not be sent for validation"),
+    )
+    assert auth_security.validate_access_token(expired_token) is None
 
 def test_validate_access_token_rejects_non_admin(auth_env, monkeypatch):
     monkeypatch.setattr(
