@@ -1,3 +1,4 @@
+import PercentageSignal from "./PercentageSignal";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -717,18 +718,25 @@ export default function NFLApp() {
           </div>
           <p className="model-note">{calibration.message}</p>
           {(calibration.calibration || []).length > 0 ? (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Confianza</th><th>N</th><th>Confianza media</th><th>Acierto observado</th><th>IC95% Wilson</th><th>Error</th></tr></thead>
-                <tbody>{calibration.calibration.map((bin: AnyRecord) => (
-                  <tr key={bin.range}>
-                    <td>{bin.range}</td><td>{bin.count}</td><td>{pct(bin.average_confidence)}</td>
-                    <td>{pct(bin.observed_accuracy)}</td>
-                    <td>{bin.accuracy_ci_95 ? (pct(bin.accuracy_ci_95.lower) + "–" + pct(bin.accuracy_ci_95.upper)) : "—"}{bin.small_sample ? " · N baja" : ""}</td>
-                    <td>{bin.calibration_error > 0 ? "+" : ""}{(bin.calibration_error * 100).toFixed(1)} pp</td>
-                  </tr>
-                ))}</tbody>
-              </table>
+            <div className="percentage-signal-grid">
+              {calibration.calibration.map((bin: AnyRecord) => (
+                <article className="percentage-band-card" key={bin.range}>
+                  <div className="percentage-band-heading">
+                    <strong>{bin.range}</strong>
+                    <span>N = {bin.count}{bin.small_sample ? " · Muestra baja" : ""}</span>
+                  </div>
+                  <div className="percentage-band-signals">
+                    <PercentageSignal label="Confianza media" value={bin.average_confidence} />
+                    <PercentageSignal label="Acierto observado" value={bin.observed_accuracy} />
+                  </div>
+                  <div className="percentage-band-footer">
+                    <span>IC95% Wilson: {bin.accuracy_ci_95 ? (pct(bin.accuracy_ci_95.lower) + "–" + pct(bin.accuracy_ci_95.upper)) : "—"}</span>
+                    <strong className={bin.calibration_error > 0 ? "tone-positive" : bin.calibration_error < 0 ? "tone-negative" : "tone-neutral"}>
+                      Error: {bin.calibration_error > 0 ? "+" : ""}{(bin.calibration_error * 100).toFixed(1)} pp
+                    </strong>
+                  </div>
+                </article>
+              ))}
             </div>
           ) : <p className="model-note">Todavía no hay bandas con observaciones válidas.</p>}
         </section>
