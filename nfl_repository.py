@@ -445,77 +445,93 @@ def get_nfl_performance():
     }
 
 
+def _wilson_interval(successes, sample_size, z=1.959963984540054):
+    """Intervalo Wilson del 95% para una proporción observada."""
+    if sample_size <= 0:
+        return None
+    rate = successes / sample_size
+    z2 = z * z
+    denominator = 1.0 + z2 / sample_size
+    center = (rate + z2 / (2.0 * sample_size)) / denominator
+    margin = z * math.sqrt(
+        rate * (1.0 - rate) / sample_size
+        + z2 / (4.0 * sample_size * sample_size)
+    ) / denominator
+    return {
+        "lower": round(max(0.0, center - margin), 4),
+        "upper": round(min(1.0, center + margin), 4),
+    }
+
+
 def get_nfl_calibration(minimum_sample=30):
-    """Mide la calibración solo con partidos que tuvieron ganador."""
-    rows = get_nfl_predictions()
-    settled = [
-        row for row in rows
-        if row.get("result_status") == "SETTLED"
-        and _effective_result(row) in {"CORRECT", "INCORRECT"}
-    ]
+    """Audita confianza del favorito solo con snapshots oficiales liquidados."""
+    # Use the repository maximum so calibration is not silently limited to the default 100 rows.
+    rows = get_nfl_predictions(limit=500)
+    observations = []
+    invalid_probabilities = 0
 
-    bins = [
-        (0.50, 0.55),
-        (0.55, 0.60),
-        (0.60, 0.65),
-        (0.65, 0.70),
-        (0.70, 0.75),
-        (0.75, 0.80),
-        (0.80, 0.85),
-        (0.85, 0.90),
-        (0.90, 0.951),
-    ]
+    for row in rows:
+        if row.get("result_status") != "SETTLED":
+            continue
+        result = _effective_result(row)
+        # Los empates NFL son PUSH y no representan una decisión binaria.
+        if result not in {"CORRECT", "INCORRECT"}:
+            continue
+        try:
+            home_probability = float(row.get("home_probability"))
+            away_probability = float(row.get("away_probability"))
+        except (TypeError, ValueError):
+            invalid_probabilities += 1
+            continue
+        if (
+            not math.isfinite(home_probability)
+            or not math.isfinite(away_probability)
+            or not 0.0 <= home_probability <= 1.0
+            or not 0.0 <= away_probability <= 1.0
+        ):
+            invalid_probabilities += 1
+            continue
+        confidence = max(home_probability, away_probability)
+        if not 0.5 <= confidence <= 0.95:
+            invalid_probabilities += 1
+            continue
+        observations.append({
+            "confidence": confidence,
+            "correct": result == "CORRECT",
+        })
 
+    bins = (
+        (0.50, 0.55), (0.55, 0.60), (0.60, 0.65),
+        (0.65, 0.70), (0.70, 0.75), (0.75, 0.80),
+        (0.80, 0.85), (0.85, 0.90), (0.90, 0.950001),
+    )
     calibration = []
-
     for low, high in bins:
-        bucket = []
-
-        for row in settled:
-            try:
-                confidence = max(
-                    float(row.get("home_probability")),
-                    float(row.get("away_probability")),
-                )
-            except (TypeError, ValueError):
-                continue
-
-            if low <= confidence < high:
-                bucket.append(row)
-
+        bucket = [
+            item for item in observations
+            if low <= item["confidence"] < high
+        ]
         if not bucket:
             continue
-
         count = len(bucket)
-        wins = sum(
-            1 for row in bucket if _effective_result(row) == "CORRECT"
-        )
-        observed_accuracy = wins / count
-
-        average_confidence = sum(
-            max(
-                float(row.get("home_probability") or 0.5),
-                float(row.get("away_probability") or 0.5),
-            )
-            for row in bucket
-        ) / count
-
+        wins = sum(item["correct"] for item in bucket)
+        observed = wins / count
+        average = sum(item["confidence"] for item in bucket) / count
         calibration.append({
             "range": f"{low:.0%}-{min(high, 0.95):.0%}",
             "min": low,
             "max": min(high, 0.95),
             "count": count,
-            "average_confidence": round(average_confidence, 4),
-            "observed_accuracy": round(observed_accuracy, 4),
-            "calibration_error": round(
-                observed_accuracy - average_confidence,
-                4,
-            ),
+            "average_confidence": round(average, 4),
+            "observed_accuracy": round(observed, 4),
+            "calibration_error": round(observed - average, 4),
+            "accuracy_ci_95": _wilson_interval(wins, count),
+            "small_sample": count < 10,
         })
 
-    sample_size = len(settled)
+    sample_size = len(observations)
+    correct = sum(item["correct"] for item in observations)
     ready = sample_size >= int(minimum_sample)
-
     return {
         "success": True,
         "sport": "NFL",
@@ -524,17 +540,19 @@ def get_nfl_calibration(minimum_sample=30):
         "sample_size": sample_size,
         "minimum_sample_required": int(minimum_sample),
         "calibration_ready": ready,
-        "method": "confidence_bucket_reliability",
+        "observed_accuracy": round(correct / sample_size, 4) if sample_size else None,
+        "accuracy_ci_95": _wilson_interval(correct, sample_size),
+        "invalid_probability_rows": invalid_probabilities,
+        "method": "favorite_confidence_buckets_wilson_95",
         "calibration": calibration,
+        "read_only": True,
+        "official_probability_changed": False,
         "message": (
-            "Existe una muestra suficiente para estudiar una "
-            "recalibración estadística."
+            "Muestra suficiente para estudiar calibración; no autoriza por sí sola una recalibración."
             if ready
-            else "La muestra todavía no es suficiente para "
-                 "recalibrar el modelo de forma responsable."
+            else f"Muestra insuficiente: se requieren {int(minimum_sample)} predicciones válidas; no se ajusta el modelo."
         ),
     }
-
 
 def get_nfl_pending_predictions():
     return get_nfl_predictions(result_status="PENDING")
