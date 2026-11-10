@@ -87,7 +87,11 @@ def _clear_auth_cookies(response: Response) -> None:
 def _same_origin(request: Request) -> bool:
     origin = request.headers.get("origin")
     if not origin:
-        return True
+        # Unsafe browser requests must prove their origin; SameSite cookies are defense-in-depth.
+        referer = request.headers.get("referer")
+        if not referer:
+            return False
+        origin = f"{urlparse(referer).scheme}://{urlparse(referer).netloc}"
     try:
         parsed_origin = urlparse(origin)
         origin_host = parsed_origin.netloc.casefold()
