@@ -78,8 +78,9 @@ def test_validate_access_token_uses_short_lived_cache(auth_env, monkeypatch):
         return FakeResponse(200, {"email": "owner@example.com", "factors": []})
 
     monkeypatch.setattr(auth_security.requests, "request", fake_request)
-    assert auth_security.validate_access_token(_jwt("aal2"))["email"] == "owner@example.com"
-    assert auth_security.validate_access_token("valid-access")["email"] == "owner@example.com"
+    token = _jwt("aal2")
+    assert auth_security.validate_access_token(token)["email"] == "owner@example.com"
+    assert auth_security.validate_access_token(token)["email"] == "owner@example.com"
     assert len(calls) == 1
 
 
@@ -102,7 +103,7 @@ def test_validate_access_token_rejects_non_admin(auth_env, monkeypatch):
         "request",
         lambda *args, **kwargs: FakeResponse(200, {"email": "other@example.com"}),
     )
-    assert auth_security.validate_access_token("other-access") is None
+    assert auth_security.validate_access_token(_jwt("aal2")) is None
 
 
 def test_auth_configuration_fails_closed_when_required_values_missing(monkeypatch):
