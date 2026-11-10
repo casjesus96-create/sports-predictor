@@ -1761,6 +1761,37 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
           </div>
         </div>;
       })()}
+      <h3 style={{ marginBottom: 6 }}>Errores por competición y temporada</h3>
+      {(() => {
+        const segmented = report.segmented_error_diagnostics || {};
+        const renderGroup = (item: any, label: string) => {
+          const matrix = item.confusion_matrix || {};
+          const residuals = item.goal_residuals || {};
+          return <div key={label} style={{ padding: 10, borderRadius: 8, background: "#111827", marginTop: 8 }}>
+            <strong>{label} · N={item.sample_size}</strong>
+            {!item.eligible && <p style={{ color: "#fbbf24", fontSize: 10 }}>Muestra inferior a {segmented.minimum_sample ?? 30}; lectura exploratoria, sin métricas de error agregadas.</p>}
+            <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Pronóstico / real</th><th style={cellStyle}>HOME</th><th style={cellStyle}>DRAW</th><th style={cellStyle}>AWAY</th></tr></thead>
+              <tbody>{(["HOME", "DRAW", "AWAY"] as const).map((predicted) => <tr key={predicted}><td style={cellStyle}>{predicted}</td>{(["HOME", "DRAW", "AWAY"] as const).map((actual) => <td key={actual} style={cellStyle}>{matrix[predicted]?.[actual] ?? 0}</td>)}</tr>)}</tbody>
+            </table></div>
+            <div style={{ overflowX: "auto", marginTop: 6 }}><table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Goles</th><th style={cellStyle}>N</th><th style={cellStyle}>Sesgo</th><th style={cellStyle}>MAE</th><th style={cellStyle}>RMSE</th></tr></thead>
+              <tbody>{([[ "home_goals", "Local" ], [ "away_goals", "Visitante" ], [ "total_goals", "Total" ]] as const).map(([key, title]) => {
+                const metric = residuals[key];
+                return <tr key={key}><td style={cellStyle}>{title}</td><td style={cellStyle}>{metric?.sample_size ?? 0}</td><td style={cellStyle}>{metric?.eligible ? metric.bias_actual_minus_expected.toFixed(3) : "—"}</td><td style={cellStyle}>{metric?.eligible ? metric.mae.toFixed(3) : "—"}</td><td style={cellStyle}>{metric?.eligible ? metric.rmse.toFixed(3) : "—"}</td></tr>;
+              })}</tbody>
+            </table></div>
+          </div>;
+        };
+        return <div style={{ marginBottom: 14 }}>
+          <p style={{ color: "#9ca3af", fontSize: 11 }}>Segmentación descriptiva de la matriz 1X2 y residuos de goles. Temporadas locales julio–junio; métricas de goles solo con N≥{segmented.minimum_sample ?? 30}. No identifica causas ni modifica el modelo.</p>
+          <h4 style={{ margin: "8px 0 4px" }}>Por competición</h4>
+          {(segmented.by_competition || []).length ? segmented.by_competition.map((item: any) => renderGroup(item, item.competition)) : <p style={{ color: "#9ca3af" }}>Sin segmentos de competición identificables.</p>}
+          <h4 style={{ margin: "12px 0 4px" }}>Por temporada</h4>
+          {(segmented.by_season || []).length ? segmented.by_season.map((item: any) => renderGroup(item, `${item.competition} · ${item.season}`)) : <p style={{ color: "#9ca3af" }}>Sin segmentos de temporada disponibles.</p>}
+          {segmented.excluded_missing_competition_or_season > 0 && <p style={{ color: "#fbbf24", fontSize: 10 }}>Excluidos por competición o temporada no identificable: {segmented.excluded_missing_competition_or_season}.</p>}
+        </div>;
+      })()}
       <h3 style={{ marginBottom: 6 }}>¿La confianza coincide con lo que ocurre?</h3>
       <div style={{ overflowX: "auto" }}><table style={tableStyle}>
         <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>
