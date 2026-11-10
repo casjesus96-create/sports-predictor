@@ -24,6 +24,8 @@ def build_decision_audit_coverage(evaluations: list[dict], snapshots: list[dict]
     by_model = {}
 
     for item in evaluations:
+        if str(item.get("status") or "ACTIVE").upper() == "VOIDED":
+            continue
         if str(item.get("sport") or "").upper() != sport_filter.upper():
             continue
         counts["total_evaluations"] += 1
