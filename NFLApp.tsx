@@ -121,7 +121,7 @@ function Probability({
   label: string;
   value: any;
 }) {
-  return <PercentageSignal label={label} value={typeof value === "number" ? value : Number.isFinite(Number(value)) ? Number(value) : null} />;
+  return <PercentageSignal label={label} value={value == null || value === "" ? null : typeof value === "number" ? value : Number.isFinite(Number(value)) ? Number(value) : null} />;
 }
 
 export default function NFLApp() {
