@@ -121,22 +121,7 @@ function Probability({
   label: string;
   value: any;
 }) {
-  const n = Number(value);
-  const width = Number.isFinite(n)
-    ? Math.max(0, Math.min(100, n * 100))
-    : 0;
-
-  return (
-    <div className="prob-card">
-      <div>
-        <span>{label}</span>
-        <b>{pct(value)}</b>
-      </div>
-      <div className="bar-track">
-        <i style={{ width: `${width}%` }} />
-      </div>
-    </div>
-  );
+  return <PercentageSignal label={label} value={typeof value === "number" ? value : Number.isFinite(Number(value)) ? Number(value) : null} />;
 }
 
 export default function NFLApp() {
