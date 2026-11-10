@@ -5,6 +5,7 @@ import math
 from repository import get_supabase_client
 from nba_prediction import MODEL_VERSION
 from nba_calibration import build_confidence_calibration
+from nba_score_evaluation import evaluate_score_projections
 
 SPORT = "basketball"
 LEAGUE = "NBA"
@@ -227,5 +228,6 @@ def get_nba_performance():
             "brier_score": round(sum(brier) / len(brier), 6) if brier else None,
             "log_loss": round(sum(log_loss) / len(log_loss), 6) if log_loss else None,
             "confidence_calibration": build_confidence_calibration(calibration_rows),
+            "score_projection": evaluate_score_projections(settled),
         },
     }

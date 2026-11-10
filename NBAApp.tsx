@@ -45,6 +45,14 @@ type Performance = {
     incorrect_predictions?: number;
     accuracy_percentage?: number;
     brier_score?: number | null;
+    score_projection?: {
+      sample_games?: number; skipped_without_valid_projection?: number;
+      team_points_mae?: number | null; team_points_rmse?: number | null; team_points_bias?: number | null;
+      team_points_within_5_pct?: number | null; team_points_within_10_pct?: number | null;
+      game_total_mae?: number | null; game_total_rmse?: number | null; game_total_bias?: number | null;
+      game_total_within_5_pct?: number | null; game_total_within_10_pct?: number | null;
+      method?: string;
+    };
     confidence_calibration?: {
       sample_size?: number; minimum_sample_required?: number; calibration_ready?: boolean;
       observed_accuracy?: number | null; accuracy_ci_95?: { lower: number; upper: number } | null;
@@ -333,6 +341,28 @@ export default function NBAApp() {
         <div className="metric panel"><span>Brier score</span><strong className="tone-neutral">{summary.brier_score != null ? summary.brier_score.toFixed(3) : "—"}</strong><small>Menor suele ser mejor; requiere muestra</small></div>
       </section>
 
+      {summary.score_projection && (
+        <section className="panel analysis-content" aria-label="Precisión de proyección de puntos NBA">
+          <div className="section-heading">
+            <div><div className="section-kicker">AUDITORÍA POSTPARTIDO</div><h2>Precisión del marcador proyectado</h2></div>
+            <span className="muted">{summary.score_projection.sample_games ?? 0} partidos evaluados</span>
+          </div>
+          <p className="muted">Compara los puntos proyectados de ambos equipos y el total del partido contra los marcadores finales. MAE y RMSE: cuanto más bajos, mejor. Sesgo positivo = el marcador real superó la proyección; negativo = el modelo proyectó de más. Solo usa snapshots pregame guardados.</p>
+          <div className="metrics-grid">
+            <div className="metric panel"><span>MAE por equipo</span><strong>{numberLabel(summary.score_projection.team_points_mae, 2)}</strong><small>Error absoluto medio por equipo</small></div>
+            <div className="metric panel"><span>MAE total del partido</span><strong>{numberLabel(summary.score_projection.game_total_mae, 2)}</strong><small>Error absoluto medio del total</small></div>
+            <div className="metric panel"><span>RMSE total</span><strong>{numberLabel(summary.score_projection.game_total_rmse, 2)}</strong><small>Penaliza más los errores grandes</small></div>
+            <div className="metric panel"><span>Sesgo del total</span><strong className={signedToneClass("diferencia de puntos", summary.score_projection.game_total_bias)}>{numberLabel(summary.score_projection.game_total_bias, 2)}</strong><small>Real menos proyectado</small></div>
+          </div>
+          <div className="prediction-strip">
+            <div><span>Equipos dentro de ±5 pts</span><b>{summary.score_projection.team_points_within_5_pct != null ? `${summary.score_projection.team_points_within_5_pct.toFixed(1)}%` : "—"}</b></div>
+            <div><span>Equipos dentro de ±10 pts</span><b>{summary.score_projection.team_points_within_10_pct != null ? `${summary.score_projection.team_points_within_10_pct.toFixed(1)}%` : "—"}</b></div>
+            <div><span>Totales dentro de ±10 pts</span><b>{summary.score_projection.game_total_within_10_pct != null ? `${summary.score_projection.game_total_within_10_pct.toFixed(1)}%` : "—"}</b></div>
+          </div>
+          <p className="muted">{summary.score_projection.method || "Evaluación descriptiva; no modifica el modelo oficial."} · Registros omitidos sin proyección válida: {summary.score_projection.skipped_without_valid_projection ?? 0}.</p>
+        </section>
+      )}
+
       {summary.confidence_calibration && (
         <section className="panel analysis-content" aria-label="Calibración de confianza NBA">
           <div className="section-heading">
@@ -479,6 +509,16 @@ export default function NBAApp() {
                                   <div><span>Total de puntos</span><b>{numberLabel(projections.total_points)}</b></div>
                                 </div>
                                 <p className="muted">{projections.method || "Este registro se creó antes de añadir las estadísticas detalladas de boxscore."}</p>
+                                {settled && projections.home_points != null && projections.away_points != null && stored.actual_home_score != null && stored.actual_away_score != null && (
+                                  <>
+                                    <h4>Evaluación de puntos · resultado real</h4>
+                                    <div className="prediction-strip">
+                                      <div><span>{game.away || "Visitante"} · proyectado / real</span><b>{numberLabel(projections.away_points)} / {stored.actual_away_score}</b><small className={signedToneClass("diferencia de puntos", stored.actual_away_score - projections.away_points)}>Error real − proyección: {numberLabel(stored.actual_away_score - projections.away_points)} pts</small></div>
+                                      <div><span>{game.home || "Local"} · proyectado / real</span><b>{numberLabel(projections.home_points)} / {stored.actual_home_score}</b><small className={signedToneClass("diferencia de puntos", stored.actual_home_score - projections.home_points)}>Error real − proyección: {numberLabel(stored.actual_home_score - projections.home_points)} pts</small></div>
+                                      <div><span>Total · proyectado / real</span><b>{numberLabel(projections.total_points)} / {stored.actual_home_score + stored.actual_away_score}</b><small className={signedToneClass("diferencia de puntos", stored.actual_home_score + stored.actual_away_score - projections.total_points)}>Error real − proyección: {numberLabel(stored.actual_home_score + stored.actual_away_score - projections.total_points)} pts</small></div>
+                                    </div>
+                                  </>
+                                )}
                                 <h4>Proyección de puntos por cuarto</h4>
                                 {projections.quarter_points?.available ? (
                                   <>
