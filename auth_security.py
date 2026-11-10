@@ -5,7 +5,9 @@ never stores passwords or Supabase tokens in the repository/database.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import os
 import threading
 import time
@@ -92,17 +94,22 @@ def sign_in(email: str, password: str) -> dict[str, Any] | None:
     if status != 200:
         return None
     user = data.get("user") or {}
-    if not is_admin_email(user.get("email")):
-        return None
     access_token = data.get("access_token")
     refresh_token = data.get("refresh_token")
     if not access_token or not refresh_token:
+        return None
+    if not is_admin_email(user.get("email")):
+        try:
+            _auth_request("POST", "logout", token=access_token)
+        except AuthProviderError:
+            pass
         return None
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "expires_in": max(60, min(int(data.get("expires_in") or 3600), 86400)),
         "email": user.get("email"),
+        "user": user,
     }
 
 
@@ -128,6 +135,68 @@ def refresh_session(refresh_token: str) -> dict[str, Any] | None:
         "refresh_token": next_refresh_token,
         "expires_in": max(60, min(int(data.get("expires_in") or 3600), 86400)),
         "email": user.get("email"),
+        "user": user,
+    }
+
+
+def token_assurance_level(access_token: str | None) -> str:
+    """Read JWT claims only after validate_access_token has verified the token with Supabase."""
+    if not access_token:
+        return "aal0"
+    try:
+        parts = access_token.split(".")
+        if len(parts) != 3:
+            return "aal0"
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+        return str(claims.get("aal") or "aal1")
+    except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+        return "aal0"
+
+
+def enroll_totp(access_token: str) -> dict[str, Any]:
+    status, data = _auth_request(
+        "POST", "factors", token=access_token,
+        payload={"factor_type": "totp", "friendly_name": "Sports Predictor"},
+    )
+    if status not in {200, 201}:
+        raise AuthProviderError("No se pudo iniciar la configuración del segundo factor.")
+    totp = data.get("totp") or {}
+    factor_id = data.get("id")
+    secret = totp.get("secret")
+    uri = totp.get("uri")
+    if not factor_id or not secret or not uri:
+        raise AuthProviderError("El proveedor no devolvió los datos de configuración TOTP.")
+    return {"factor_id": factor_id, "secret": secret, "uri": uri}
+
+
+def verify_totp(access_token: str, factor_id: str, code: str) -> dict[str, Any] | None:
+    if not factor_id or not code or not code.isdigit() or len(code) != 6:
+        return None
+    challenge_status, challenge = _auth_request(
+        "POST", f"factors/{factor_id}/challenge", token=access_token, payload={},
+    )
+    if challenge_status not in {200, 201} or not challenge.get("id"):
+        return None
+    verify_status, data = _auth_request(
+        "POST", f"factors/{factor_id}/verify", token=access_token,
+        payload={"challenge_id": challenge["id"], "code": code},
+    )
+    if verify_status != 200:
+        return None
+    user = data.get("user") or {}
+    if not is_admin_email(user.get("email")):
+        return None
+    access = data.get("access_token")
+    refresh = data.get("refresh_token")
+    if not access or not refresh or token_assurance_level(access) != "aal2":
+        return None
+    return {
+        "access_token": access,
+        "refresh_token": refresh,
+        "expires_in": max(60, min(int(data.get("expires_in") or 3600), 86400)),
+        "email": user.get("email"),
+        "user": user,
     }
 
 
