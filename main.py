@@ -159,27 +159,28 @@ def auth_status(request: Request, response: Response):
     access_token = request.cookies.get("sp_access_token")
     refresh_token = request.cookies.get("sp_refresh_token")
     try:
+        active_token = access_token
         user = validate_access_token(access_token) if access_token else None
         if user is None and refresh_token:
             session = refresh_session(refresh_token)
             if session:
-                user = validate_access_token(session["access_token"])
+                active_token = session["access_token"]
+                user = validate_access_token(active_token)
                 if user:
                     _set_auth_cookies(response, session)
-        active_token = session["access_token"] if user and refresh_token and not access_token else access_token
-        factors = (user or {}).get("factors") or []
-        verified_totp = next((
-            factor for factor in factors
-            if factor.get("factor_type") == "totp" and factor.get("status") == "verified"
-        ), None)
+        totp_factors = [
+            factor for factor in (user or {}).get("factors") or []
+            if factor.get("factor_type") == "totp"
+        ]
+        usable_factor = next((factor for factor in totp_factors if factor.get("status") in {"verified", "unverified"}), None)
         mfa_verified = bool(user) and token_assurance_level(active_token) == "aal2"
         return {
             "authenticated": bool(user),
             "email": user.get("email") if user else None,
             "mfa_required": bool(user) and not mfa_verified,
             "mfa_verified": mfa_verified,
-            "mfa_factor_id": verified_totp.get("id") if verified_totp else None,
-            "mfa_setup_needed": bool(user) and not verified_totp,
+            "mfa_factor_id": usable_factor.get("id") if usable_factor else None,
+            "mfa_setup_needed": bool(user) and not usable_factor,
         }
     except AuthConfigurationError:
         raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
@@ -198,16 +199,16 @@ def auth_login(payload: AdminLoginRequest, request: Request, response: Response)
             raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos.")
         _set_auth_cookies(response, session)
         factors = (session.get("user") or {}).get("factors") or []
-        verified_totp = next((
+        usable_factor = next((
             factor for factor in factors
-            if factor.get("factor_type") == "totp" and factor.get("status") == "verified"
+            if factor.get("factor_type") == "totp" and factor.get("status") in {"verified", "unverified"}
         ), None)
         return {
             "success": True,
             "email": session["email"],
             "mfa_required": True,
-            "mfa_factor_id": verified_totp.get("id") if verified_totp else None,
-            "mfa_setup_needed": not bool(verified_totp),
+            "mfa_factor_id": usable_factor.get("id") if usable_factor else None,
+            "mfa_setup_needed": not bool(usable_factor),
         }
     except AuthConfigurationError:
         raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
