@@ -714,6 +714,22 @@ export default function NFLApp() {
             <TeamFactor label="Probabilidades inválidas excluidas" value={calibration.invalid_probability_rows ?? 0} />
           </div>
           <p className="model-note">{calibration.message}</p>
+          <div className="factor-grid">
+            <TeamFactor label="Confianza media del favorito" value={pct(calibration.average_confidence)} />
+            <TeamFactor
+              label="Diagnóstico de sobreconfianza"
+              value={
+                calibration.confidence_diagnosis === "OVERCONFIDENT" ? "SOBRECONFIANZA DETECTADA" :
+                calibration.confidence_diagnosis === "UNDERCONFIDENT" ? "SUBCONFIANZA DETECTADA" :
+                calibration.confidence_diagnosis === "INCONCLUSIVE" ? "SIN EVIDENCIA CONCLUYENTE" :
+                "MUESTRA INSUFICIENTE"
+              }
+            />
+          </div>
+          <p className="model-note">
+            Se considera sobreconfianza solo cuando el límite superior del IC95% del acierto queda por debajo de la confianza media.
+            Si los intervalos se solapan, el resultado se clasifica como inconcluso; no se ajusta NFL-1.0.0.
+          </p>
           {(calibration.calibration || []).length > 0 ? (
             <div className="percentage-signal-grid">
               {calibration.calibration.map((bin: AnyRecord) => (
@@ -732,6 +748,14 @@ export default function NFLApp() {
                       Error: {bin.calibration_error > 0 ? "+" : ""}{(bin.calibration_error * 100).toFixed(1)} pp
                     </strong>
                   </div>
+                  <p className="model-note">
+                    Diagnóstico: {
+                      bin.confidence_diagnosis === "OVERCONFIDENT" ? "sobreconfianza" :
+                      bin.confidence_diagnosis === "UNDERCONFIDENT" ? "subconfianza" :
+                      bin.confidence_diagnosis === "INCONCLUSIVE" ? "inconcluso" :
+                      "muestra insuficiente"
+                    }
+                  </p>
                 </article>
               ))}
             </div>
