@@ -354,10 +354,22 @@ export default function NBAApp() {
             <div className="metric panel"><span>RMSE total</span><strong>{numberLabel(summary.score_projection.game_total_rmse, 2)}</strong><small>Penaliza más los errores grandes</small></div>
             <div className="metric panel"><span>Sesgo del total</span><strong className={signedToneClass("diferencia de puntos", summary.score_projection.game_total_bias)}>{numberLabel(summary.score_projection.game_total_bias, 2)}</strong><small>Real menos proyectado</small></div>
           </div>
-          <div className="prediction-strip">
-            <div><span>Equipos dentro de ±5 pts</span><b>{summary.score_projection.team_points_within_5_pct != null ? `${summary.score_projection.team_points_within_5_pct.toFixed(1)}%` : "—"}</b></div>
-            <div><span>Equipos dentro de ±10 pts</span><b>{summary.score_projection.team_points_within_10_pct != null ? `${summary.score_projection.team_points_within_10_pct.toFixed(1)}%` : "—"}</b></div>
-            <div><span>Totales dentro de ±10 pts</span><b>{summary.score_projection.game_total_within_10_pct != null ? `${summary.score_projection.game_total_within_10_pct.toFixed(1)}%` : "—"}</b></div>
+          <div className="percentage-signal-grid">
+            <PercentageSignal
+              label="Equipos dentro de ±5 pts"
+              value={summary.score_projection.team_points_within_5_pct}
+              scale="percent"
+            />
+            <PercentageSignal
+              label="Equipos dentro de ±10 pts"
+              value={summary.score_projection.team_points_within_10_pct}
+              scale="percent"
+            />
+            <PercentageSignal
+              label="Totales dentro de ±10 pts"
+              value={summary.score_projection.game_total_within_10_pct}
+              scale="percent"
+            />
           </div>
           <p className="muted">{summary.score_projection.method || "Evaluación descriptiva; no modifica el modelo oficial."} · Registros omitidos sin proyección válida: {summary.score_projection.skipped_without_valid_projection ?? 0}.</p>
         </section>
