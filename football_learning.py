@@ -227,6 +227,47 @@ def _build_error_diagnostics(valid: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+
+def _build_segmented_error_diagnostics(valid: list[dict[str, Any]]) -> dict[str, Any]:
+    """Describe error patterns by competition and local season, with minimum-N safeguards."""
+    by_competition: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_season: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    excluded_missing_competition_or_season = 0
+    for item in valid:
+        row = item["row"]
+        competition = str(row.get("competition_code") or "").strip().upper()
+        season = _football_season(row.get("kickoff_at"), competition)
+        if not competition or not season:
+            excluded_missing_competition_or_season += 1
+            continue
+        by_competition[competition].append(item)
+        by_season[(competition, season)].append(item)
+
+    def summarize(items: list[dict[str, Any]]) -> dict[str, Any]:
+        diagnostics = _build_error_diagnostics(items)
+        return {
+            "sample_size": len(items),
+            "eligible": len(items) >= ERROR_DIAGNOSTIC_MINIMUM_SAMPLE,
+            "confusion_matrix": diagnostics["confusion_matrix"]["predicted_rows_actual_columns"],
+            "goal_residuals": diagnostics["goal_residuals"],
+        }
+
+    return {
+        "minimum_sample": ERROR_DIAGNOSTIC_MINIMUM_SAMPLE,
+        "season_definition": "Temporada local julio–junio según la zona horaria oficial de cada competición.",
+        "by_competition": [
+            {"competition": code, **summarize(items)}
+            for code, items in sorted(by_competition.items())
+        ],
+        "by_season": [
+            {"competition": code, "season": season, **summarize(items)}
+            for (code, season), items in sorted(by_season.items())
+        ],
+        "excluded_missing_competition_or_season": excluded_missing_competition_or_season,
+        "read_only": True,
+        "model_changed": False,
+    }
+
 def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str | None = None) -> dict[str, Any]:
     """Score immutable settled official snapshots and expose descriptive error patterns."""
     valid = []
@@ -280,6 +321,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
                                     "outcomes": {key.lower(): _binary_market_metrics([], f"{key.lower()}_p", f"actual_{key.lower()}") for key in OUTCOMES}},
             "segmented_calibration": _build_segmented_calibration([]),
             "error_diagnostics": _build_error_diagnostics([]),
+            "segmented_error_diagnostics": _build_segmented_error_diagnostics([]),
             "signals": [
                 "Todavía no hay suficientes snapshots oficiales liquidados y válidos para extraer patrones."
             ],
@@ -385,6 +427,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
         "outcome_calibration": outcome_calibration,
         "segmented_calibration": _build_segmented_calibration(valid),
         "error_diagnostics": _build_error_diagnostics(valid),
+        "segmented_error_diagnostics": _build_segmented_error_diagnostics(valid),
         "data_scope": "Solo snapshots oficiales inmutables FOOTBALL-POISSON-0.5.0 con resultado SETTLED; no usa resultados sin pronóstico prepartido.",
         "learning_policy": "Aprendizaje diagnóstico: mide errores, calibración, sorpresas y residuos de goles. No entrena, recalibra ni modifica probabilidades oficiales.",
         "model_changed": False, "snapshots_written": 0, "provider_calls": 0,
