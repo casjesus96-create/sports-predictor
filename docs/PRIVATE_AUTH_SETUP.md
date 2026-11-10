@@ -8,7 +8,9 @@ Esta aplicación está configurada para un único administrador. No existe regis
 2. En Authentication / Users, crea manualmente una cuenta con el correo que será el único administrador.
 3. Confirma/verifica ese correo y establece una contraseña larga y exclusiva (recomendado: 16 caracteres o más).
 4. En Authentication / Settings, desactiva los registros públicos (Allow new users to sign up) y activa la protección contra contraseñas filtradas si está disponible.
-5. Mantén habilitada la autenticación TOTP. Sports Predictor exige completar el segundo factor antes de permitir cualquier endpoint privado.\n6. En los ajustes de Auth, conserva límites de intentos de inicio de sesión estrictos y activa los controles de protección contra abuso disponibles.\n7. Configura el tiempo máximo de sesión y el tiempo de inactividad de acuerdo con el uso privado; se recomienda una sesión inactiva máxima de 12 horas.
+5. Mantén habilitada la autenticación TOTP. Sports Predictor exige completar el segundo factor antes de permitir cualquier endpoint privado.
+6. En los ajustes de Auth, conserva límites de intentos de inicio de sesión estrictos y activa los controles de protección contra abuso disponibles.
+7. Configura el tiempo máximo de sesión y el tiempo de inactividad de acuerdo con el uso privado; se recomienda una sesión inactiva máxima de 12 horas.
 
 No compartas ni guardes la contraseña en GitHub, Render logs o código fuente.
 
