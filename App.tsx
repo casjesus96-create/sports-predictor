@@ -1,4 +1,5 @@
 import { useState } from "react";
+import AuthGate from "./AuthGate";
 import MLBApp from "./MLBApp";
 import NFLApp from "./NFLApp";
 import NBAApp from "./NBAApp";
@@ -26,6 +27,7 @@ export default function App() {
   });
 
   return (
+    <AuthGate>
     <>
       <nav
         aria-label="Seleccionar deporte"
@@ -119,5 +121,6 @@ export default function App() {
 
       {sport === "MARKET_LAB" ? <MarketLab /> : sport === "BEST_PLAYS" ? <BestPlays /> : sport === "DRAWS" ? <ProbabilityDraws /> : sport === "DECISION" ? <DecisionCenter /> : sport === "FOOTBALL" ? <FootballApp /> : sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
     </>
+    </AuthGate>
   );
 }

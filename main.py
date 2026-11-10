@@ -2,7 +2,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import os
+from urllib.parse import urlparse
+
+from auth_security import (
+    AuthConfigurationError, AuthProviderError, refresh_session,
+    revoke_session, sign_in, validate_access_token,
+    token_assurance_level, enroll_totp, verify_totp,
+)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pending_predictions import router as pending_router
@@ -43,6 +53,237 @@ app = FastAPI(
         "forma histórica, análisis pregame y liquidación de resultados."
     ),
 )
+
+# =========================================================
+# PRIVATE ADMIN AUTHENTICATION
+# =========================================================
+
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AdminMfaVerifyRequest(BaseModel):
+    factor_id: str
+    code: str
+
+
+def _cookie_secure() -> bool:
+    return os.getenv("AUTH_COOKIE_SECURE", "true").strip().lower() not in {"0", "false", "no"}
+
+
+def _set_auth_cookies(response: Response, session: dict) -> None:
+    common = {"secure": _cookie_secure(), "httponly": True, "samesite": "strict", "path": "/"}
+    response.set_cookie("sp_access_token", session["access_token"], max_age=session["expires_in"], **common)
+    response.set_cookie("sp_refresh_token", session["refresh_token"], max_age=60 * 60 * 24 * 30, **common)
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    common = {"secure": _cookie_secure(), "httponly": True, "samesite": "strict", "path": "/"}
+    response.delete_cookie("sp_access_token", **common)
+    response.delete_cookie("sp_refresh_token", **common)
+
+
+def _same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if not origin:
+        # Unsafe browser requests must prove their origin; SameSite cookies are defense-in-depth.
+        referer = request.headers.get("referer")
+        if not referer:
+            return False
+        origin = f"{urlparse(referer).scheme}://{urlparse(referer).netloc}"
+    try:
+        parsed_origin = urlparse(origin)
+        origin_host = parsed_origin.netloc.casefold()
+        request_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",")[0].strip().casefold()
+        request_scheme = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip().casefold()
+        return bool(origin_host) and origin_host == request_host and parsed_origin.scheme.casefold() == request_scheme
+    except (TypeError, ValueError):
+        return False
+
+
+def _add_security_headers(request: Request, response: Response) -> Response:
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
+@app.middleware("http")
+async def protect_private_api(request: Request, call_next):
+    path = request.url.path
+    protected = path.startswith("/api/") or path in {"/docs", "/redoc", "/openapi.json"}
+
+    if protected and request.method in {"POST", "PUT", "PATCH", "DELETE"} and not _same_origin(request):
+        return _add_security_headers(request, JSONResponse(status_code=403, content={"detail": "Solicitud de origen no autorizado."}))
+
+    refreshed = None
+    if protected:
+        access_token = request.cookies.get("sp_access_token")
+        refresh_token = request.cookies.get("sp_refresh_token")
+        try:
+            user = validate_access_token(access_token) if access_token else None
+            if user is None and refresh_token:
+                refreshed = refresh_session(refresh_token)
+                if refreshed:
+                    user = validate_access_token(refreshed["access_token"])
+            if user is None:
+                return _add_security_headers(request, JSONResponse(
+                    status_code=401, content={"detail": "Autenticación requerida."},
+                    headers={"Cache-Control": "no-store"},
+                ))
+            active_access_token = refreshed["access_token"] if refreshed else access_token
+            if token_assurance_level(active_access_token) != "aal2":
+                return _add_security_headers(request, JSONResponse(
+                    status_code=403,
+                    content={"detail": "Se requiere autenticación de dos factores.", "code": "MFA_REQUIRED"},
+                    headers={"Cache-Control": "no-store"},
+                ))
+        except AuthConfigurationError:
+            return _add_security_headers(request, JSONResponse(
+                status_code=503, content={"detail": "La autenticación privada todavía no está configurada."},
+                headers={"Cache-Control": "no-store"},
+            ))
+        except AuthProviderError:
+            return _add_security_headers(request, JSONResponse(
+                status_code=503, content={"detail": "No se pudo verificar la sesión con el proveedor de autenticación."},
+                headers={"Cache-Control": "no-store"},
+            ))
+
+    response = await call_next(request)
+    if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Vary"] = "Cookie"
+    if refreshed:
+        _set_auth_cookies(response, refreshed)
+    return _add_security_headers(request, response)
+
+
+@app.get("/auth/status")
+def auth_status(request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    access_token = request.cookies.get("sp_access_token")
+    refresh_token = request.cookies.get("sp_refresh_token")
+    try:
+        active_token = access_token
+        user = validate_access_token(access_token) if access_token else None
+        if user is None and refresh_token:
+            session = refresh_session(refresh_token)
+            if session:
+                active_token = session["access_token"]
+                user = validate_access_token(active_token)
+                if user:
+                    _set_auth_cookies(response, session)
+        totp_factors = [
+            factor for factor in (user or {}).get("factors") or []
+            if factor.get("factor_type") == "totp"
+        ]
+        usable_factor = next((factor for factor in totp_factors if factor.get("status") in {"verified", "unverified"}), None)
+        mfa_verified = bool(user) and token_assurance_level(active_token) == "aal2"
+        return {
+            "authenticated": bool(user),
+            "email": user.get("email") if user else None,
+            "mfa_required": bool(user) and not mfa_verified,
+            "mfa_verified": mfa_verified,
+            "mfa_factor_id": usable_factor.get("id") if usable_factor else None,
+            "mfa_setup_needed": bool(user) and not usable_factor,
+        }
+    except AuthConfigurationError:
+        raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
+    except AuthProviderError:
+        raise HTTPException(status_code=503, detail="No se pudo verificar la sesión.")
+
+
+@app.post("/auth/login")
+def auth_login(payload: AdminLoginRequest, request: Request, response: Response):
+    if not _same_origin(request):
+        raise HTTPException(status_code=403, detail="Solicitud de origen no autorizado.")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        session = sign_in(payload.email, payload.password)
+        if not session:
+            raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos.")
+        _set_auth_cookies(response, session)
+        factors = (session.get("user") or {}).get("factors") or []
+        usable_factor = next((
+            factor for factor in factors
+            if factor.get("factor_type") == "totp" and factor.get("status") in {"verified", "unverified"}
+        ), None)
+        return {
+            "success": True,
+            "email": session["email"],
+            "mfa_required": True,
+            "mfa_factor_id": usable_factor.get("id") if usable_factor else None,
+            "mfa_setup_needed": not bool(usable_factor),
+        }
+    except AuthConfigurationError:
+        raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
+    except AuthProviderError:
+        raise HTTPException(status_code=503, detail="El servicio de autenticación no está disponible.")
+
+
+@app.post("/auth/mfa/enroll")
+def auth_mfa_enroll(request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    if not _same_origin(request):
+        raise HTTPException(status_code=403, detail="Solicitud de origen no autorizado.")
+    token = request.cookies.get("sp_access_token")
+    try:
+        user = validate_access_token(token) if token else None
+        if not user:
+            raise HTTPException(status_code=401, detail="Inicia sesión nuevamente.")
+        existing = [
+            factor for factor in (user.get("factors") or [])
+            if factor.get("factor_type") == "totp" and factor.get("status") == "verified"
+        ]
+        if existing:
+            raise HTTPException(status_code=409, detail="Ya existe un segundo factor configurado.")
+        setup = enroll_totp(token)
+        return setup
+    except AuthConfigurationError:
+        raise HTTPException(status_code=503, detail="La autenticación privada no está configurada.")
+    except AuthProviderError:
+        raise HTTPException(status_code=503, detail="No se pudo configurar el segundo factor.")
+
+
+@app.post("/auth/mfa/verify")
+def auth_mfa_verify(payload: AdminMfaVerifyRequest, request: Request, response: Response):
+    if not _same_origin(request):
+        raise HTTPException(status_code=403, detail="Solicitud de origen no autorizado.")
+    token = request.cookies.get("sp_access_token")
+    try:
+        user = validate_access_token(token) if token else None
+        if not user:
+            raise HTTPException(status_code=401, detail="Inicia sesión nuevamente.")
+        session = verify_totp(token, payload.factor_id, payload.code)
+        if not session:
+            raise HTTPException(status_code=401, detail="Código de verificación incorrecto o vencido.")
+        _set_auth_cookies(response, session)
+        response.headers["Cache-Control"] = "no-store"
+        return {"success": True, "email": session["email"], "mfa_verified": True}
+    except AuthConfigurationError:
+        raise HTTPException(status_code=503, detail="La autenticación privada no está configurada.")
+    except AuthProviderError:
+        raise HTTPException(status_code=503, detail="No se pudo verificar el segundo factor.")
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request, response: Response):
+    if not _same_origin(request):
+        raise HTTPException(status_code=403, detail="Solicitud de origen no autorizado.")
+    try:
+        revoke_session(request.cookies.get("sp_access_token"))
+    except (AuthConfigurationError, AuthProviderError):
+        pass
+    _clear_auth_cookies(response)
+    response.headers["Cache-Control"] = "no-store"
+    return {"success": True}
+
 
 app.include_router(pending_router)
 app.include_router(mlb_backtest_router)
