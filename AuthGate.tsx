@@ -121,6 +121,47 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     }
   }
 
+  if (status === "mfa") {
+    return (
+      <main style={pageStyle}>
+        <section style={cardStyle}>
+          <div style={{ fontSize: 13, letterSpacing: 2, color: "#60a5fa", fontWeight: 800 }}>VERIFICACIÓN ADICIONAL</div>
+          <h1 style={{ margin: "10px 0 6px", fontSize: 26 }}>Protege tu cuenta</h1>
+          <p style={{ color: "#a9bdcf", lineHeight: 1.6 }}>{ownerEmail}. Para abrir Sports Predictor debes completar la autenticación de dos factores.</p>
+          {setupNeeded ? (
+            <>
+              <p style={{ color: "#cbd5e1", lineHeight: 1.6 }}>Configura una aplicación autenticadora compatible con TOTP, como Google Authenticator, Microsoft Authenticator o 1Password.</p>
+              <button type="button" disabled={busy} onClick={handleMfaSetup} style={buttonStyle}>{busy ? "Preparando…" : "Activar segundo factor"}</button>
+            </>
+          ) : (
+            <>
+              {setupSecret && (
+                <div style={{ margin: "16px 0", padding: 14, borderRadius: 10, background: "#07111f", border: "1px solid #405a73" }}>
+                  <div style={{ color: "#93c5fd", fontSize: 12, fontWeight: 800, marginBottom: 8 }}>CLAVE DE CONFIGURACIÓN · GUARDA EN UN LUGAR SEGURO</div>
+                  <code style={{ color: "#fff", overflowWrap: "anywhere", userSelect: "all" }}>{setupSecret}</code>
+                </div>
+              )}
+              <form onSubmit={handleMfaVerify}>
+                <label htmlFor="sp-otp" style={labelStyle}>Código de seis dígitos</label>
+                <input
+                  id="sp-otp" type="text" inputMode="numeric" autoComplete="one-time-code"
+                  pattern="[0-9]{6}" maxLength={6} required value={otp}
+                  onChange={(event) => setOtp(event.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+                  style={inputStyle}
+                />
+                <button type="submit" disabled={busy || !factorId || otp.length !== 6} style={{ ...buttonStyle, opacity: busy ? .65 : 1 }}>
+                  {busy ? "Verificando…" : "Verificar y entrar"}
+                </button>
+              </form>
+            </>
+          )}
+          {message && <p role="alert" style={{ color: "#fbbf24", lineHeight: 1.5 }}>{message}</p>}
+          <button type="button" onClick={handleLogout} disabled={busy} style={{ ...buttonStyle, background: "#334155" }}>Cancelar y cerrar sesión</button>
+        </section>
+      </main>
+    );
+  }
+
   if (status === "authenticated") {
     return (
       <>
@@ -207,6 +248,16 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   );
 }
 
+const pageStyle: React.CSSProperties = {
+  minHeight: "100vh", display: "grid", placeItems: "center", padding: 20,
+  background: "radial-gradient(circle at top, #142b45 0%, #07111f 55%)",
+  color: "#eaf1f8", fontFamily: "system-ui, sans-serif",
+};
+const cardStyle: React.CSSProperties = {
+  width: "min(100%, 420px)", boxSizing: "border-box", padding: 28,
+  border: "1px solid #29435d", borderRadius: 18, background: "#0b1b2c",
+  boxShadow: "0 24px 70px rgba(0,0,0,.35)",
+};
 const labelStyle: React.CSSProperties = {
   display: "block", margin: "16px 0 7px", color: "#cbd5e1", fontSize: 13, fontWeight: 700,
 };
