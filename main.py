@@ -224,7 +224,8 @@ def auth_login(payload: AdminLoginRequest, request: Request, response: Response)
 
 
 @app.post("/auth/mfa/enroll")
-def auth_mfa_enroll(request: Request):
+def auth_mfa_enroll(request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
     if not _same_origin(request):
         raise HTTPException(status_code=403, detail="Solicitud de origen no autorizado.")
     token = request.cookies.get("sp_access_token")
