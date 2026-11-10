@@ -58,6 +58,28 @@ def _market_probability(payload: dict, market: str) -> float | None:
     return parsed if parsed is not None and 0 <= parsed <= 1 else None
 
 
+def _wilson_interval(successes: int, sample_size: int, z: float = 1.959963984540054) -> dict[str, float] | None:
+    """Return a two-sided 95% Wilson score interval for a binomial rate."""
+    if sample_size <= 0:
+        return None
+    proportion = successes / sample_size
+    z_squared = z * z
+    denominator = 1 + z_squared / sample_size
+    center = (proportion + z_squared / (2 * sample_size)) / denominator
+    margin = (
+        z
+        * math.sqrt(
+            proportion * (1 - proportion) / sample_size
+            + z_squared / (4 * sample_size * sample_size)
+        )
+        / denominator
+    )
+    return {
+        "lower": round(max(0.0, center - margin), 4),
+        "upper": round(min(1.0, center + margin), 4),
+    }
+
+
 def _binary_market_metrics(items: list[dict[str, Any]], probability_key: str, actual_key: str) -> dict[str, Any]:
     usable = []
     for item in items:
@@ -68,9 +90,11 @@ def _binary_market_metrics(items: list[dict[str, Any]], probability_key: str, ac
     bins = []
     for lower, upper in ((0.0, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 1.000001)):
         subset = [(p, y) for p, y in usable if lower <= p < upper]
+        successes = int(sum(y for _, y in subset))
         bins.append({"range": f"{int(lower*100)}–{int(min(1,upper)*100)}%", "sample_size": len(subset),
                      "mean_probability": round(sum(p for p, _ in subset)/len(subset), 4) if subset else None,
-                     "observed_rate": round(sum(y for _, y in subset)/len(subset), 4) if subset else None})
+                     "observed_rate": round(successes/len(subset), 4) if subset else None,
+                     "observed_rate_ci_95": _wilson_interval(successes, len(subset))})
     n = len(usable)
     return {"sample_size": n,
             "brier_score": round(sum((p-y)**2 for p,y in usable)/n, 5) if n else None,
@@ -428,6 +452,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "sample_size": len(subset),
             "accuracy": round(sum(item["correct"] for item in subset) / len(subset), 4) if subset else None,
             "mean_confidence": round(sum(item["confidence"] for item in subset) / len(subset), 4) if subset else None,
+            "accuracy_ci_95": _wilson_interval(sum(item["correct"] for item in subset), len(subset)),
             "misses": sum(not item["correct"] for item in subset),
             "upsets": sum(not item["correct"] and item["confidence"] >= 0.50 for item in subset),
         })
