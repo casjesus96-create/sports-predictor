@@ -11,6 +11,7 @@ COPY package.json ./
 COPY App.tsx ./
 COPY MLBApp.tsx ./
 COPY NFLApp.tsx ./
+COPY PercentageSignal.tsx ./
 COPY NBAApp.tsx ./
 COPY TennisApp.tsx ./
 COPY FootballApp.tsx ./
