@@ -47,3 +47,31 @@ def test_openapi_schema_is_private():
     client = TestClient(main.app)
     response = client.get("/openapi.json")
     assert response.status_code == 401
+
+
+
+def test_state_changing_private_api_requires_explicit_origin():
+    client = TestClient(main.app)
+    response = client.post("/api/v1/nfl/predict/example", json={})
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Solicitud de origen no autorizado."
+
+
+def test_state_changing_private_api_rejects_cross_origin():
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/v1/nfl/predict/example",
+        json={},
+        headers={"Origin": "https://attacker.example"},
+    )
+    assert response.status_code == 403
+
+
+def test_state_changing_private_api_checks_origin_before_authentication():
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/v1/nfl/predict/example",
+        json={},
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 401
