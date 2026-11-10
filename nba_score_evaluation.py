@@ -87,6 +87,5 @@ def evaluate_score_projections(rows):
         "game_total_bias": bias(total_errors),
         "game_total_within_5_pct": within(total_errors, 5),
         "game_total_within_10_pct": within(total_errors, 10),
-        "evaluations": evaluated,
         "method": "Una última captura liquidada por partido; error = marcador real menos proyección pregame. Diagnóstico descriptivo, sin reajuste automático.",
     }
