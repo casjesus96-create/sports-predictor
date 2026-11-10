@@ -465,7 +465,8 @@ def _wilson_interval(successes, sample_size, z=1.959963984540054):
 
 def get_nfl_calibration(minimum_sample=30):
     """Audita confianza del favorito solo con snapshots oficiales liquidados."""
-    rows = get_nfl_predictions()
+    # Use the repository maximum so calibration is not silently limited to the default 100 rows.
+    rows = get_nfl_predictions(limit=500)
     observations = []
     invalid_probabilities = 0
 
