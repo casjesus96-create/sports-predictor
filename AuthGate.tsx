@@ -1,4 +1,5 @@
-import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 
 type AuthStatus = "checking" | "authenticated" | "mfa" | "anonymous" | "unavailable";
 
