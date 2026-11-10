@@ -102,6 +102,48 @@ def _binary_market_metrics(items: list[dict[str, Any]], probability_key: str, ac
             "calibration_bins": bins}
 
 
+def _probability_margin_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Describe top-choice accuracy by its probability gap over the runner-up."""
+    thresholds = ((0.0, 0.05), (0.05, 0.10), (0.10, 0.20), (0.20, 1.000001))
+    prepared = []
+    for item in items:
+        probabilities = item.get("probabilities") or {}
+        ordered = sorted((float(probabilities[key]) for key in OUTCOMES), reverse=True)
+        if len(ordered) != 3 or not all(math.isfinite(value) for value in ordered):
+            continue
+        prepared.append({
+            "margin": ordered[0] - ordered[1],
+            "confidence": ordered[0],
+            "correct": bool(item.get("correct")),
+            "brier": float(item["brier"]),
+            "log_loss": float(item["log_loss"]),
+        })
+    bands = []
+    for lower, upper in thresholds:
+        subset = [item for item in prepared if lower <= item["margin"] < upper]
+        n = len(subset)
+        successes = sum(item["correct"] for item in subset)
+        bands.append({
+            "range": f"{int(lower * 100)}–{int(min(1, upper) * 100)} pp",
+            "sample_size": n,
+            "mean_margin": round(sum(item["margin"] for item in subset) / n, 4) if n else None,
+            "mean_favorite_probability": round(sum(item["confidence"] for item in subset) / n, 4) if n else None,
+            "accuracy": round(successes / n, 4) if n else None,
+            "accuracy_ci_95": _wilson_interval(successes, n),
+            "brier_score": round(sum(item["brier"] for item in subset) / n, 5) if n else None,
+            "log_loss": round(sum(item["log_loss"] for item in subset) / n, 5) if n else None,
+        })
+    n = len(prepared)
+    successes = sum(item["correct"] for item in prepared)
+    return {
+        "sample_size": n,
+        "accuracy": round(successes / n, 4) if n else None,
+        "accuracy_ci_95": _wilson_interval(successes, n),
+        "bands": bands,
+        "definition": "Margen = probabilidad del resultado más probable menos la segunda probabilidad más alta; se expresa en puntos porcentuales.",
+        "read_only": True,
+        "model_changed": False,
+    }
 
 SEGMENT_MINIMUM_SAMPLE = 30
 
@@ -422,6 +464,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "competition": competition, "sample_size": 0, "excluded_invalid_rows": excluded,
             "metrics": {"accuracy": None, "brier_score": None, "log_loss": None},
             "confidence_bands": [], "surprises": [],
+            "probability_margin_diagnostics": _probability_margin_diagnostics([]),
             "market_calibration": {"btts_yes": _binary_market_metrics([], "btts_p", "actual_btts"),
                                    "over_2_5": _binary_market_metrics([], "over25_p", "actual_over25")},
             "outcome_calibration": {"sample_size": 0, "multiclass_brier_score": None, "multiclass_log_loss": None,
@@ -532,6 +575,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "upset_count": len(upset_rows),
         },
         "confidence_bands": bands, "surprises": surprises, "signals": signals,
+        "probability_margin_diagnostics": _probability_margin_diagnostics(valid),
         "market_calibration": {"btts_yes": btts_report, "over_2_5": over25_report},
         "outcome_calibration": outcome_calibration,
         "segmented_calibration": _build_segmented_calibration(valid),

@@ -417,6 +417,42 @@ def test_wilson_intervals_are_bounded_and_reflect_sample_size():
     assert (small["upper"] - small["lower"]) > (large["upper"] - large["lower"])
     assert _wilson_interval(0, 0) is None
 
+def test_probability_margin_diagnostics_separate_clear_and_narrow_favorites():
+    rows = [
+        snapshot(0.60, 0.25, 0.15, 2, 1, 4101),  # margin 35 pp, correct
+        snapshot(0.43, 0.32, 0.25, 0, 1, 4102),  # margin 11 pp, wrong
+        snapshot(0.48, 0.45, 0.07, 0, 0, 4103),  # margin 3 pp, wrong
+    ]
+    report = build_postmatch_learning_report(rows, "PL")
+    diagnostic = report["probability_margin_diagnostics"]
+    bands = {item["range"]: item for item in diagnostic["bands"]}
+    assert diagnostic["sample_size"] == 3
+    assert bands["20–100 pp"]["sample_size"] == 1
+    assert bands["20–100 pp"]["accuracy"] == 1.0
+    assert bands["20–100 pp"]["mean_margin"] == 0.35
+    assert bands["10–20 pp"]["sample_size"] == 1
+    assert bands["10–20 pp"]["accuracy"] == 0.0
+    assert bands["0–5 pp"]["sample_size"] == 1
+    assert bands["5–10 pp"]["sample_size"] == 0
+    assert bands["5–10 pp"]["accuracy_ci_95"] is None
+    assert diagnostic["accuracy_ci_95"] == {"lower": 0.0615, "upper": 0.7923}
+    assert diagnostic["read_only"] is True
+    assert diagnostic["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_probability_margin_diagnostics_has_stable_empty_schema():
+    report = build_postmatch_learning_report([], "PL")
+    diagnostic = report["probability_margin_diagnostics"]
+    assert diagnostic["sample_size"] == 0
+    assert diagnostic["accuracy"] is None
+    assert diagnostic["accuracy_ci_95"] is None
+    assert len(diagnostic["bands"]) == 4
+    assert all(item["sample_size"] == 0 for item in diagnostic["bands"])
+    assert diagnostic["read_only"] is True
+    assert diagnostic["model_changed"] is False
+
 
 def test_postmatch_confidence_and_market_bins_expose_wilson_intervals():
     rows = [

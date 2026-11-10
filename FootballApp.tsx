@@ -1826,6 +1826,18 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
         <thead><tr><th style={cellStyle}>Confianza del favorito</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Confianza media</th><th style={cellStyle}>Acierto observado</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Fallos 1X2</th><th style={cellStyle}>Sorpresas (favorito ≥50%)</th></tr></thead>
         <tbody>{(report.confidence_bands || []).map((band: any) => <tr key={band.range}><td style={cellStyle}>{band.range}</td><td style={cellStyle}>{band.sample_size}</td><td style={cellStyle}>{percent(band.mean_confidence)}</td><td style={cellStyle}>{percent(band.accuracy)}</td><td style={cellStyle}>{band.accuracy_ci_95 ? `${percent(band.accuracy_ci_95.lower)}–${percent(band.accuracy_ci_95.upper)}` : "—"}</td><td style={cellStyle}>{band.misses ?? band.upsets}</td><td style={cellStyle}>{band.upsets}</td></tr>)}</tbody>
       </table></div>
+      <h3 style={{ marginBottom: 6 }}>Separación entre el favorito y la segunda opción</h3>
+      {(() => {
+        const diagnostic = report.probability_margin_diagnostics || {};
+        return <>
+          <p style={{ color: "#9ca3af", fontSize: 11 }}>Margen = probabilidad del resultado más probable menos la segunda más alta. Un margen pequeño indica una elección reñida; uno mayor indica más separación entre opciones. IC 95% de Wilson para el acierto observado.</p>
+          <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+            <thead><tr><th style={cellStyle}>Margen</th><th style={cellStyle}>Partidos</th><th style={cellStyle}>Margen medio</th><th style={cellStyle}>Prob. favorito</th><th style={cellStyle}>Acierto</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Brier</th><th style={cellStyle}>Log Loss</th></tr></thead>
+            <tbody>{(diagnostic.bands || []).map((band: any) => <tr key={band.range}><td style={cellStyle}>{band.range}</td><td style={cellStyle}>{band.sample_size}</td><td style={cellStyle}>{percent(band.mean_margin)}</td><td style={cellStyle}>{percent(band.mean_favorite_probability)}</td><td style={cellStyle}>{percent(band.accuracy)}</td><td style={cellStyle}>{band.accuracy_ci_95 ? `${percent(band.accuracy_ci_95.lower)}–${percent(band.accuracy_ci_95.upper)}` : "—"}</td><td style={cellStyle}>{typeof band.brier_score === "number" ? band.brier_score.toFixed(5) : "—"}</td><td style={cellStyle}>{typeof band.log_loss === "number" ? band.log_loss.toFixed(5) : "—"}</td></tr>)}</tbody>
+          </table></div>
+          <p style={{ color: "#9ca3af", fontSize: 10 }}>Muestra: {diagnostic.sample_size ?? 0} partidos · No se interpreta como causalidad ni se usa para ajustar probabilidades.</p>
+        </>
+      })()}
       <h3 style={{ marginBottom: 6 }}>Sorpresas que merecen revisión</h3>
       {(report.surprises || []).length ? (report.surprises || []).map((item: any) => <article key={item.match_id} style={{ padding: 10, marginTop: 8, borderRadius: 8, background: "#0b1220", border: "1px solid #475569" }}>
         <strong>{item.home_team} {item.score} {item.away_team}</strong>
