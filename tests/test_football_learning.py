@@ -404,3 +404,35 @@ def test_empty_error_diagnostics_have_stable_schema():
     assert set(diagnostic["confusion_matrix"]["predicted_rows_actual_columns"]) == {"HOME", "DRAW", "AWAY"}
     assert diagnostic["goal_residuals"]["total_goals"]["sample_size"] == 0
     assert diagnostic["read_only"] is True
+
+
+def test_wilson_intervals_are_bounded_and_reflect_sample_size():
+    from football_learning import _wilson_interval
+
+    small = _wilson_interval(8, 10)
+    large = _wilson_interval(80, 100)
+    assert small is not None and large is not None
+    assert 0 <= small["lower"] <= small["upper"] <= 1
+    assert 0 <= large["lower"] <= large["upper"] <= 1
+    assert (small["upper"] - small["lower"]) > (large["upper"] - large["lower"])
+    assert _wilson_interval(0, 0) is None
+
+
+def test_postmatch_confidence_and_market_bins_expose_wilson_intervals():
+    rows = [
+        snapshot(0.60, 0.25, 0.15, 2, 1, 3001),
+        snapshot(0.60, 0.25, 0.15, 0, 1, 3002),
+    ]
+    for row in rows:
+        row["prediction_payload"]["goal_markets"]["both_teams_to_score"]["yes"]["probability"] = 0.8
+
+    report = build_postmatch_learning_report(rows, "PL")
+    confidence = next(item for item in report["confidence_bands"] if item["range"] == "50–60%")
+    market_bin = report["market_calibration"]["btts_yes"]["calibration_bins"][-1]
+
+    assert confidence["accuracy_ci_95"] == {"lower": 0.0945, "upper": 0.9055}
+    assert market_bin["observed_rate_ci_95"] == {"lower": 0.0945, "upper": 0.9055}
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
