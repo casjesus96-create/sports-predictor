@@ -44,6 +44,12 @@ type Performance = {
     incorrect_predictions?: number;
     accuracy_percentage?: number;
     brier_score?: number | null;
+    confidence_calibration?: {
+      sample_size?: number; minimum_sample_required?: number; calibration_ready?: boolean;
+      observed_accuracy?: number | null; accuracy_ci_95?: { lower: number; upper: number } | null;
+      bins?: Array<{ range: string; sample_size: number; mean_confidence: number; observed_accuracy: number; calibration_error: number; accuracy_ci_95?: { lower: number; upper: number } | null; small_sample?: boolean }>;
+      message?: string;
+    };
   };
 };
 
@@ -325,6 +331,36 @@ export default function NBAApp() {
         <div className="metric panel"><span>Acierto decisivo</span><strong>{summary.accuracy_percentage != null ? `${summary.accuracy_percentage.toFixed(1)}%` : "—"}</strong><small>{summary.correct_predictions ?? 0} correctas · {summary.incorrect_predictions ?? 0} incorrectas</small></div>
         <div className="metric panel"><span>Brier score</span><strong className="tone-neutral">{summary.brier_score != null ? summary.brier_score.toFixed(3) : "—"}</strong><small>Menor suele ser mejor; requiere muestra</small></div>
       </section>
+
+      {summary.confidence_calibration && (
+        <section className="panel analysis-content" aria-label="Calibración de confianza NBA">
+          <div className="section-heading">
+            <div><div className="section-kicker">AUDITORÍA POSTPARTIDO</div><h2>Calibración de confianza · NBA-1.1.0</h2></div>
+            <span className="muted">{summary.confidence_calibration.sample_size ?? 0} muestras</span>
+          </div>
+          <p className="muted">Compara la confianza del favorito con el porcentaje de aciertos observado. IC95% Wilson; diagnóstico descriptivo, no modifica probabilidades ni el modelo.</p>
+          <div className="prediction-strip">
+            <div><span>Acierto observado</span><b>{summary.confidence_calibration.observed_accuracy != null ? pct(summary.confidence_calibration.observed_accuracy) : "—"}</b></div>
+            <div><span>Intervalo IC95%</span><b>{summary.confidence_calibration.accuracy_ci_95 ? (pct(summary.confidence_calibration.accuracy_ci_95.lower) + "–" + pct(summary.confidence_calibration.accuracy_ci_95.upper)) : "—"}</b></div>
+            <div><span>Muestra mínima</span><b>{summary.confidence_calibration.minimum_sample_required ?? 30}</b></div>
+          </div>
+          <p className="muted">{summary.confidence_calibration.message || "Sin información adicional."}</p>
+          {(summary.confidence_calibration.bins || []).length > 0 ? (
+            <div style={{ overflowX: "auto" }}>
+              <table>
+                <thead><tr><th>Confianza</th><th>N</th><th>Confianza media</th><th>Acierto observado</th><th>IC95% Wilson</th><th>Error</th></tr></thead>
+                <tbody>{summary.confidence_calibration.bins?.map((bin) => (
+                  <tr key={bin.range}>
+                    <td>{bin.range}</td><td>{bin.sample_size}</td><td>{pct(bin.mean_confidence)}</td><td>{pct(bin.observed_accuracy)}</td>
+                    <td>{bin.accuracy_ci_95 ? (pct(bin.accuracy_ci_95.lower) + "–" + pct(bin.accuracy_ci_95.upper)) : "—"}{bin.small_sample ? " · N baja" : ""}</td>
+                    <td>{bin.calibration_error > 0 ? "+" : ""}{(bin.calibration_error * 100).toFixed(1)} pp</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <p className="muted">Todavía no hay predicciones válidas para construir bandas de confianza.</p>}
+        </section>
+      )}
 
       {error && <div className="message error" role="alert">{error}</div>}
       {message && <div className="message notice" role="status">{message}</div>}
