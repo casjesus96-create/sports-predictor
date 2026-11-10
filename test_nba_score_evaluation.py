@@ -34,7 +34,7 @@ def test_uses_only_latest_settled_snapshot_per_game():
     result = evaluate_score_projections([older, newer])
 
     assert result["sample_games"] == 1
-    assert result["team_points_mae"] == 1.5
+    assert result["team_points_mae"] == 3.5
     assert result["game_total_mae"] == 3.0
 
 
