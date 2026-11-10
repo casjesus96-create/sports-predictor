@@ -322,6 +322,68 @@ def test_segmented_error_diagnostics_excludes_unknown_competition_or_season():
     assert segmented["excluded_missing_competition_or_season"] == 1
 
 
+
+def test_temporal_error_stability_splits_chronologically_without_splitting_local_dates():
+    rows = []
+    for index in range(60):
+        day = index + 1
+        if day <= 31:
+            date = f"2026-08-{day:02d}"
+        else:
+            date = f"2026-09-{day - 31:02d}"
+        row = snapshot(0.60, 0.25, 0.15, 1, 1, 1500 + index)
+        row["kickoff_at"] = f"{date}T15:00:00Z"
+        row["expected_goals"] = {"home": 1.5, "away": 0.8, "total": 2.3}
+        rows.append(row)
+
+    stability = build_postmatch_learning_report(rows, "PL")["temporal_error_stability"]
+    segment = stability["by_competition"][0]
+    assert segment["competition"] == "PL"
+    assert segment["eligible"] is True
+    assert len(segment["windows"]) == 2
+    earlier, later = segment["windows"]
+    assert earlier["period"] == "earlier"
+    assert later["period"] == "later"
+    assert earlier["sample_size"] >= 30
+    assert later["sample_size"] >= 30
+    assert earlier["end_local_date"] < later["start_local_date"]
+    assert earlier["goal_residuals"]["home_goals"]["bias_actual_minus_expected"] == -0.5
+    assert stability["read_only"] is True
+    assert stability["model_changed"] is False
+
+
+def test_temporal_error_stability_keeps_same_local_date_in_one_window():
+    rows = []
+    for index in range(62):
+        day = index // 2 + 1
+        if day <= 31:
+            date = f"2026-08-{day:02d}"
+        else:
+            date = f"2026-09-{day - 31:02d}"
+        row = snapshot(0.60, 0.25, 0.15, 2, 1, 1600 + index)
+        row["kickoff_at"] = f"{date}T15:00:00Z"
+        rows.append(row)
+
+    segment = build_postmatch_learning_report(rows, "PL")["temporal_error_stability"]["by_competition"][0]
+    assert segment["eligible"] is True
+    earlier, later = segment["windows"]
+    assert earlier["end_local_date"] < later["start_local_date"]
+    assert earlier["sample_size"] + later["sample_size"] == 62
+
+
+def test_temporal_error_stability_requires_minimum_sample_in_both_windows():
+    rows = []
+    for index in range(59):
+        date = f"2026-08-{(index % 28) + 1:02d}"
+        row = snapshot(0.60, 0.25, 0.15, 2, 1, 1700 + index)
+        row["kickoff_at"] = f"{date}T15:00:00Z"
+        rows.append(row)
+
+    segment = build_postmatch_learning_report(rows, "PL")["temporal_error_stability"]["by_competition"][0]
+    assert segment["eligible"] is False
+    assert segment["windows"] == []
+
+
 def test_goal_residual_metrics_are_hidden_below_minimum_sample():
     rows = [snapshot(0.60, 0.25, 0.15, 2, 1, 950 + index) for index in range(29)]
     report = build_postmatch_learning_report(rows, "PL")
