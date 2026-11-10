@@ -7,6 +7,7 @@ itself and no result is guaranteed.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -309,7 +310,7 @@ def void_decision_evaluation(evaluation_id: str, request: DecisionEvaluationVoid
             supabase.table("decision_evaluations")
             .update({
                 "status": "VOIDED",
-                "voided_at": "now()",
+                "voided_at": datetime.now(timezone.utc).isoformat(),
                 "void_reason": reason,
             })
             .eq("id", evaluation_id)
@@ -583,7 +584,7 @@ def decision_outcome_audit(
             .select(
                 "id,prediction_snapshot_id,event_id,sport,model_version,selected_side,"
                 "selected_team,model_probability,decimal_odds,classification,"
-                "expected_value_percent,evaluated_at"
+                "expected_value_percent,evaluated_at,status"
             )
             .eq("sport", sport)
             .order("evaluated_at", desc=True)
@@ -631,7 +632,7 @@ def decision_audit_coverage(
         supabase = get_supabase_client()
         evaluations_response = (
             supabase.table("decision_evaluations")
-            .select("id,prediction_snapshot_id,sport,model_version,selected_side")
+            .select("id,prediction_snapshot_id,sport,model_version,selected_side,status")
             .eq("sport", sport)
             .order("evaluated_at", desc=True)
             .limit(limit)
