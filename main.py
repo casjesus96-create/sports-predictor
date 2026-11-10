@@ -137,13 +137,6 @@ async def protect_private_api(request: Request, call_next):
                     status_code=401, content={"detail": "Autenticación requerida."},
                     headers={"Cache-Control": "no-store"},
                 ))
-            active_access_token = refreshed["access_token"] if refreshed else access_token
-            if token_assurance_level(active_access_token) != "aal2":
-                return _add_security_headers(request, JSONResponse(
-                    status_code=403,
-                    content={"detail": "Se requiere autenticación de dos factores.", "code": "MFA_REQUIRED"},
-                    headers={"Cache-Control": "no-store"},
-                ))
         except AuthConfigurationError:
             return _add_security_headers(request, JSONResponse(
                 status_code=503, content={"detail": "La autenticación privada todavía no está configurada."},
@@ -179,19 +172,13 @@ def auth_status(request: Request, response: Response):
                 user = validate_access_token(active_token)
                 if user:
                     _set_auth_cookies(response, session)
-        totp_factors = [
-            factor for factor in (user or {}).get("factors") or []
-            if factor.get("factor_type") == "totp"
-        ]
-        usable_factor = next((factor for factor in totp_factors if factor.get("status") in {"verified", "unverified"}), None)
-        mfa_verified = bool(user) and token_assurance_level(active_token) == "aal2"
         return {
             "authenticated": bool(user),
             "email": user.get("email") if user else None,
-            "mfa_required": bool(user) and not mfa_verified,
-            "mfa_verified": mfa_verified,
-            "mfa_factor_id": usable_factor.get("id") if usable_factor else None,
-            "mfa_setup_needed": bool(user) and not usable_factor,
+            "mfa_required": False,
+            "mfa_verified": False,
+            "mfa_factor_id": None,
+            "mfa_setup_needed": False,
         }
     except AuthConfigurationError:
         raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
@@ -209,17 +196,10 @@ def auth_login(payload: AdminLoginRequest, request: Request, response: Response)
         if not session:
             raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos.")
         _set_auth_cookies(response, session)
-        factors = (session.get("user") or {}).get("factors") or []
-        usable_factor = next((
-            factor for factor in factors
-            if factor.get("factor_type") == "totp" and factor.get("status") in {"verified", "unverified"}
-        ), None)
         return {
             "success": True,
             "email": session["email"],
-            "mfa_required": True,
-            "mfa_factor_id": usable_factor.get("id") if usable_factor else None,
-            "mfa_setup_needed": not bool(usable_factor),
+            "mfa_required": False,
         }
     except AuthConfigurationError:
         raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
