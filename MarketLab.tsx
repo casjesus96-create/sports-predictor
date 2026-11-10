@@ -1,3 +1,4 @@
+import PercentageSignal from "./PercentageSignal";
 import { useEffect, useState } from "react";
 type Market = { market_id: string; label: string; value?: unknown; probability: number | null; probability_percent: number | null; status: string; note: string };
 type Candidate = { snapshot_id: string; event_id: string; sport: string; model_version: string; created_at: string | null; home: string; away: string; data_quality: number | null; markets: Market[] };
@@ -51,7 +52,7 @@ export default function MarketLab() {
     <p style={{margin:"6px 0",color:"#475569",fontSize:13}}>Modelo {current.model_version} · Calidad de datos: {current.data_quality??"No disponible"}/100</p>
     <p style={{margin:0,fontSize:13}}>Los mercados experimentales requieren validación histórica; no representan garantías.</p></div>
     {current.markets.map((m,i)=><article key={m.market_id+i} style={panel}><div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:10}}><strong>{m.label}</strong><span style={{color:statusColor[m.status]||"#475569",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{statusText[m.status]||m.status}</span></div>
-     {m.probability_percent!=null&&<p style={{fontSize:22,fontWeight:700,margin:"10px 0"}}>{m.probability_percent.toFixed(2)}%</p>}
+     {m.probability_percent!=null&&<PercentageSignal label="Probabilidad estimada" value={m.probability_percent} scale="percent" />}
      {m.value!=null&&<p style={{margin:"8px 0",overflowWrap:"anywhere"}}>{displayValue(m.value)}</p>}
      <p style={{color:"#475569",fontSize:13,margin:"6px 0 0"}}>{m.note}</p></article>)}</div>}</>}
   <section style={{display:"grid",gap:10,border:"1px solid #cbd5e1",borderRadius:12,padding:14}}>
@@ -69,8 +70,8 @@ export default function MarketLab() {
      {team.hitters.length>0&&<div style={{display:"grid",gap:8}}>{team.hitters.map(h=><div key={h.player_id} style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:8,borderBottom:"1px solid #e2e8f0",paddingBottom:7}}>
       <div><strong>{h.batting_order}. {h.player_name}</strong><div style={{fontSize:12,color:"#64748b"}}>{h.position||"Posición no disponible"}</div></div>
       <div style={{textAlign:"right",whiteSpace:"nowrap"}}><strong>{h.hits_in_game??"—"} H</strong><div style={{fontSize:12,color:"#64748b"}}>{h.at_bats_in_game??"—"} AB</div></div>
-      {liveProjectionFor(team.side,h.player_id)?.probability_percent!=null&&<div style={{gridColumn:"1 / -1",fontSize:13,color:"#166534",background:"#f0fdf4",padding:"7px 9px",borderRadius:7}}>
-       <strong>Probabilidad experimental de 1+ hit en el partido: {liveProjectionFor(team.side,h.player_id)?.probability_percent?.toFixed(2)}%</strong>
+      {liveProjectionFor(team.side,h.player_id)?.probability_percent!=null&&<div style={{gridColumn:"1 / -1",display:"grid",gap:7}}>
+       <PercentageSignal label="Probabilidad experimental de 1+ hit en el partido" value={liveProjectionFor(team.side,h.player_id)?.probability_percent} scale="percent" />
        {(h.hits_in_game??0)>0&&<div style={{marginTop:5,fontSize:13,color:"#166534",fontWeight:700}}>Estado: {h.hits_in_game} hit(s) registrado(s); objetivo de 1+ hit cumplido.{(h.hits_in_game??0)>=2?" También lleva 2+ hits.":""}</div>}
        {(h.hits_in_game??0)>0&&liveProjectionFor(team.side,h.player_id)?.probability_additional_hit_percent!=null&&<div style={{marginTop:5,fontSize:13,color:"#92400e",fontWeight:700}}>Probabilidad experimental de conseguir otro hit desde ahora: {liveProjectionFor(team.side,h.player_id)?.probability_additional_hit_percent?.toFixed(2)}%</div>}
        <div style={{color:"#475569",fontSize:12}}>AVG temporada: {liveProjectionFor(team.side,h.player_id)?.season_avg==null?"—":(liveProjectionFor(team.side,h.player_id)!.season_avg!*100).toFixed(1)+"%"} · Turnos restantes estimados: {liveProjectionFor(team.side,h.player_id)?.expected_remaining_at_bats??"—"}</div>

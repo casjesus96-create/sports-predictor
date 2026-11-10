@@ -219,3 +219,7 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .percentage-band-footer{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:10px;line-height:1.45}
 .percentage-band-footer strong{font-size:.72rem}
 @media(max-width:420px){.percentage-band-signals{grid-template-columns:1fr}.percentage-signal-top strong{font-size:1.05rem}}
+
+
+/* Mantiene el indicador de confianza legible dentro de las fichas NBA. */
+.prediction-strip .prediction-confidence{grid-column:1/-1;min-width:0}

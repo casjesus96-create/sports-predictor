@@ -455,7 +455,7 @@ export default function NBAApp() {
                       <>
                         <div className="prediction-strip">
                           <div><span>Ganador proyectado</span><b>{stored.features?.predicted_winner || "—"}</b></div>
-                          <div><span>Confianza</span><b>{pct(confidenceValue(stored))}</b></div>
+                          <div className="prediction-confidence"><PercentageSignal label="Confianza del pronóstico" value={confidenceValue(stored)} /></div>
                           <div><span>Calidad de datos</span><b>{stored.data_quality != null ? `${stored.data_quality}%` : "—"}</b></div>
                           <div><span>Modelo</span><b>{stored.model_version || "NBA histórico"}</b></div>
                           {settled && <div><span>Marcador final</span><b>{stored.actual_away_score}–{stored.actual_home_score}</b></div>}
@@ -711,7 +711,7 @@ export default function NBAApp() {
                     </div>
                     <div className="prediction-strip">
                       <div><span>Ganador proyectado</span><b>{row.features?.predicted_winner || "—"}</b></div>
-                      <div><span>Confianza</span><b>{pct(confidenceValue(row))}</b></div>
+                      <div className="prediction-confidence"><PercentageSignal label="Confianza del pronóstico" value={confidenceValue(row)} /></div>
                       <div><span>Versión</span><b>{row.model_version || "NBA-1.1.0"}</b></div>
                     </div>
                     <div className="card-actions">
