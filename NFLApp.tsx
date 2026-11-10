@@ -144,6 +144,7 @@ export default function NFLApp() {
   const [games, setGames] = useState<AnyRecord[]>([]);
   const [predictions, setPredictions] = useState<AnyRecord[]>([]);
   const [performance, setPerformance] = useState<AnyRecord | null>(null);
+  const [calibration, setCalibration] = useState<AnyRecord | null>(null);
   const [selectedGameId, setSelectedGameId] = useState("");
   const [detail, setDetail] = useState<AnyRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -178,6 +179,7 @@ export default function NFLApp() {
         request("/nfl/games?limit=50"),
         request("/nfl/predictions?limit=100"),
         request("/nfl/performance"),
+        request("/nfl/calibration?minimum_sample=30"),
       ]);
       const errors: string[] = [];
 
@@ -212,6 +214,13 @@ export default function NFLApp() {
         errors.push(
           `Rendimiento: ${results[2].reason?.message || "no se pudo cargar."}`
         );
+      }
+
+      if (results[3].status === "fulfilled") {
+        setCalibration(results[3].value);
+      } else {
+        setCalibration(null);
+        errors.push(`Calibración: ${results[3].reason?.message || "no se pudo cargar."}`);
       }
 
       setError(errors.join(" "));
@@ -686,6 +695,44 @@ export default function NFLApp() {
           <small>PUSH · no suma ni resta precisión</small>
         </div>
       </section>
+
+
+      {calibration?.success && (
+        <section className="panel detail-panel" aria-label="Calibración de confianza NFL">
+          <div className="section-kicker">AUDITORÍA POSTPARTIDO</div>
+          <div className="section-heading">
+            <h2>Calibración de confianza · NFL-1.0.0</h2>
+            <span className="muted">{calibration.sample_size ?? 0} muestras</span>
+          </div>
+          <p className="model-note">
+            Confianza del favorito frente al acierto observado. IC95% Wilson.
+            Se excluyen empates (PUSH) y probabilidades inválidas. Diagnóstico descriptivo:
+            no modifica las probabilidades ni el modelo oficial.
+          </p>
+          <div className="factor-grid">
+            <TeamFactor label="Acierto observado" value={calibration.observed_accuracy == null ? "—" : pct(calibration.observed_accuracy)} />
+            <TeamFactor label="Intervalo IC95%" value={calibration.accuracy_ci_95 ? (pct(calibration.accuracy_ci_95.lower) + "–" + pct(calibration.accuracy_ci_95.upper)) : "—"} />
+            <TeamFactor label="Muestra mínima" value={calibration.minimum_sample_required ?? 30} />
+            <TeamFactor label="Probabilidades inválidas excluidas" value={calibration.invalid_probability_rows ?? 0} />
+          </div>
+          <p className="model-note">{calibration.message}</p>
+          {(calibration.calibration || []).length > 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Confianza</th><th>N</th><th>Confianza media</th><th>Acierto observado</th><th>IC95% Wilson</th><th>Error</th></tr></thead>
+                <tbody>{calibration.calibration.map((bin: AnyRecord) => (
+                  <tr key={bin.range}>
+                    <td>{bin.range}</td><td>{bin.count}</td><td>{pct(bin.average_confidence)}</td>
+                    <td>{pct(bin.observed_accuracy)}</td>
+                    <td>{bin.accuracy_ci_95 ? (pct(bin.accuracy_ci_95.lower) + "–" + pct(bin.accuracy_ci_95.upper)) : "—"}{bin.small_sample ? " · N baja" : ""}</td>
+                    <td>{bin.calibration_error > 0 ? "+" : ""}{(bin.calibration_error * 100).toFixed(1)} pp</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <p className="model-note">Todavía no hay bandas con observaciones válidas.</p>}
+        </section>
+      )}
 
       {evaluation && (
         <section className="panel detail-panel">
