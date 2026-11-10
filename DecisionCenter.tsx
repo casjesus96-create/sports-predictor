@@ -1,3 +1,4 @@
+import PercentageSignal from "./PercentageSignal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Sport = "MLB" | "NFL" | "NBA" | "TENNIS";
@@ -396,7 +397,7 @@ export default function DecisionCenter() {
             <small style={{ display: "block", marginTop: 8, color: "#64748b" }}>Una candidata con valor teórico no implica una ventaja demostrada ni garantiza resultados.</small>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 10, marginTop: 14 }}>
-            <div style={cardStyle}><small>Probabilidad implícita</small><h2 style={{ margin: "5px 0 0" }}>{(result.implied_probability * 100).toFixed(2)}%</h2></div>
+            <div style={cardStyle}><PercentageSignal label="Probabilidad implícita" value={result.implied_probability} /></div>
             <div style={cardStyle}><small>Cuota justa estimada</small><h2 style={{ margin: "5px 0 0" }}>{result.fair_odds.toFixed(2)}</h2></div>
             <div style={cardStyle}><small>Ventaja vs. cuota</small><h2 style={{ margin: "5px 0 0" }}>{result.edge_percentage_points >= 0 ? "+" : ""}{result.edge_percentage_points.toFixed(2)} pp</h2></div>
             <div style={cardStyle}><small>Valor esperado teórico</small><h2 style={{ margin: "5px 0 0", color: result.expected_value_percent > 0 ? "#166534" : "#991b1b" }}>{result.expected_value_percent >= 0 ? "+" : ""}{result.expected_value_percent.toFixed(2)}%</h2></div>
@@ -405,7 +406,7 @@ export default function DecisionCenter() {
           {result.calculated_no_vig_market_probability !== null && (
             <div style={{ ...cardStyle, marginTop: 10 }}>
               <strong>Mercado ajustado por margen (estimación)</strong>
-              <p style={{ margin: "6px 0" }}>Probabilidad sin margen estimada para esta selección: <strong>{(result.calculated_no_vig_market_probability * 100).toFixed(2)}%</strong>.</p>
+              <PercentageSignal label="Probabilidad de mercado sin margen" value={result.calculated_no_vig_market_probability} />
               {result.market_overround_percentage !== null && <p style={{ margin: "6px 0" }}>Margen/overround aproximado: <strong>{result.market_overround_percentage >= 0 ? "+" : ""}{result.market_overround_percentage.toFixed(2)}%</strong>.</p>}
               <small>Normaliza las probabilidades implícitas de ambas cuotas; es una aproximación.</small>
             </div>

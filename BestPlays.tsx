@@ -1,3 +1,4 @@
+import PercentageSignal from "./PercentageSignal";
 import { useCallback, useEffect, useState } from "react";
 
 type Candidate = {
@@ -150,8 +151,14 @@ export default function BestPlays() {
       <div style={{ display: "grid", gap: 10 }}>
         {recommendations.map((r, index) => <article key={r.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}><div><span style={{ fontSize: 12, fontWeight: 800, color: "#64748b" }}>#{index + 1} · {r.sport} · {r.market_label}</span><h3 style={{ margin: "6px 0" }}>{r.selected_team} <span style={{ color: "#64748b", fontWeight: 400 }}>vs.</span> {r.opponent_team}</h3></div><span style={{ fontWeight: 800, color: "#166534" }}>EV {r.expected_value_percent > 0 ? "+" : ""}{r.expected_value_percent.toFixed(2)}%</span></div>
-          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(115px, 1fr))", fontSize: 14 }}>
-            <div><span style={{ color: "#64748b" }}>Prob. modelo</span><br/><strong>{(r.model_probability * 100).toFixed(2)}%</strong></div>
+          <div className="percentage-signal-grid">
+            <PercentageSignal label="Probabilidad del modelo" value={r.model_probability} />
+            <PercentageSignal label="Probabilidad implícita de cuota" value={r.implied_probability} />
+            {r.recommendation_payload?.evaluation?.calculated_no_vig_market_probability != null && (
+              <PercentageSignal label="Probabilidad de mercado sin margen" value={r.recommendation_payload.evaluation.calculated_no_vig_market_probability} />
+            )}
+          </div>
+          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(115px, 1fr))", fontSize: 14, marginTop: 9 }}>
             <div><span style={{ color: "#64748b" }}>Cuota</span><br/><strong>{r.decimal_odds.toFixed(2)}</strong></div>
             <div><span style={{ color: "#64748b" }}>Cuota justa</span><br/><strong>{r.fair_odds.toFixed(2)}</strong></div>
             <div><span style={{ color: "#64748b" }}>Ventaja vs implícita</span><br/><strong>{r.edge_percentage_points > 0 ? "+" : ""}{r.edge_percentage_points.toFixed(2)} pp</strong></div>
