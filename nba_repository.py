@@ -201,10 +201,17 @@ def get_nba_performance():
         try:
             away_probability = float(away_probability)
         except (TypeError, ValueError):
-            continue
-        if not math.isfinite(away_probability) or not 0.0 <= p <= 1.0 or not 0.0 <= away_probability <= 1.0:
-            continue
-        calibration_rows.append({"confidence": max(p, away_probability), "correct": row.get("prediction_result") == "CORRECT"})
+            away_probability = None
+        if (
+            away_probability is not None
+            and math.isfinite(away_probability)
+            and 0.0 <= p <= 1.0
+            and 0.0 <= away_probability <= 1.0
+        ):
+            calibration_rows.append({
+                "confidence": max(p, away_probability),
+                "correct": row.get("prediction_result") == "CORRECT",
+            })
         p = max(0.001, min(0.999, p))
         brier.append((p - actual) ** 2)
         log_loss.append(-(actual * math.log(p) + (1 - actual) * math.log(1 - p)))
