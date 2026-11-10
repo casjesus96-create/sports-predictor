@@ -115,6 +115,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     } finally {
       setPassword("");
       setOwnerEmail("");
+      setFactorId("");
+      setSetupNeeded(false);
+      setSetupSecret("");
+      setOtp("");
+      setMessage("");
       setStatus("anonymous");
       setBusy(false);
     }
