@@ -28,7 +28,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       setOwnerEmail(data.email || "");
       setFactorId(data.mfa_factor_id || "");
       setSetupNeeded(Boolean(data.mfa_setup_needed));
-      setStatus(data.authenticated ? (data.mfa_verified ? "authenticated" : "mfa") : "anonymous");
+      setStatus(data.authenticated ? "authenticated" : "anonymous");
       setMessage("");
     } catch {
       setStatus("unavailable");
