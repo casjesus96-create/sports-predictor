@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
 
-type AuthStatus = "checking" | "authenticated" | "anonymous" | "unavailable";
+type AuthStatus = "checking" | "authenticated" | "mfa" | "anonymous" | "unavailable";
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("checking");
@@ -9,6 +9,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [ownerEmail, setOwnerEmail] = useState("");
+  const [factorId, setFactorId] = useState("");
+  const [setupNeeded, setSetupNeeded] = useState(false);
+  const [setupSecret, setSetupSecret] = useState("");
+  const [otp, setOtp] = useState("");
 
   const checkSession = useCallback(async () => {
     setStatus("checking");
@@ -21,7 +25,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       if (!response.ok) throw new Error("No fue posible comprobar la sesión.");
       const data = await response.json();
       setOwnerEmail(data.email || "");
-      setStatus(data.authenticated ? "authenticated" : "anonymous");
+      setFactorId(data.mfa_factor_id || "");
+      setSetupNeeded(Boolean(data.mfa_setup_needed));
+      setStatus(data.authenticated ? (data.mfa_verified ? "authenticated" : "mfa") : "anonymous");
       setMessage("");
     } catch {
       setStatus("unavailable");
@@ -50,9 +56,51 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       }
       setPassword("");
       setOwnerEmail(data.email || email.trim());
-      setStatus("authenticated");
+      setFactorId(data.mfa_factor_id || "");
+      setSetupNeeded(Boolean(data.mfa_setup_needed));
+      setStatus("mfa");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No fue posible iniciar sesión.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleMfaSetup() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/auth/mfa/enroll", { method: "POST", credentials: "same-origin" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "No se pudo activar el segundo factor.");
+      setFactorId(data.factor_id || "");
+      setSetupSecret(data.secret || "");
+      setSetupNeeded(false);
+      setMessage("Guarda la clave en tu aplicación autenticadora y después introduce el código.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo configurar el segundo factor.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleMfaVerify(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/auth/mfa/verify", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ factor_id: factorId, code: otp }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Código incorrecto o vencido.");
+      setOtp("");
+      setSetupSecret("");
+      setStatus("authenticated");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo verificar el código.");
     } finally {
       setBusy(false);
     }
