@@ -89,9 +89,11 @@ def _same_origin(request: Request) -> bool:
     if not origin:
         return True
     try:
-        origin_host = urlparse(origin).netloc.casefold()
+        parsed_origin = urlparse(origin)
+        origin_host = parsed_origin.netloc.casefold()
         request_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",")[0].strip().casefold()
-        return bool(origin_host) and origin_host == request_host
+        request_scheme = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip().casefold()
+        return bool(origin_host) and origin_host == request_host and parsed_origin.scheme.casefold() == request_scheme
     except (TypeError, ValueError):
         return False
 
@@ -101,6 +103,8 @@ def _add_security_headers(request: Request, response: Response) -> Response:
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     if request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
@@ -148,6 +152,9 @@ async def protect_private_api(request: Request, call_next):
             ))
 
     response = await call_next(request)
+    if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Vary"] = "Cookie"
     if refreshed:
         _set_auth_cookies(response, refreshed)
     return _add_security_headers(request, response)
