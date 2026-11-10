@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from auth_security import (
     AuthConfigurationError, AuthProviderError, refresh_session,
     revoke_session, sign_in, validate_access_token,
+    token_assurance_level, enroll_totp, verify_totp,
 )
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -60,6 +61,11 @@ app = FastAPI(
 class AdminLoginRequest(BaseModel):
     email: str
     password: str
+
+
+class AdminMfaVerifyRequest(BaseModel):
+    factor_id: str
+    code: str
 
 
 def _cookie_secure() -> bool:
@@ -123,6 +129,13 @@ async def protect_private_api(request: Request, call_next):
                     status_code=401, content={"detail": "Autenticación requerida."},
                     headers={"Cache-Control": "no-store"},
                 ))
+            active_access_token = refreshed["access_token"] if refreshed else access_token
+            if token_assurance_level(active_access_token) != "aal2":
+                return _add_security_headers(request, JSONResponse(
+                    status_code=403,
+                    content={"detail": "Se requiere autenticación de dos factores.", "code": "MFA_REQUIRED"},
+                    headers={"Cache-Control": "no-store"},
+                ))
         except AuthConfigurationError:
             return _add_security_headers(request, JSONResponse(
                 status_code=503, content={"detail": "La autenticación privada todavía no está configurada."},
@@ -153,7 +166,21 @@ def auth_status(request: Request, response: Response):
                 user = validate_access_token(session["access_token"])
                 if user:
                     _set_auth_cookies(response, session)
-        return {"authenticated": bool(user), "email": user.get("email") if user else None}
+        active_token = session["access_token"] if user and refresh_token and not access_token else access_token
+        factors = (user or {}).get("factors") or []
+        verified_totp = next((
+            factor for factor in factors
+            if factor.get("factor_type") == "totp" and factor.get("status") == "verified"
+        ), None)
+        mfa_verified = bool(user) and token_assurance_level(active_token) == "aal2"
+        return {
+            "authenticated": bool(user),
+            "email": user.get("email") if user else None,
+            "mfa_required": bool(user) and not mfa_verified,
+            "mfa_verified": mfa_verified,
+            "mfa_factor_id": verified_totp.get("id") if verified_totp else None,
+            "mfa_setup_needed": bool(user) and not verified_totp,
+        }
     except AuthConfigurationError:
         raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
     except AuthProviderError:
@@ -170,11 +197,66 @@ def auth_login(payload: AdminLoginRequest, request: Request, response: Response)
         if not session:
             raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos.")
         _set_auth_cookies(response, session)
-        return {"success": True, "email": session["email"]}
+        factors = (session.get("user") or {}).get("factors") or []
+        verified_totp = next((
+            factor for factor in factors
+            if factor.get("factor_type") == "totp" and factor.get("status") == "verified"
+        ), None)
+        return {
+            "success": True,
+            "email": session["email"],
+            "mfa_required": True,
+            "mfa_factor_id": verified_totp.get("id") if verified_totp else None,
+            "mfa_setup_needed": not bool(verified_totp),
+        }
     except AuthConfigurationError:
         raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
     except AuthProviderError:
         raise HTTPException(status_code=503, detail="El servicio de autenticación no está disponible.")
+
+
+@app.post("/auth/mfa/enroll")
+def auth_mfa_enroll(request: Request):
+    if not _same_origin(request):
+        raise HTTPException(status_code=403, detail="Solicitud de origen no autorizado.")
+    token = request.cookies.get("sp_access_token")
+    try:
+        user = validate_access_token(token) if token else None
+        if not user:
+            raise HTTPException(status_code=401, detail="Inicia sesión nuevamente.")
+        existing = [
+            factor for factor in (user.get("factors") or [])
+            if factor.get("factor_type") == "totp" and factor.get("status") == "verified"
+        ]
+        if existing:
+            raise HTTPException(status_code=409, detail="Ya existe un segundo factor configurado.")
+        setup = enroll_totp(token)
+        return setup
+    except AuthConfigurationError:
+        raise HTTPException(status_code=503, detail="La autenticación privada no está configurada.")
+    except AuthProviderError:
+        raise HTTPException(status_code=503, detail="No se pudo configurar el segundo factor.")
+
+
+@app.post("/auth/mfa/verify")
+def auth_mfa_verify(payload: AdminMfaVerifyRequest, request: Request, response: Response):
+    if not _same_origin(request):
+        raise HTTPException(status_code=403, detail="Solicitud de origen no autorizado.")
+    token = request.cookies.get("sp_access_token")
+    try:
+        user = validate_access_token(token) if token else None
+        if not user:
+            raise HTTPException(status_code=401, detail="Inicia sesión nuevamente.")
+        session = verify_totp(token, payload.factor_id, payload.code)
+        if not session:
+            raise HTTPException(status_code=401, detail="Código de verificación incorrecto o vencido.")
+        _set_auth_cookies(response, session)
+        response.headers["Cache-Control"] = "no-store"
+        return {"success": True, "email": session["email"], "mfa_verified": True}
+    except AuthConfigurationError:
+        raise HTTPException(status_code=503, detail="La autenticación privada no está configurada.")
+    except AuthProviderError:
+        raise HTTPException(status_code=503, detail="No se pudo verificar el segundo factor.")
 
 
 @app.post("/auth/logout")
