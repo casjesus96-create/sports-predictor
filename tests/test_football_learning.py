@@ -274,6 +274,54 @@ def test_error_diagnostics_build_confusion_matrix_and_goal_residuals():
     assert report["provider_calls"] == 0
 
 
+
+def test_segmented_error_diagnostics_group_by_competition_and_local_season():
+    rows = []
+    for index in range(30):
+        row = snapshot(0.60, 0.25, 0.15, 1, 1, 1200 + index)
+        row["kickoff_at"] = f"2026-08-{(index % 28) + 1:02d}T15:00:00Z"
+        row["expected_goals"] = {"home": 1.5, "away": 0.8, "total": 2.3}
+        rows.append(row)
+
+    report = build_postmatch_learning_report(rows, "PL")
+    segmented = report["segmented_error_diagnostics"]
+
+    assert segmented["minimum_sample"] == 30
+    assert len(segmented["by_competition"]) == 1
+    assert segmented["by_competition"][0]["competition"] == "PL"
+    assert segmented["by_competition"][0]["sample_size"] == 30
+    assert segmented["by_competition"][0]["eligible"] is True
+    assert segmented["by_competition"][0]["confusion_matrix"]["HOME"]["DRAW"] == 30
+    assert len(segmented["by_season"]) == 1
+    assert segmented["by_season"][0]["season"] == "2026/27"
+    assert segmented["by_season"][0]["goal_residuals"]["home_goals"]["bias_actual_minus_expected"] == -0.5
+    assert segmented["read_only"] is True
+    assert segmented["model_changed"] is False
+
+
+def test_segmented_error_diagnostics_keep_small_samples_descriptive_only():
+    rows = []
+    for index in range(29):
+        row = snapshot(0.60, 0.25, 0.15, 2, 1, 1300 + index)
+        row["kickoff_at"] = f"2026-08-{(index % 28) + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    segmented = build_postmatch_learning_report(rows, "PL")["segmented_error_diagnostics"]
+    segment = segmented["by_competition"][0]
+    assert segment["sample_size"] == 29
+    assert segment["eligible"] is False
+    assert segment["goal_residuals"]["home_goals"]["bias_actual_minus_expected"] is None
+
+
+def test_segmented_error_diagnostics_excludes_unknown_competition_or_season():
+    row = snapshot(0.60, 0.25, 0.15, 2, 1)
+    row["competition_code"] = "UNKNOWN"
+    segmented = build_postmatch_learning_report([row], None)["segmented_error_diagnostics"]
+    assert segmented["by_competition"] == []
+    assert segmented["by_season"] == []
+    assert segmented["excluded_missing_competition_or_season"] == 1
+
+
 def test_goal_residual_metrics_are_hidden_below_minimum_sample():
     rows = [snapshot(0.60, 0.25, 0.15, 2, 1, 950 + index) for index in range(29)]
     report = build_postmatch_learning_report(rows, "PL")
