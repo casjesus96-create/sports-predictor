@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/decision", tags=["Centro de Decisión"])
 
 
+class DecisionEvaluationVoidRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=240)
+
+
 class DecisionEvaluationRequest(BaseModel):
     # Manual mode fields. When prediction_snapshot_id is supplied, the saved
     # snapshot is the source of truth and client-supplied probabilities are ignored.
@@ -293,6 +297,45 @@ def evaluate(request: DecisionEvaluationRequest):
         ) from exc
 
 
+@router.post("/evaluations/{evaluation_id}/void")
+def void_decision_evaluation(evaluation_id: str, request: DecisionEvaluationVoidRequest):
+    """Soft-void an accidental evaluation while preserving its audit trail."""
+    reason = request.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(status_code=422, detail="Indica un motivo de al menos 3 caracteres.")
+    try:
+        supabase = get_supabase_client()
+        response = (
+            supabase.table("decision_evaluations")
+            .update({
+                "status": "VOIDED",
+                "voided_at": "now()",
+                "void_reason": reason,
+            })
+            .eq("id", evaluation_id)
+            .eq("status", "ACTIVE")
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
+            existing = (
+                supabase.table("decision_evaluations")
+                .select("id,status")
+                .eq("id", evaluation_id)
+                .limit(1)
+                .execute()
+            )
+            if not (existing.data or []):
+                raise HTTPException(status_code=404, detail="No se encontró la evaluación.")
+            raise HTTPException(status_code=409, detail="La evaluación ya fue anulada o no está disponible.")
+        return {"success": True, "evaluation_id": evaluation_id, "status": "VOIDED", "void_reason": reason}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("No se pudo anular la evaluación del Centro de Decisión")
+        raise HTTPException(status_code=503, detail="No fue posible anular la evaluación. Comprueba que la migración de anulación esté aplicada.") from exc
+
+
 @router.get("/performance")
 def model_performance(limit: int = Query(2000, ge=1, le=5000)):
     """Aggregate verified settled snapshots by sport and model version.
@@ -469,8 +512,17 @@ def decision_history(limit: int = Query(100, ge=1, le=500)):
 
         history = []
         settled = correct = incorrect = 0
+        voided = 0
+        active_total = 0
         for row in evaluations:
             item = dict(row)
+            if str(row.get("status") or "ACTIVE").upper() == "VOIDED":
+                voided += 1
+                item["outcome_status"] = "VOIDED"
+                item["actual_winner"] = None
+                history.append(item)
+                continue
+            active_total += 1
             snapshot_id = str(row.get("prediction_snapshot_id") or "")
             source = snapshots_by_id.get(snapshot_id)
             outcome = "MANUAL_UNTRACKED"
@@ -501,7 +553,8 @@ def decision_history(limit: int = Query(100, ge=1, le=500)):
 
         return {
             "success": True,
-            "total": len(history),
+            "total": active_total,
+            "voided": voided,
             "settled": settled,
             "correct": correct,
             "incorrect": incorrect,
