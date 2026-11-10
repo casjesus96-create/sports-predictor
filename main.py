@@ -2,7 +2,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import os
+from urllib.parse import urlparse
+
+from auth_security import (
+    AuthConfigurationError, AuthProviderError, refresh_session,
+    revoke_session, sign_in, validate_access_token,
+)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pending_predictions import router as pending_router
@@ -43,6 +52,143 @@ app = FastAPI(
         "forma histórica, análisis pregame y liquidación de resultados."
     ),
 )
+
+# =========================================================
+# PRIVATE ADMIN AUTHENTICATION
+# =========================================================
+
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+def _cookie_secure() -> bool:
+    return os.getenv("AUTH_COOKIE_SECURE", "true").strip().lower() not in {"0", "false", "no"}
+
+
+def _set_auth_cookies(response: Response, session: dict) -> None:
+    common = {"secure": _cookie_secure(), "httponly": True, "samesite": "strict", "path": "/"}
+    response.set_cookie("sp_access_token", session["access_token"], max_age=session["expires_in"], **common)
+    response.set_cookie("sp_refresh_token", session["refresh_token"], max_age=60 * 60 * 24 * 30, **common)
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    common = {"secure": _cookie_secure(), "httponly": True, "samesite": "strict", "path": "/"}
+    response.delete_cookie("sp_access_token", **common)
+    response.delete_cookie("sp_refresh_token", **common)
+
+
+def _same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    try:
+        origin_host = urlparse(origin).netloc.casefold()
+        request_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",")[0].strip().casefold()
+        return bool(origin_host) and origin_host == request_host
+    except (TypeError, ValueError):
+        return False
+
+
+def _add_security_headers(request: Request, response: Response) -> Response:
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
+@app.middleware("http")
+async def protect_private_api(request: Request, call_next):
+    path = request.url.path
+    protected = path.startswith("/api/") or path in {"/docs", "/redoc", "/openapi.json"}
+
+    if protected and request.method in {"POST", "PUT", "PATCH", "DELETE"} and not _same_origin(request):
+        return _add_security_headers(request, JSONResponse(status_code=403, content={"detail": "Solicitud de origen no autorizado."}))
+
+    refreshed = None
+    if protected:
+        access_token = request.cookies.get("sp_access_token")
+        refresh_token = request.cookies.get("sp_refresh_token")
+        try:
+            user = validate_access_token(access_token) if access_token else None
+            if user is None and refresh_token:
+                refreshed = refresh_session(refresh_token)
+                if refreshed:
+                    user = validate_access_token(refreshed["access_token"])
+            if user is None:
+                return _add_security_headers(request, JSONResponse(
+                    status_code=401, content={"detail": "Autenticación requerida."},
+                    headers={"Cache-Control": "no-store"},
+                ))
+        except AuthConfigurationError:
+            return _add_security_headers(request, JSONResponse(
+                status_code=503, content={"detail": "La autenticación privada todavía no está configurada."},
+                headers={"Cache-Control": "no-store"},
+            ))
+        except AuthProviderError:
+            return _add_security_headers(request, JSONResponse(
+                status_code=503, content={"detail": "No se pudo verificar la sesión con el proveedor de autenticación."},
+                headers={"Cache-Control": "no-store"},
+            ))
+
+    response = await call_next(request)
+    if refreshed:
+        _set_auth_cookies(response, refreshed)
+    return _add_security_headers(request, response)
+
+
+@app.get("/auth/status")
+def auth_status(request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    access_token = request.cookies.get("sp_access_token")
+    refresh_token = request.cookies.get("sp_refresh_token")
+    try:
+        user = validate_access_token(access_token) if access_token else None
+        if user is None and refresh_token:
+            session = refresh_session(refresh_token)
+            if session:
+                user = validate_access_token(session["access_token"])
+                if user:
+                    _set_auth_cookies(response, session)
+        return {"authenticated": bool(user), "email": user.get("email") if user else None}
+    except AuthConfigurationError:
+        raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
+    except AuthProviderError:
+        raise HTTPException(status_code=503, detail="No se pudo verificar la sesión.")
+
+
+@app.post("/auth/login")
+def auth_login(payload: AdminLoginRequest, request: Request, response: Response):
+    if not _same_origin(request):
+        raise HTTPException(status_code=403, detail="Solicitud de origen no autorizado.")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        session = sign_in(payload.email, payload.password)
+        if not session:
+            raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos.")
+        _set_auth_cookies(response, session)
+        return {"success": True, "email": session["email"]}
+    except AuthConfigurationError:
+        raise HTTPException(status_code=503, detail="La autenticación privada todavía no está configurada.")
+    except AuthProviderError:
+        raise HTTPException(status_code=503, detail="El servicio de autenticación no está disponible.")
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request, response: Response):
+    if not _same_origin(request):
+        raise HTTPException(status_code=403, detail="Solicitud de origen no autorizado.")
+    try:
+        revoke_session(request.cookies.get("sp_access_token"))
+    except (AuthConfigurationError, AuthProviderError):
+        pass
+    _clear_auth_cookies(response)
+    response.headers["Cache-Control"] = "no-store"
+    return {"success": True}
+
 
 app.include_router(pending_router)
 app.include_router(mlb_backtest_router)
