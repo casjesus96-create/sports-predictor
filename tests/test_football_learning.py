@@ -427,7 +427,7 @@ def test_postmatch_confidence_and_market_bins_expose_wilson_intervals():
         row["prediction_payload"]["goal_markets"]["both_teams_to_score"]["yes"]["probability"] = 0.8
 
     report = build_postmatch_learning_report(rows, "PL")
-    confidence = next(item for item in report["confidence_bands"] if item["range"] == "50–60%")
+    confidence = next(item for item in report["confidence_bands"] if item["range"] == "60–70%")
     market_bin = report["market_calibration"]["btts_yes"]["calibration_bins"][-1]
 
     assert confidence["accuracy_ci_95"] == {"lower": 0.0945, "upper": 0.9055}
