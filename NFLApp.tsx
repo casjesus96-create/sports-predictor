@@ -695,9 +695,21 @@ export default function NFLApp() {
             Se excluyen empates (PUSH) y probabilidades inválidas. Diagnóstico descriptivo:
             no modifica las probabilidades ni el modelo oficial.
           </p>
+          <div className="percentage-signal-grid">
+            <PercentageSignal
+              label="Acierto observado"
+              value={calibration.observed_accuracy}
+            />
+            <PercentageSignal
+              label="IC95% · límite inferior"
+              value={calibration.accuracy_ci_95?.lower}
+            />
+            <PercentageSignal
+              label="IC95% · límite superior"
+              value={calibration.accuracy_ci_95?.upper}
+            />
+          </div>
           <div className="factor-grid">
-            <TeamFactor label="Acierto observado" value={calibration.observed_accuracy == null ? "—" : pct(calibration.observed_accuracy)} />
-            <TeamFactor label="Intervalo IC95%" value={calibration.accuracy_ci_95 ? (pct(calibration.accuracy_ci_95.lower) + "–" + pct(calibration.accuracy_ci_95.upper)) : "—"} />
             <TeamFactor label="Muestra mínima" value={calibration.minimum_sample_required ?? 30} />
             <TeamFactor label="Probabilidades inválidas excluidas" value={calibration.invalid_probability_rows ?? 0} />
           </div>
