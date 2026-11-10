@@ -139,20 +139,22 @@ def refresh_session(refresh_token: str) -> dict[str, Any] | None:
     }
 
 
-def token_assurance_level(access_token: str | None) -> str:
-    """Read JWT claims only after validate_access_token has verified the token with Supabase."""
+def _decode_token_claims(access_token: str | None) -> dict[str, Any]:
     if not access_token:
-        return "aal0"
+        return {}
     try:
-        parts = access_token.split(".")
+        parts = access_token.split('.')
         if len(parts) != 3:
-            return "aal0"
-        payload = parts[1] + "=" * (-len(parts[1]) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
-        return str(claims.get("aal") or "aal1")
+            return {}
+        payload = parts[1] + '=' * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload.encode('ascii')))
+        return claims if isinstance(claims, dict) else {}
     except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
-        return "aal0"
+        return {}
 
+
+def token_assurance_level(access_token: str | None) -> str:
+    return str(_decode_token_claims(access_token).get('aal') or 'aal0')
 
 def enroll_totp(access_token: str) -> dict[str, Any]:
     status, data = _auth_request(
@@ -203,8 +205,16 @@ def verify_totp(access_token: str, factor_id: str, code: str) -> dict[str, Any] 
 def validate_access_token(access_token: str) -> dict[str, Any] | None:
     if not access_token or len(access_token) > 8192:
         return None
+    claims = _decode_token_claims(access_token)
+    try:
+        remaining_lifetime = float(claims.get("exp")) - time.time()
+    except (TypeError, ValueError):
+        return None
+    if remaining_lifetime <= 0:
+        return None
     digest = hashlib.sha256(access_token.encode("utf-8")).hexdigest()
     now = time.monotonic()
+    cache_ttl = min(_CACHE_TTL_SECONDS, remaining_lifetime)
     with _CACHE_LOCK:
         cached = _VALIDATED_TOKENS.get(digest)
         if cached and cached[0] > now:
@@ -216,7 +226,7 @@ def validate_access_token(access_token: str) -> dict[str, Any] | None:
         return None
 
     with _CACHE_LOCK:
-        _VALIDATED_TOKENS[digest] = (now + _CACHE_TTL_SECONDS, dict(user))
+        _VALIDATED_TOKENS[digest] = (now + cache_ttl, dict(user))
         if len(_VALIDATED_TOKENS) > 2048:
             expired = [key for key, value in _VALIDATED_TOKENS.items() if value[0] <= now]
             for key in expired:
