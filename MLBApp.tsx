@@ -3055,7 +3055,7 @@ function GameDetail({
  */
 
 function Probability({ name, value }: { name: string; value: any }) {
-  return <PercentageSignal label={name} value={typeof value === "number" ? value : Number.isFinite(Number(value)) ? Number(value) : null} />;
+  return <PercentageSignal label={name} value={value == null || value === "" ? null : typeof value === "number" ? value : Number.isFinite(Number(value)) ? Number(value) : null} />;
 }
 
 /*
