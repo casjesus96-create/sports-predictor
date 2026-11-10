@@ -54,7 +54,7 @@ def test_nfl_calibration_marks_minimum_sample_without_recalibrating(monkeypatch)
              actual="BUF" if index % 2 == 0 else "MIA")
         for index in range(30)
     ]
-    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda: rows)
+    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda **kwargs: rows)
 
     result = nfl_repository.get_nfl_calibration(minimum_sample=30)
 
