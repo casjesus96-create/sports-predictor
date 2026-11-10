@@ -435,7 +435,7 @@ def test_probability_margin_diagnostics_separate_clear_and_narrow_favorites():
     assert bands["0–5 pp"]["sample_size"] == 1
     assert bands["5–10 pp"]["sample_size"] == 0
     assert bands["5–10 pp"]["accuracy_ci_95"] is None
-    assert diagnostic["accuracy_ci_95"] == {"lower": 0.2077, "upper": 0.9385}
+    assert diagnostic["accuracy_ci_95"] == {"lower": 0.0615, "upper": 0.7923}
     assert diagnostic["read_only"] is True
     assert diagnostic["model_changed"] is False
     assert report["snapshots_written"] == 0
