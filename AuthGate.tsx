@@ -56,9 +56,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       }
       setPassword("");
       setOwnerEmail(data.email || email.trim());
-      setFactorId(data.mfa_factor_id || "");
-      setSetupNeeded(Boolean(data.mfa_setup_needed));
-      setStatus("mfa");
+      await checkSession();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No fue posible iniciar sesión.");
     } finally {
