@@ -557,3 +557,49 @@ def test_empty_surprise_classification_has_stable_schema():
         "EXTREME": 0, "HIGH": 0, "MODERATE": 0, "LOW": 0
     }
     assert report["surprise_classification"]["model_changed"] is False
+
+
+
+def test_segmented_error_profile_reports_class_precision_and_recall_with_separate_denominators():
+    rows = []
+    for index in range(60):
+        if index < 30:
+            home, away = 2, 0
+            probabilities = (0.60, 0.25, 0.15)
+        elif index < 45:
+            home, away = 1, 1
+            probabilities = (0.60, 0.25, 0.15)
+        else:
+            home, away = 0, 2
+            probabilities = (0.15, 0.25, 0.60)
+        row = snapshot(*probabilities, home, away, 2000 + index)
+        row["competition_code"] = "PL"
+        row["kickoff_at"] = f"2026-09-{(index % 28) + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    segmented = build_postmatch_learning_report(rows, "PL")["segmented_error_diagnostics"]
+    segment = segmented["by_competition"][0]
+    profile = segment["outcome_error_profile"]["outcomes"]
+    assert profile["HOME"]["actual_count"] == 30
+    assert profile["HOME"]["predicted_count"] == 45
+    assert profile["HOME"]["true_positive"] == 30
+    assert profile["HOME"]["false_positive"] == 15
+    assert profile["HOME"]["recall"] == 1.0
+    assert profile["HOME"]["precision"] == 0.6667
+    assert profile["HOME"]["recall_ci_95"] is not None
+    assert profile["HOME"]["precision_ci_95"] is not None
+    assert profile["DRAW"]["actual_count"] == 15
+    assert profile["DRAW"]["recall"] is None
+    assert profile["DRAW"]["recall_eligible"] is False
+    assert profile["AWAY"]["actual_count"] == 15
+    assert profile["AWAY"]["recall"] is None
+    assert segment["outcome_error_profile"]["minimum_denominator"] == 30
+
+
+def test_segmented_error_profile_has_stable_empty_schema():
+    report = build_postmatch_learning_report([], "PL")
+    segmented = report["segmented_error_diagnostics"]
+    assert segmented["by_competition"] == []
+    assert segmented["by_season"] == []
+    assert segmented["read_only"] is True
+    assert segmented["model_changed"] is False

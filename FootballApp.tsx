@@ -1787,6 +1787,7 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
         const segmented = report.segmented_error_diagnostics || {};
         const renderGroup = (item: any, label: string) => {
           const matrix = item.confusion_matrix || {};
+          const outcomeProfile = item.outcome_error_profile?.outcomes || {};
           const residuals = item.goal_residuals || {};
           return <div key={label} style={{ padding: 10, borderRadius: 8, background: "#111827", marginTop: 8 }}>
             <strong>{label} · N={item.sample_size}</strong>
@@ -1794,6 +1795,15 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
             <div style={{ overflowX: "auto" }}><table style={tableStyle}>
               <thead><tr><th style={cellStyle}>Pronóstico / real</th><th style={cellStyle}>HOME</th><th style={cellStyle}>DRAW</th><th style={cellStyle}>AWAY</th></tr></thead>
               <tbody>{(["HOME", "DRAW", "AWAY"] as const).map((predicted) => <tr key={predicted}><td style={cellStyle}>{predicted}</td>{(["HOME", "DRAW", "AWAY"] as const).map((actual) => <td key={actual} style={cellStyle}>{matrix[predicted]?.[actual] ?? 0}</td>)}</tr>)}</tbody>
+            </table></div>
+            <div style={{ overflowX: "auto", marginTop: 6 }}><table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Resultado real</th><th style={cellStyle}>N real</th><th style={cellStyle}>Detectados</th><th style={cellStyle}>Recall</th><th style={cellStyle}>N pronóstico</th><th style={cellStyle}>Precisión</th></tr></thead>
+              <tbody>{(["HOME", "DRAW", "AWAY"] as const).map((outcome) => {
+                const metric = outcomeProfile[outcome] || {};
+                const names: Record<string, string> = { HOME: "Victoria local", DRAW: "Empate", AWAY: "Victoria visitante" };
+                const rate = (value: number | null | undefined) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "N insuficiente";
+                return <tr key={outcome}><td style={cellStyle}>{names[outcome]}</td><td style={cellStyle}>{metric.actual_count ?? 0}</td><td style={cellStyle}>{metric.true_positive ?? 0}</td><td style={cellStyle}>{rate(metric.recall)}</td><td style={cellStyle}>{metric.predicted_count ?? 0}</td><td style={cellStyle}>{rate(metric.precision)}</td></tr>;
+              })}</tbody>
             </table></div>
             <div style={{ overflowX: "auto", marginTop: 6 }}><table style={tableStyle}>
               <thead><tr><th style={cellStyle}>Goles</th><th style={cellStyle}>N</th><th style={cellStyle}>Sesgo</th><th style={cellStyle}>MAE</th><th style={cellStyle}>RMSE</th></tr></thead>
@@ -1805,7 +1815,7 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
           </div>;
         };
         return <div style={{ marginBottom: 14 }}>
-          <p style={{ color: "#9ca3af", fontSize: 11 }}>Segmentación descriptiva de la matriz 1X2 y residuos de goles. Temporadas locales julio–junio; métricas de goles solo con N≥{segmented.minimum_sample ?? 30}. No identifica causas ni modifica el modelo.</p>
+          <p style={{ color: "#9ca3af", fontSize: 11 }}>Segmentación descriptiva de matriz 1X2, detección por resultado real (precisión/recall) y residuos de goles. Cada tasa por clase requiere N≥30 en su propio denominador; métricas de goles solo con N≥{segmented.minimum_sample ?? 30}. No identifica causas ni modifica el modelo.</p>
           <h4 style={{ margin: "8px 0 4px" }}>Por competición</h4>
           {(segmented.by_competition || []).length ? segmented.by_competition.map((item: any) => renderGroup(item, item.competition)) : <p style={{ color: "#9ca3af" }}>Sin segmentos de competición identificables.</p>}
           <h4 style={{ margin: "12px 0 4px" }}>Por temporada</h4>
