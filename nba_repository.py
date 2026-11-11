@@ -4,7 +4,7 @@ import math
 
 from repository import get_supabase_client
 from nba_prediction import MODEL_VERSION
-from nba_calibration import build_confidence_calibration
+from nba_calibration import build_confidence_calibration, build_temporal_calibration_stability
 from nba_score_evaluation import evaluate_score_projections
 
 SPORT = "basketball"
@@ -212,6 +212,7 @@ def get_nba_performance():
             calibration_rows.append({
                 "confidence": max(p, away_probability),
                 "correct": row.get("prediction_result") == "CORRECT",
+                "kickoff": game.get("kickoff"),
             })
         p = max(0.001, min(0.999, p))
         brier.append((p - actual) ** 2)
@@ -228,6 +229,7 @@ def get_nba_performance():
             "brier_score": round(sum(brier) / len(brier), 6) if brier else None,
             "log_loss": round(sum(log_loss) / len(log_loss), 6) if log_loss else None,
             "confidence_calibration": build_confidence_calibration(calibration_rows),
+            "temporal_calibration_stability": build_temporal_calibration_stability(calibration_rows),
             "score_projection": evaluate_score_projections(settled),
         },
     }
