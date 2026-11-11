@@ -519,3 +519,41 @@ def test_calibration_comparison_requires_minimum_sample_and_reports_overlap():
 
     underconfident = _calibration_comparison(30, 30, 0.2, 10)
     assert underconfident["status"] == "UNDERCONFIDENT"
+
+
+
+def test_surprises_are_classified_by_probability_of_realized_outcome():
+    rows = [
+        snapshot(0.80, 0.10, 0.10, 0, 1, 8101),  # 10%: high
+        snapshot(0.75, 0.15, 0.10, 1, 1, 8102),  # 15%: high
+        snapshot(0.60, 0.25, 0.15, 0, 1, 8103),  # 25%: moderate
+        snapshot(0.50, 0.35, 0.15, 1, 1, 8104),  # 35%: low / plausible
+        snapshot(0.90, 0.05, 0.05, 0, 1, 8105),  # 5%: extreme
+    ]
+
+    report = build_postmatch_learning_report(rows, "PL")
+    by_id = {item["match_id"]: item for item in report["surprises"]}
+
+    assert by_id[8101]["classification"] == "HIGH"
+    assert by_id[8102]["classification"] == "HIGH"
+    assert by_id[8103]["classification"] == "MODERATE"
+    assert by_id[8104]["classification"] == "LOW"
+    assert by_id[8105]["classification"] == "EXTREME"
+    assert by_id[8104]["classification_label"] == "Fallo del favorito, resultado plausible"
+    assert by_id[8102]["actual_is_draw"] is True
+    assert by_id[8103]["favorite_probability_gap"] == 0.35
+    assert report["surprise_classification"]["counts"] == {
+        "EXTREME": 1, "HIGH": 2, "MODERATE": 1, "LOW": 1
+    }
+    assert report["surprise_classification"]["sample_size"] == 5
+    assert report["surprise_classification"]["read_only"] is True
+    assert report["model_changed"] is False
+
+
+def test_empty_surprise_classification_has_stable_schema():
+    report = build_postmatch_learning_report([], "PL")
+    assert report["surprise_classification"]["sample_size"] == 0
+    assert report["surprise_classification"]["counts"] == {
+        "EXTREME": 0, "HIGH": 0, "MODERATE": 0, "LOW": 0
+    }
+    assert report["surprise_classification"]["model_changed"] is False
