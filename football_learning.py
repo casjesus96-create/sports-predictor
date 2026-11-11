@@ -602,6 +602,29 @@ def _utc_datetime(value):
         return None
 
 
+def _calibration_comparison(successes: int, sample_size: int, mean_probability: float | None, minimum_sample: int) -> dict[str, Any]:
+    """Compare observed win rate with mean forecast probability using a Wilson 95% interval."""
+    interval = _wilson_interval(successes, sample_size)
+    if sample_size < minimum_sample or interval is None or mean_probability is None:
+        status = "INSUFFICIENT_SAMPLE"
+    elif interval["upper"] < mean_probability:
+        status = "OVERCONFIDENT"
+    elif interval["lower"] > mean_probability:
+        status = "UNDERCONFIDENT"
+    else:
+        status = "INCONCLUSIVE"
+    return {
+        "sample_size": sample_size,
+        "minimum_sample": minimum_sample,
+        "mean_probability": round(mean_probability, 4) if mean_probability is not None else None,
+        "observed_rate": round(successes / sample_size, 4) if sample_size else None,
+        "observed_rate_ci_95": interval,
+        "status": status,
+        "read_only": True,
+        "model_changed": False,
+    }
+
+
 def build_match_learning_context(rows, competition, home_team, away_team, kickoff_at):
     """Read-only descriptive context based only on settled snapshots before kickoff."""
     valid = []
@@ -632,10 +655,13 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
     valid.sort(key=lambda x: str(x["row"].get("kickoff_at") or ""), reverse=True)
     favorites = [x for x in valid if x["confidence"] >= 0.50]
     goal_rows = [x for x in valid if x["et"] is not None]
+    favorite_successes = sum(x["correct"] for x in favorites)
+    mean_favorite_confidence = sum(x["confidence"] for x in favorites) / len(favorites) if favorites else None
     league = {
         "sample_size": len(valid), "favorite_sample": len(favorites),
-        "mean_favorite_confidence": round(sum(x["confidence"] for x in favorites) / len(favorites), 4) if favorites else None,
-        "favorite_accuracy": round(sum(x["correct"] for x in favorites) / len(favorites), 4) if favorites else None,
+        "mean_favorite_confidence": round(mean_favorite_confidence, 4) if mean_favorite_confidence is not None else None,
+        "favorite_accuracy": round(favorite_successes / len(favorites), 4) if favorites else None,
+        "favorite_calibration": _calibration_comparison(favorite_successes, len(favorites), mean_favorite_confidence, 10),
         "expected_total_goals_bias": round(sum(x["hs"] + x["aws"] - x["et"] for x in goal_rows) / len(goal_rows), 4) if goal_rows else None,
         "minimum_sample": 10, "eligible": len(valid) >= 10,
     }
@@ -658,10 +684,13 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                 "aa": item["aws"] if is_home else item["hs"],
             })
         n = len(games)
+        wins = sum(x["won"] for x in games)
+        mean_win_probability = sum(x["prob"] for x in games) / n if n else None
         result = {"team": name, "sample_size": n, "minimum_sample": 5, "eligible": n >= 5}
+        result["win_rate_diagnostic"] = _calibration_comparison(wins, n, mean_win_probability, 10)
         if n >= 5:
-            result["mean_win_probability"] = round(sum(x["prob"] for x in games) / n, 4)
-            result["observed_win_rate"] = round(sum(x["won"] for x in games) / n, 4)
+            result["mean_win_probability"] = round(mean_win_probability, 4)
+            result["observed_win_rate"] = round(wins / n, 4)
             for label, exp_key, actual_key in (("goals_for_bias", "ef", "af"), ("goals_against_bias", "ea", "aa")):
                 subset = [x for x in games if x[exp_key] is not None]
                 result[label] = round(sum(x[actual_key] - x[exp_key] for x in subset) / len(subset), 4) if subset else None
