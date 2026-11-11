@@ -71,3 +71,45 @@ def test_nfl_calibration_handles_empty_history(monkeypatch):
     assert result["accuracy_ci_95"] is None
     assert result["calibration"] == []
     assert result["calibration_ready"] is False
+
+def test_nfl_calibration_diagnoses_overconfidence_only_when_wilson_is_below_confidence(monkeypatch):
+    rows = [
+        _row(0.90, 0.10, "INCORRECT", actual="MIA")
+        for _ in range(30)
+    ]
+    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda **kwargs: rows)
+
+    result = nfl_repository.get_nfl_calibration(minimum_sample=30)
+
+    assert result["confidence_diagnosis"] == "OVERCONFIDENT"
+    assert result["average_confidence"] == 0.90
+    assert result["calibration"][0]["confidence_diagnosis"] == "OVERCONFIDENT"
+    assert result["read_only"] is True
+    assert result["official_probability_changed"] is False
+
+
+def test_nfl_calibration_keeps_overlapping_wilson_interval_inconclusive(monkeypatch):
+    rows = [
+        _row(0.70, 0.30, "CORRECT" if index < 18 else "INCORRECT",
+             actual="BUF" if index < 18 else "MIA")
+        for index in range(30)
+    ]
+    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda **kwargs: rows)
+
+    result = nfl_repository.get_nfl_calibration(minimum_sample=30)
+
+    assert result["confidence_diagnosis"] == "INCONCLUSIVE"
+    assert result["calibration"][0]["confidence_diagnosis"] == "INCONCLUSIVE"
+
+
+def test_nfl_calibration_marks_band_with_small_sample_as_insufficient(monkeypatch):
+    rows = [
+        _row(0.90, 0.10, "INCORRECT", actual="MIA")
+        for _ in range(9)
+    ]
+    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda **kwargs: rows)
+
+    result = nfl_repository.get_nfl_calibration(minimum_sample=30)
+
+    assert result["confidence_diagnosis"] == "INSUFFICIENT_SAMPLE"
+    assert result["calibration"][0]["confidence_diagnosis"] == "INSUFFICIENT_SAMPLE"

@@ -517,6 +517,17 @@ def get_nfl_calibration(minimum_sample=30):
         wins = sum(item["correct"] for item in bucket)
         observed = wins / count
         average = sum(item["confidence"] for item in bucket) / count
+        interval = _wilson_interval(wins, count)
+        # Classify over/underconfidence only when the observed Wilson interval
+        # is separated from mean confidence; otherwise evidence is inconclusive.
+        if count < 10:
+            diagnosis = "INSUFFICIENT_SAMPLE"
+        elif interval["upper"] < average:
+            diagnosis = "OVERCONFIDENT"
+        elif interval["lower"] > average:
+            diagnosis = "UNDERCONFIDENT"
+        else:
+            diagnosis = "INCONCLUSIVE"
         calibration.append({
             "range": f"{low:.0%}-{min(high, 0.95):.0%}",
             "min": low,
@@ -525,13 +536,28 @@ def get_nfl_calibration(minimum_sample=30):
             "average_confidence": round(average, 4),
             "observed_accuracy": round(observed, 4),
             "calibration_error": round(observed - average, 4),
-            "accuracy_ci_95": _wilson_interval(wins, count),
+            "accuracy_ci_95": interval,
             "small_sample": count < 10,
+            "confidence_diagnosis": diagnosis,
         })
 
     sample_size = len(observations)
     correct = sum(item["correct"] for item in observations)
     ready = sample_size >= int(minimum_sample)
+    overall_accuracy = correct / sample_size if sample_size else None
+    overall_confidence = (
+        sum(item["confidence"] for item in observations) / sample_size
+        if sample_size else None
+    )
+    overall_interval = _wilson_interval(correct, sample_size)
+    if not ready:
+        overall_diagnosis = "INSUFFICIENT_SAMPLE"
+    elif overall_interval["upper"] < overall_confidence:
+        overall_diagnosis = "OVERCONFIDENT"
+    elif overall_interval["lower"] > overall_confidence:
+        overall_diagnosis = "UNDERCONFIDENT"
+    else:
+        overall_diagnosis = "INCONCLUSIVE"
     return {
         "success": True,
         "sport": "NFL",
@@ -540,8 +566,10 @@ def get_nfl_calibration(minimum_sample=30):
         "sample_size": sample_size,
         "minimum_sample_required": int(minimum_sample),
         "calibration_ready": ready,
-        "observed_accuracy": round(correct / sample_size, 4) if sample_size else None,
-        "accuracy_ci_95": _wilson_interval(correct, sample_size),
+        "observed_accuracy": round(overall_accuracy, 4) if overall_accuracy is not None else None,
+        "average_confidence": round(overall_confidence, 4) if overall_confidence is not None else None,
+        "accuracy_ci_95": overall_interval,
+        "confidence_diagnosis": overall_diagnosis,
         "invalid_probability_rows": invalid_probabilities,
         "method": "favorite_confidence_buckets_wilson_95",
         "calibration": calibration,
