@@ -472,3 +472,50 @@ def test_postmatch_confidence_and_market_bins_expose_wilson_intervals():
     assert report["model_changed"] is False
     assert report["snapshots_written"] == 0
     assert report["provider_calls"] == 0
+
+
+
+def test_match_learning_context_compares_observed_rates_with_wilson_intervals():
+    rows = []
+    for index in range(30):
+        row = snapshot(0.60, 0.25, 0.15, 0, 1, 3000 + index)
+        row["kickoff_at"] = f"2026-11-{(index % 7) + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    report = build_match_learning_context(
+        rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z"
+    )
+
+    league = report["competition_context"]["favorite_calibration"]
+    assert league["sample_size"] == 30
+    assert league["observed_rate_ci_95"]["upper"] < league["mean_probability"]
+    assert league["status"] == "OVERCONFIDENT"
+
+    home = report["home_team"]["win_rate_diagnostic"]
+    assert home["status"] == "OVERCONFIDENT"
+    assert home["sample_size"] == 30
+
+    away = report["away_team"]["win_rate_diagnostic"]
+    assert away["status"] == "UNDERCONFIDENT"
+    assert away["observed_rate_ci_95"]["lower"] > away["mean_probability"]
+
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_calibration_comparison_requires_minimum_sample_and_reports_overlap():
+    from football_learning import _calibration_comparison
+
+    insufficient = _calibration_comparison(0, 9, 0.8, 10)
+    assert insufficient["status"] == "INSUFFICIENT_SAMPLE"
+
+    inconclusive = _calibration_comparison(18, 30, 0.7, 10)
+    assert inconclusive["status"] == "INCONCLUSIVE"
+
+    overconfident = _calibration_comparison(0, 30, 0.8, 10)
+    assert overconfident["status"] == "OVERCONFIDENT"
+
+    underconfident = _calibration_comparison(30, 30, 0.2, 10)
+    assert underconfident["status"] == "UNDERCONFIDENT"
