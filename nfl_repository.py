@@ -463,6 +463,105 @@ def _wilson_interval(successes, sample_size, z=1.959963984540054):
     }
 
 
+
+def build_nfl_temporal_calibration_stability(observations, minimum_per_window=30):
+    """Compare official NFL favorite calibration across chronological kickoff windows."""
+    by_date = {}
+    excluded_missing_kickoff = 0
+    excluded_invalid_observation = 0
+
+    for item in observations or []:
+        try:
+            confidence = float(item.get("confidence"))
+            correct = item.get("correct")
+            kickoff = item.get("kickoff")
+            if (
+                not math.isfinite(confidence)
+                or not 0.5 <= confidence <= 0.95
+                or not isinstance(correct, bool)
+            ):
+                raise ValueError("invalid calibration observation")
+            parsed = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00"))
+            if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+                match_date = parsed.astimezone(timezone.utc).date().isoformat()
+            else:
+                match_date = parsed.date().isoformat()
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            if not isinstance(item, dict) or not item.get("kickoff"):
+                excluded_missing_kickoff += 1
+            else:
+                excluded_invalid_observation += 1
+            continue
+        by_date.setdefault(match_date, []).append({
+            "confidence": confidence,
+            "correct": correct,
+        })
+
+    ordered_dates = sorted(by_date)
+    total = sum(len(by_date[date]) for date in ordered_dates)
+    candidates = []
+    left_count = 0
+    for index, date in enumerate(ordered_dates[:-1], start=1):
+        left_count += len(by_date[date])
+        right_count = total - left_count
+        if left_count >= minimum_per_window and right_count >= minimum_per_window:
+            candidates.append((abs(left_count - right_count), index))
+
+    base = {
+        "sample_size": total,
+        "minimum_per_window": int(minimum_per_window),
+        "excluded_missing_kickoff": excluded_missing_kickoff,
+        "excluded_invalid_observation": excluded_invalid_observation,
+        "date_cluster": "Todos los partidos de una misma fecha UTC permanecen en la misma ventana.",
+        "read_only": True,
+        "official_probability_changed": False,
+    }
+    if not candidates:
+        return {
+            **base,
+            "eligible": False,
+            "windows": [],
+            "reason": (
+                f"Se requieren al menos {minimum_per_window} observaciones válidas "
+                "en cada ventana y partidos en al menos dos fechas distintas."
+            ),
+        }
+
+    _, split_index = min(candidates)
+    windows = (
+        ("earlier", ordered_dates[:split_index]),
+        ("later", ordered_dates[split_index:]),
+    )
+    summaries = []
+    for label, dates in windows:
+        items = [item for date in dates for item in by_date[date]]
+        count = len(items)
+        wins = sum(item["correct"] for item in items)
+        mean_confidence = sum(item["confidence"] for item in items) / count
+        observed_accuracy = wins / count
+        summaries.append({
+            "period": label,
+            "sample_size": count,
+            "start_date": dates[0],
+            "end_date": dates[-1],
+            "mean_confidence": round(mean_confidence, 4),
+            "observed_accuracy": round(observed_accuracy, 4),
+            "calibration_error": round(observed_accuracy - mean_confidence, 4),
+            "accuracy_ci_95": _wilson_interval(wins, count),
+            "brier_score": round(
+                sum((item["confidence"] - float(item["correct"])) ** 2 for item in items) / count,
+                6,
+            ),
+        })
+
+    return {
+        **base,
+        "eligible": True,
+        "split_before": ordered_dates[split_index],
+        "windows": summaries,
+        "reason": None,
+    }
+
 def get_nfl_calibration(minimum_sample=30):
     """Audita confianza del favorito solo con snapshots oficiales liquidados."""
     # Use the repository maximum so calibration is not silently limited to the default 100 rows.
@@ -495,9 +594,12 @@ def get_nfl_calibration(minimum_sample=30):
         if not 0.5 <= confidence <= 0.95:
             invalid_probabilities += 1
             continue
+        features = row.get("features") or {}
+        game = features.get("game") or {}
         observations.append({
             "confidence": confidence,
             "correct": result == "CORRECT",
+            "kickoff": game.get("kickoff"),
         })
 
     bins = (
@@ -573,6 +675,7 @@ def get_nfl_calibration(minimum_sample=30):
         "invalid_probability_rows": invalid_probabilities,
         "method": "favorite_confidence_buckets_wilson_95",
         "calibration": calibration,
+        "temporal_stability": build_nfl_temporal_calibration_stability(observations),
         "read_only": True,
         "official_probability_changed": False,
         "message": (
