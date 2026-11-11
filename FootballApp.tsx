@@ -1507,7 +1507,7 @@ function CalibrationDiagnostic({ diagnostic }: { diagnostic?: any }) {
   if (!diagnostic) return null;
   const labels: Record<string, string> = {
     OVERCONFIDENT: "Posible sobreconfianza",
-    UNDERCONFIDENT: "Posible subconfi anza",
+    UNDERCONFIDENT: "Posible infraconfianza",
     INCONCLUSIVE: "Resultado inconcluso",
     INSUFFICIENT_SAMPLE: "Muestra insuficiente",
   };
