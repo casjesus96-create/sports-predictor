@@ -294,6 +294,35 @@ def _build_error_diagnostics(valid: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 
+def _outcome_error_profile(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Describe one-vs-rest detection for HOME/DRAW/AWAY with minimum-N safeguards."""
+    profile = {}
+    for outcome in OUTCOMES:
+        actual_count = sum(item["actual"] == outcome for item in items)
+        predicted_count = sum(item["predicted"] == outcome for item in items)
+        true_positive = sum(item["actual"] == outcome and item["predicted"] == outcome for item in items)
+        recall_eligible = actual_count >= ERROR_DIAGNOSTIC_MINIMUM_SAMPLE
+        precision_eligible = predicted_count >= ERROR_DIAGNOSTIC_MINIMUM_SAMPLE
+        profile[outcome] = {
+            "actual_count": actual_count,
+            "predicted_count": predicted_count,
+            "true_positive": true_positive,
+            "false_negative": actual_count - true_positive,
+            "false_positive": predicted_count - true_positive,
+            "recall_eligible": recall_eligible,
+            "recall": round(true_positive / actual_count, 4) if recall_eligible else None,
+            "recall_ci_95": _wilson_interval(true_positive, actual_count) if recall_eligible else None,
+            "precision_eligible": precision_eligible,
+            "precision": round(true_positive / predicted_count, 4) if precision_eligible else None,
+            "precision_ci_95": _wilson_interval(true_positive, predicted_count) if precision_eligible else None,
+        }
+    return {
+        "minimum_denominator": ERROR_DIAGNOSTIC_MINIMUM_SAMPLE,
+        "outcomes": profile,
+        "definition": "Recall = aciertos de la clase / resultados reales de esa clase. Precisión = aciertos de la clase / pronósticos asignados a esa clase. Cada tasa exige N≥30 en su propio denominador.",
+    }
+
+
 def _build_segmented_error_diagnostics(valid: list[dict[str, Any]]) -> dict[str, Any]:
     """Describe error patterns by competition and local season, with minimum-N safeguards."""
     by_competition: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -315,6 +344,7 @@ def _build_segmented_error_diagnostics(valid: list[dict[str, Any]]) -> dict[str,
             "sample_size": len(items),
             "eligible": len(items) >= ERROR_DIAGNOSTIC_MINIMUM_SAMPLE,
             "confusion_matrix": diagnostics["confusion_matrix"]["predicted_rows_actual_columns"],
+            "outcome_error_profile": _outcome_error_profile(items),
             "goal_residuals": diagnostics["goal_residuals"],
         }
 
