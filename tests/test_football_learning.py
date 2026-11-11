@@ -526,7 +526,7 @@ def test_surprises_are_classified_by_probability_of_realized_outcome():
     rows = [
         snapshot(0.80, 0.10, 0.10, 0, 1, 8101),  # 10%: high
         snapshot(0.75, 0.15, 0.10, 1, 1, 8102),  # 15%: high
-        snapshot(0.60, 0.25, 0.15, 0, 1, 8103),  # 25%: moderate
+        snapshot(0.60, 0.15, 0.25, 0, 1, 8103),  # 25%: moderate
         snapshot(0.50, 0.35, 0.15, 1, 1, 8104),  # 35%: low / plausible
         snapshot(0.90, 0.05, 0.05, 0, 1, 8105),  # 5%: extreme
     ]
