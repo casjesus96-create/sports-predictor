@@ -1503,6 +1503,25 @@ function MarketProbabilitySignal({ label, market }: { label: string; market?: { 
   </div>;
 }
 
+function CalibrationDiagnostic({ diagnostic }: { diagnostic?: any }) {
+  if (!diagnostic) return null;
+  const labels: Record<string, string> = {
+    OVERCONFIDENT: "Posible sobreconfianza",
+    UNDERCONFIDENT: "Posible subconfi anza",
+    INCONCLUSIVE: "Resultado inconcluso",
+    INSUFFICIENT_SAMPLE: "Muestra insuficiente",
+  };
+  const interval = diagnostic.observed_rate_ci_95;
+  return <div style={{ marginTop: 6, padding: 7, borderRadius: 6, background: "#172033", fontSize: 11, color: "#cbd5e1" }}>
+    <strong>{labels[diagnostic.status] || diagnostic.status}</strong>
+    {interval && <div>IC95% Wilson del acierto observado: {percent(interval.lower)}–{percent(interval.upper)}</div>}
+    {diagnostic.status === "INSUFFICIENT_SAMPLE"
+      ? <div>Se requieren {diagnostic.minimum_sample} casos; disponibles: {diagnostic.sample_size}.</div>
+      : diagnostic.status !== "INSUFFICIENT_SAMPLE" && <div>Confianza media: {percent(diagnostic.mean_probability)} · Acierto observado: {percent(diagnostic.observed_rate)}</div>}
+  </div>;
+}
+
+
 function FootballMatchLessonsPanel({ competition, match }: { competition: string; match: Match }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -1540,6 +1559,7 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
     {team.eligible ? <>
       <div style={{ fontSize: 12, marginTop: 6 }}>Probabilidad media de victoria: <strong>{percent(team.mean_win_probability)}</strong></div>
       <div style={{ fontSize: 12 }}>Victorias observadas: <strong>{percent(team.observed_win_rate)}</strong></div>
+      <CalibrationDiagnostic diagnostic={team.win_rate_diagnostic} />
       {typeof team.goals_for_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Goles a favor frente a lo esperado: {team.goals_for_bias > 0 ? "+" : ""}{team.goals_for_bias.toFixed(2)}</div>}
       {typeof team.goals_against_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Goles recibidos frente a lo esperado: {team.goals_against_bias > 0 ? "+" : ""}{team.goals_against_bias.toFixed(2)}</div>}
     </> : <p style={{ color: "#94a3b8", fontSize: 11, marginBottom: 0 }}>Todavía no hay suficientes predicciones oficiales liquidadas de este equipo para extraer una señal fiable.</p>}
@@ -1556,6 +1576,7 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
         <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{data.competition_context.sample_size} partidos liquidados anteriores a este encuentro.</div>
         {data.competition_context.eligible ? <>
           <div style={{ fontSize: 12, marginTop: 5 }}>Confianza media del favorito: <strong>{percent(data.competition_context.mean_favorite_confidence)}</strong> · Acierto: <strong>{percent(data.competition_context.favorite_accuracy)}</strong></div>
+          <CalibrationDiagnostic diagnostic={data.competition_context.favorite_calibration} />
           {typeof data.competition_context.expected_total_goals_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Sesgo de goles totales (real − esperado): {data.competition_context.expected_total_goals_bias > 0 ? "+" : ""}{data.competition_context.expected_total_goals_bias.toFixed(2)}</div>}
         </> : <p style={{ color: "#fbbf24", fontSize: 11, marginBottom: 0 }}>Muestra insuficiente: se requieren al menos {data.competition_context.minimum_sample} partidos para mostrar señales de competición.</p>}
       </div>
