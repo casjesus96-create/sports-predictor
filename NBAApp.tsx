@@ -59,6 +59,16 @@ type Performance = {
       bins?: Array<{ range: string; sample_size: number; mean_confidence: number; observed_accuracy: number; calibration_error: number; accuracy_ci_95?: { lower: number; upper: number } | null; small_sample?: boolean }>;
       message?: string;
     };
+    temporal_calibration_stability?: {
+      eligible?: boolean; sample_size?: number; minimum_per_window?: number;
+      split_before?: string; reason?: string; excluded_missing_kickoff?: number;
+      excluded_invalid_observation?: number;
+      windows?: Array<{
+        period: string; sample_size: number; start_date: string; end_date: string;
+        mean_confidence: number; observed_accuracy: number; calibration_error: number;
+        accuracy_ci_95?: { lower: number; upper: number } | null; brier_score?: number | null;
+      }>;
+    };
   };
 };
 
@@ -422,6 +432,37 @@ export default function NBAApp() {
               ))}
             </div>
           ) : <p className="muted">Todavía no hay predicciones válidas para construir bandas de confianza.</p>}
+        </section>
+      )}
+
+      {summary.confidence_calibration?.sample_size !== undefined && summary.temporal_calibration_stability && (
+        <section className="panel analysis-content" aria-label="Estabilidad temporal de calibración NBA">
+          <div className="section-heading">
+            <div><div className="section-kicker">VALIDACIÓN CRONOLÓGICA</div><h2>Estabilidad temporal · NBA-1.1.0</h2></div>
+            <span className="muted">{summary.temporal_calibration_stability.sample_size ?? 0} observaciones</span>
+          </div>
+          <p className="muted">Compara dos ventanas cronológicas no solapadas. Todos los partidos de una misma fecha UTC permanecen juntos. Solo se incluyen predicciones oficiales liquidadas con confianza y fecha válidas; no modifica el modelo.</p>
+          {summary.temporal_calibration_stability.eligible ? (
+            <>
+              <p className="muted">Separación antes del {summary.temporal_calibration_stability.split_before} · mínimo {summary.temporal_calibration_stability.minimum_per_window} observaciones por ventana.</p>
+              <div className="metrics-grid">
+                {summary.temporal_calibration_stability.windows?.map((window) => (
+                  <article className="panel" key={window.period}>
+                    <h3>{window.period === "earlier" ? "Ventana anterior" : "Ventana reciente"}</h3>
+                    <p className="muted">{window.start_date} a {window.end_date} · N = {window.sample_size}</p>
+                    <div className="score-row"><span>Confianza media</span><b>{pct(window.mean_confidence)}</b></div>
+                    <div className="score-row"><span>Acierto observado</span><b>{pct(window.observed_accuracy)}</b></div>
+                    <div className="score-row"><span>IC95% Wilson</span><b>{window.accuracy_ci_95 ? pct(window.accuracy_ci_95.lower) + "–" + pct(window.accuracy_ci_95.upper) : "—"}</b></div>
+                    <div className="score-row"><span>Error de calibración</span><b className={window.calibration_error > 0 ? "tone-positive" : window.calibration_error < 0 ? "tone-negative" : "tone-neutral"}>{window.calibration_error > 0 ? "+" : ""}{(window.calibration_error * 100).toFixed(1)} pp</b></div>
+                    <div className="score-row"><span>Brier del favorito</span><b>{numberLabel(window.brier_score, 4)}</b></div>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="muted">{summary.temporal_calibration_stability.reason || "Muestra insuficiente para comparar ventanas."} Observaciones excluidas por fecha ausente: {summary.temporal_calibration_stability.excluded_missing_kickoff ?? 0}; fecha inválida u observación: {summary.temporal_calibration_stability.excluded_invalid_observation ?? 0}.</p>
+          )}
+          <p className="muted">Diagnóstico descriptivo; una diferencia entre ventanas no demuestra causalidad ni autoriza recalibración automática.</p>
         </section>
       )}
 
