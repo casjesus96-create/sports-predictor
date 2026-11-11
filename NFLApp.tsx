@@ -763,6 +763,73 @@ export default function NFLApp() {
         </section>
       )}
 
+
+      {calibration?.success && (
+        <section className="panel detail-panel" aria-label="Estabilidad temporal NFL">
+          <div className="section-kicker">VALIDACIÓN CRONOLÓGICA</div>
+          <div className="section-heading">
+            <h2>Estabilidad temporal · NFL-1.0.0</h2>
+            <span className="muted">
+              {calibration.temporal_stability?.sample_size ?? 0} muestras válidas
+            </span>
+          </div>
+          <p className="model-note">
+            Compara la confianza del favorito con el acierto observado en dos ventanas
+            cronológicas equilibradas por fecha real de kickoff. IC95% Wilson y Brier Score.
+            Es una auditoría descriptiva: no modifica NFL-1.0.0 ni sus probabilidades.
+          </p>
+          {calibration.temporal_stability?.eligible ? (
+            <>
+              <p className="model-note">
+                Ventana anterior: {calibration.temporal_stability.windows?.[0]?.start_date}
+                {" – "}{calibration.temporal_stability.windows?.[0]?.end_date}.
+                Ventana reciente: {calibration.temporal_stability.windows?.[1]?.start_date}
+                {" – "}{calibration.temporal_stability.windows?.[1]?.end_date}.
+                Corte antes del {calibration.temporal_stability.split_before}.
+              </p>
+              <div className="percentage-signal-grid">
+                {(calibration.temporal_stability.windows || []).map((window: AnyRecord) => (
+                  <article className="percentage-band-card" key={window.period}>
+                    <div className="percentage-band-heading">
+                      <strong>{window.period === "earlier" ? "Ventana anterior" : "Ventana reciente"}</strong>
+                      <span>N = {window.sample_size}</span>
+                    </div>
+                    <div className="percentage-band-signals">
+                      <PercentageSignal label="Confianza media" value={window.mean_confidence} />
+                      <PercentageSignal label="Acierto observado" value={window.observed_accuracy} />
+                    </div>
+                    <div className="factor-grid">
+                      <TeamFactor label="Brier Score" value={number(window.brier_score, 4)} />
+                      <TeamFactor
+                        label="IC95% Wilson"
+                        value={window.accuracy_ci_95 ? `${pct(window.accuracy_ci_95.lower)} – ${pct(window.accuracy_ci_95.upper)}` : "—"}
+                      />
+                      <TeamFactor
+                        label="Error de calibración"
+                        value={window.calibration_error == null ? "—" : `${window.calibration_error > 0 ? "+" : ""}${(window.calibration_error * 100).toFixed(1)} pp`}
+                      />
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="model-note">
+              {calibration.temporal_stability?.reason || "No hay datos suficientes para comparar ventanas."}
+            </p>
+          )}
+          <div className="factor-grid">
+            <TeamFactor label="Kickoff ausente" value={calibration.temporal_stability?.excluded_missing_kickoff ?? 0} />
+            <TeamFactor label="Observaciones inválidas excluidas" value={calibration.temporal_stability?.excluded_invalid_observation ?? 0} />
+          </div>
+          <p className="model-note">
+            Los partidos de una misma fecha UTC permanecen juntos. Esta comparación utiliza
+            únicamente las predicciones liquidadas disponibles (hasta 500 snapshots consultados).
+            No representa necesariamente todo el histórico si existen más registros.
+          </p>
+        </section>
+      )}
+
       {evaluation && (
         <section className="panel detail-panel">
           <div className="section-kicker">VALIDACIÓN HISTÓRICA · SOLO EXPERIMENTAL</div>
