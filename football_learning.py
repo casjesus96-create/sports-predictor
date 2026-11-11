@@ -417,6 +417,18 @@ def _build_temporal_error_stability(valid: list[dict[str, Any]]) -> dict[str, An
         "model_changed": False,
     }
 
+
+def _classify_surprise(actual_probability: float) -> dict[str, str]:
+    """Classify a favorite miss by the probability assigned to the realized 1X2 outcome."""
+    if actual_probability < 0.10:
+        return {"code": "EXTREME", "label": "Sorpresa extrema"}
+    if actual_probability < 0.20:
+        return {"code": "HIGH", "label": "Sorpresa alta"}
+    if actual_probability < 0.35:
+        return {"code": "MODERATE", "label": "Sorpresa moderada"}
+    return {"code": "LOW", "label": "Fallo del favorito, resultado plausible"}
+
+
 def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str | None = None) -> dict[str, Any]:
     """Score immutable settled official snapshots and expose descriptive error patterns."""
     valid = []
@@ -464,6 +476,18 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "competition": competition, "sample_size": 0, "excluded_invalid_rows": excluded,
             "metrics": {"accuracy": None, "brier_score": None, "log_loss": None},
             "confidence_bands": [], "surprises": [],
+            "surprise_classification": {
+                "sample_size": 0,
+                "counts": {"EXTREME": 0, "HIGH": 0, "MODERATE": 0, "LOW": 0},
+                "definitions": {
+                    "EXTREME": "Probabilidad del resultado real inferior al 10%.",
+                    "HIGH": "Probabilidad del resultado real entre 10% y menos de 20%.",
+                    "MODERATE": "Probabilidad del resultado real entre 20% y menos de 35%.",
+                    "LOW": "Probabilidad del resultado real de 35% o más; fallo del favorito, pero resultado plausible.",
+                },
+                "read_only": True,
+                "model_changed": False,
+            },
             "probability_margin_diagnostics": _probability_margin_diagnostics([]),
             "market_calibration": {"btts_yes": _binary_market_metrics([], "btts_p", "actual_btts"),
                                    "over_2_5": _binary_market_metrics([], "over25_p", "actual_over25")},
@@ -502,9 +526,17 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
 
     upset_rows = [item for item in valid if not item["correct"] and item["confidence"] >= 0.50]
     upset_rows.sort(key=lambda item: (item["log_loss"], item["confidence"]), reverse=True)
+    surprise_class_counts = {"EXTREME": 0, "HIGH": 0, "MODERATE": 0, "LOW": 0}
+    for item in upset_rows:
+        actual_probability = item["probabilities"][item["actual"]]
+        surprise_class_counts[_classify_surprise(actual_probability)["code"]] += 1
+
     surprises = []
     for item in upset_rows[:15]:
         row = item["row"]
+        actual_probability = item["probabilities"][item["actual"]]
+        classification = _classify_surprise(actual_probability)
+        ordered_probabilities = sorted(item["probabilities"].values(), reverse=True)
         surprises.append({
             "match_id": row.get("provider_match_id"),
             "date": row.get("kickoff_at"),
@@ -513,9 +545,13 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "score": f"{int(item['home_score'])}-{int(item['away_score'])}",
             "predicted_outcome": item["predicted"],
             "actual_outcome": item["actual"],
+            "actual_is_draw": item["actual"] == "DRAW",
             "predicted_confidence": round(item["confidence"], 4),
-            "actual_outcome_probability": round(item["probabilities"][item["actual"]], 4),
+            "favorite_probability_gap": round(ordered_probabilities[0] - ordered_probabilities[1], 4),
+            "actual_outcome_probability": round(actual_probability, 4),
             "surprise_score": round(item["log_loss"], 4),
+            "classification": classification["code"],
+            "classification_label": classification["label"],
         })
 
     expected_rows = [item for item in valid if item["expected_total"] is not None]
@@ -574,7 +610,20 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "over_2_5_log_loss": over25_report["log_loss"],
             "upset_count": len(upset_rows),
         },
-        "confidence_bands": bands, "surprises": surprises, "signals": signals,
+        "confidence_bands": bands, "surprises": surprises,
+        "surprise_classification": {
+            "sample_size": len(upset_rows),
+            "counts": surprise_class_counts,
+            "definitions": {
+                "EXTREME": "Probabilidad del resultado real inferior al 10%.",
+                "HIGH": "Probabilidad del resultado real entre 10% y menos de 20%.",
+                "MODERATE": "Probabilidad del resultado real entre 20% y menos de 35%.",
+                "LOW": "Probabilidad del resultado real de 35% o más; fallo del favorito, pero resultado plausible.",
+            },
+            "read_only": True,
+            "model_changed": False,
+        },
+        "signals": signals,
         "probability_margin_diagnostics": _probability_margin_diagnostics(valid),
         "market_calibration": {"btts_yes": btts_report, "over_2_5": over25_report},
         "outcome_calibration": outcome_calibration,
