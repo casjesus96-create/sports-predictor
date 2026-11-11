@@ -113,3 +113,87 @@ def test_nfl_calibration_marks_band_with_small_sample_as_insufficient(monkeypatc
 
     assert result["confidence_diagnosis"] == "INSUFFICIENT_SAMPLE"
     assert result["calibration"][0]["confidence_diagnosis"] == "INSUFFICIENT_SAMPLE"
+
+
+def _temporal_observation(kickoff, confidence=0.7, correct=True):
+    return {"kickoff": kickoff, "confidence": confidence, "correct": correct}
+
+
+def test_nfl_temporal_calibration_splits_chronologically_and_keeps_dates_together():
+    observations = []
+    for day in range(1, 5):
+        for index in range(20):
+            observations.append(_temporal_observation(
+                f"2026-09-{day:02d}T18:00:00Z",
+                confidence=0.8 if day <= 2 else 0.6,
+                correct=day > 2,
+            ))
+
+    result = nfl_repository.build_nfl_temporal_calibration_stability(
+        observations, minimum_per_window=30
+    )
+
+    assert result["eligible"] is True
+    assert [window["sample_size"] for window in result["windows"]] == [40, 40]
+    assert result["split_before"] == "2026-09-03"
+    assert result["windows"][0]["mean_confidence"] == 0.8
+    assert result["windows"][0]["observed_accuracy"] == 0.0
+    assert result["windows"][1]["mean_confidence"] == 0.6
+    assert result["windows"][1]["observed_accuracy"] == 1.0
+    assert all(window["accuracy_ci_95"] for window in result["windows"])
+    assert result["read_only"] is True
+    assert result["official_probability_changed"] is False
+
+
+def test_nfl_temporal_calibration_requires_two_sufficient_date_windows():
+    observations = [
+        _temporal_observation("2026-09-01T18:00:00Z")
+        for _ in range(29)
+    ]
+    observations.append(_temporal_observation(None))
+
+    result = nfl_repository.build_nfl_temporal_calibration_stability(
+        observations, minimum_per_window=30
+    )
+
+    assert result["eligible"] is False
+    assert result["windows"] == []
+    assert result["sample_size"] == 29
+    assert result["excluded_missing_kickoff"] == 1
+
+
+def test_nfl_temporal_calibration_excludes_invalid_dates_and_observations():
+    observations = [
+        _temporal_observation("not-a-date"),
+        _temporal_observation("2026-09-01T18:00:00Z", confidence=0.99),
+        _temporal_observation("2026-09-02T18:00:00Z", correct=1),
+    ]
+
+    result = nfl_repository.build_nfl_temporal_calibration_stability(observations)
+
+    assert result["eligible"] is False
+    assert result["sample_size"] == 0
+    assert result["excluded_invalid_observation"] == 3
+    assert result["official_probability_changed"] is False
+
+
+def test_nfl_calibration_includes_kickoff_temporal_stability(monkeypatch):
+    rows = []
+    for day in range(1, 5):
+        for index in range(20):
+            row = _row(
+                0.8 if day <= 2 else 0.6,
+                0.2 if day <= 2 else 0.4,
+                "INCORRECT" if day <= 2 else "CORRECT",
+                actual="MIA" if day <= 2 else "BUF",
+            )
+            row["features"]["game"] = {"kickoff": f"2026-09-{day:02d}T18:00:00Z"}
+            rows.append(row)
+    monkeypatch.setattr(nfl_repository, "get_nfl_predictions", lambda **kwargs: rows)
+
+    result = nfl_repository.get_nfl_calibration(minimum_sample=30)
+
+    assert result["temporal_stability"]["eligible"] is True
+    assert [window["sample_size"] for window in result["temporal_stability"]["windows"]] == [40, 40]
+    assert result["read_only"] is True
+    assert result["official_probability_changed"] is False
