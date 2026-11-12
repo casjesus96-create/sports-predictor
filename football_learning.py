@@ -928,6 +928,8 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                     "average_goals_for": round(sum(game["af"] for game in period) / period_size, 2),
                     "average_goals_against": round(sum(game["aa"] for game in period) / period_size, 2),
                     "points_per_match": round((period_wins * 3 + period_draws) / period_size, 2),
+                    "btts_rate": round(sum(game["btts"] for game in period) / period_size, 4),
+                    "over_2_5_rate": round(sum(game["over25"] for game in period) / period_size, 4),
                 }
 
             recent_metrics = period_metrics(recent)
@@ -943,6 +945,8 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
             goals_for_delta = round(recent_metrics["average_goals_for"] - previous_metrics["average_goals_for"], 2)
             goals_against_delta = round(recent_metrics["average_goals_against"] - previous_metrics["average_goals_against"], 2)
             points_delta = round(recent_metrics["points_per_match"] - previous_metrics["points_per_match"], 2)
+            btts_delta = round(recent_metrics["btts_rate"] - previous_metrics["btts_rate"], 4)
+            over_2_5_delta = round(recent_metrics["over_2_5_rate"] - previous_metrics["over_2_5_rate"], 4)
             result["recent_trend"] = {
                 "eligible": True,
                 "minimum_sample": trend_minimum_sample,
@@ -953,8 +957,12 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                     "goals_for_per_match": goals_for_delta,
                     "goals_against_per_match": goals_against_delta,
                     "points_per_match": points_delta,
+                    "btts_rate": btts_delta,
+                    "over_2_5_rate": over_2_5_delta,
                 },
                 "attack": trend_direction(goals_for_delta),
+                "btts": trend_direction(btts_delta, 0.2),
+                "over_2_5": trend_direction(over_2_5_delta, 0.2),
                 "defense": trend_direction(-goals_against_delta),
                 "results": trend_direction(points_delta, 0.5),
                 "interpretation": "Comparación descriptiva entre los cinco partidos más recientes y los cinco inmediatamente anteriores; no es una predicción.",
