@@ -809,19 +809,19 @@ def _calibration_comparison(successes: int, sample_size: int, mean_probability: 
 
 
 def build_match_learning_context(rows, competition, home_team, away_team, kickoff_at):
-    """Read-only descriptive context based only on settled snapshots before kickoff."""
+    """Read-only descriptive patterns from official settled snapshots before kickoff."""
     valid = []
+    target = _utc_datetime(kickoff_at)
     for row in rows:
         stamp = _utc_datetime(row.get("kickoff_at"))
-        target = _utc_datetime(kickoff_at)
-        if stamp is None or target is None or stamp >= target:
+        if target is None or stamp is None or stamp >= target:
             continue
         if row.get("result_status") != "SETTLED" or row.get("model_version") != MODEL_VERSION:
             continue
         probs = _probabilities(row)
         actual = _actual_outcome(row)
         hs, aws = _number(row.get("actual_home_score")), _number(row.get("actual_away_score"))
-        if probs is None or actual is None or hs is None or aws is None:
+        if probs is None or actual is None or hs is None or aws is None or hs < 0 or aws < 0:
             continue
         predicted = max(OUTCOMES, key=lambda key: probs[key])
         payload = row.get("prediction_payload") if isinstance(row.get("prediction_payload"), dict) else {}
@@ -848,6 +848,25 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
         "expected_total_goals_bias": round(sum(x["hs"] + x["aws"] - x["et"] for x in goal_rows) / len(goal_rows), 4) if goal_rows else None,
         "minimum_sample": 10, "eligible": len(valid) >= 10,
     }
+    if league["eligible"]:
+        home_wins = sum(x["actual"] == "HOME" for x in valid)
+        draws = sum(x["actual"] == "DRAW" for x in valid)
+        away_wins = sum(x["actual"] == "AWAY" for x in valid)
+        btts = sum(x["hs"] > 0 and x["aws"] > 0 for x in valid)
+        over25 = sum(x["hs"] + x["aws"] >= 3 for x in valid)
+        league["outcomes"] = {
+            "home_wins": home_wins, "draws": draws, "away_wins": away_wins,
+            "home_win_rate": round(home_wins / len(valid), 4),
+            "draw_rate": round(draws / len(valid), 4),
+            "away_win_rate": round(away_wins / len(valid), 4),
+        }
+        league["goal_patterns"] = {
+            "average_home_goals": round(sum(x["hs"] for x in valid) / len(valid), 2),
+            "average_away_goals": round(sum(x["aws"] for x in valid) / len(valid), 2),
+            "average_total_goals": round(sum(x["hs"] + x["aws"] for x in valid) / len(valid), 2),
+            "btts_count": btts, "btts_rate": round(btts / len(valid), 4),
+            "over_2_5_count": over25, "over_2_5_rate": round(over25 / len(valid), 4),
+        }
 
     def team_summary(name):
         key = _team_key(name)
@@ -859,21 +878,58 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
             if not is_home and not is_away:
                 continue
             side = "HOME" if is_home else "AWAY"
+            goals_for = item["hs"] if is_home else item["aws"]
+            goals_against = item["aws"] if is_home else item["hs"]
             games.append({
                 "prob": item["p"][side], "won": item["actual"] == side,
+                "drawn": item["actual"] == "DRAW",
+                "lost": item["actual"] != side and item["actual"] != "DRAW",
                 "ef": item["eh"] if is_home else item["ea"],
                 "ea": item["ea"] if is_home else item["eh"],
-                "af": item["hs"] if is_home else item["aws"],
-                "aa": item["aws"] if is_home else item["hs"],
+                "af": goals_for, "aa": goals_against, "venue": side,
+                "btts": goals_for > 0 and goals_against > 0,
+                "over25": goals_for + goals_against >= 3,
+                "clean_sheet": goals_against == 0, "failed_to_score": goals_for == 0,
             })
         n = len(games)
         wins = sum(x["won"] for x in games)
+        draws = sum(x["drawn"] for x in games)
+        losses = sum(x["lost"] for x in games)
         mean_win_probability = sum(x["prob"] for x in games) / n if n else None
         result = {"team": name, "sample_size": n, "minimum_sample": 5, "eligible": n >= 5}
         result["win_rate_diagnostic"] = _calibration_comparison(wins, n, mean_win_probability, 10)
         if n >= 5:
             result["mean_win_probability"] = round(mean_win_probability, 4)
             result["observed_win_rate"] = round(wins / n, 4)
+            result["results"] = {
+                "wins": wins, "draws": draws, "losses": losses,
+                "points": wins * 3 + draws, "points_per_match": round((wins * 3 + draws) / n, 2),
+                "win_rate": round(wins / n, 4), "draw_rate": round(draws / n, 4),
+                "loss_rate": round(losses / n, 4),
+            }
+            result["goals"] = {
+                "for": sum(x["af"] for x in games), "against": sum(x["aa"] for x in games),
+                "average_for": round(sum(x["af"] for x in games) / n, 2),
+                "average_against": round(sum(x["aa"] for x in games) / n, 2),
+                "btts_count": sum(x["btts"] for x in games),
+                "btts_rate": round(sum(x["btts"] for x in games) / n, 4),
+                "over_2_5_count": sum(x["over25"] for x in games),
+                "over_2_5_rate": round(sum(x["over25"] for x in games) / n, 4),
+                "clean_sheets": sum(x["clean_sheet"] for x in games),
+                "failed_to_score": sum(x["failed_to_score"] for x in games),
+            }
+            result["venue_split"] = {}
+            for venue, label in (("HOME", "home"), ("AWAY", "away")):
+                subset = [x for x in games if x["venue"] == venue]
+                if subset:
+                    v_wins = sum(x["won"] for x in subset)
+                    v_draws = sum(x["drawn"] for x in subset)
+                    result["venue_split"][label] = {
+                        "sample_size": len(subset), "wins": v_wins, "draws": v_draws,
+                        "losses": sum(x["lost"] for x in subset), "points": v_wins * 3 + v_draws,
+                        "average_goals_for": round(sum(x["af"] for x in subset) / len(subset), 2),
+                        "average_goals_against": round(sum(x["aa"] for x in subset) / len(subset), 2),
+                    }
             for label, exp_key, actual_key in (("goals_for_bias", "ef", "af"), ("goals_against_bias", "ea", "aa")):
                 subset = [x for x in games if x[exp_key] is not None]
                 result[label] = round(sum(x[actual_key] - x[exp_key] for x in subset) / len(subset), 4) if subset else None
@@ -886,7 +942,6 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
         "data_scope": "Solo snapshots oficiales liquidados con kickoff anterior al encuentro; descriptivo, no modifica probabilidades.",
         "read_only": True, "model_changed": False, "snapshots_written": 0, "provider_calls": 0,
     }
-
 
 @router.get("/match-context")
 def football_match_learning_context(
