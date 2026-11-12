@@ -1612,6 +1612,16 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
         <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 5 }}>Referencia: promedio de goles por equipo (media entre los promedios local y visitante) en los partidos históricos de la competición. No es una proyección del encuentro actual.</div>
       </>}
       <div style={{ marginTop: 8, fontSize: 11, color: "#cbd5e1" }}>Forma observada: {percent(team.results.win_rate)} victorias · {percent(team.results.draw_rate)} empates · {percent(team.results.loss_rate)} derrotas · {team.results.points} puntos acumulados.</div>
+      {team.recent_trend?.eligible ? <div style={{ marginTop: 9, padding: 8, borderRadius: 8, background: "#0b1220", border: "1px solid #26384c" }}>
+        <strong style={{ fontSize: 11 }}>Tendencia reciente · últimos 5 vs. 5 anteriores</strong>
+        <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 3 }}>Comparación de dos periodos consecutivos de cinco partidos; descriptiva y exploratoria.</div>
+        <div style={metricGrid}>
+          {metric("Ataque · Δ GF/partido", `${team.recent_trend.deltas.goals_for_per_match > 0 ? "+" : ""}${team.recent_trend.deltas.goals_for_per_match.toFixed(2)} · ${team.recent_trend.attack === "IMPROVING" ? "Mejora" : team.recent_trend.attack === "DECLINING" ? "Desciende" : "Estable"}`)}
+          {metric("Defensa · Δ GC/partido", `${team.recent_trend.deltas.goals_against_per_match > 0 ? "+" : ""}${team.recent_trend.deltas.goals_against_per_match.toFixed(2)} · ${team.recent_trend.defense === "IMPROVING" ? "Mejora" : team.recent_trend.defense === "DECLINING" ? "Empeora" : "Estable"}`)}
+          {metric("Resultados · Δ puntos/partido", `${team.recent_trend.deltas.points_per_match > 0 ? "+" : ""}${team.recent_trend.deltas.points_per_match.toFixed(2)} · ${team.recent_trend.results === "IMPROVING" ? "Mejora" : team.recent_trend.results === "DECLINING" ? "Desciende" : "Estable"}`)}
+        </div>
+        <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 5 }}>GF/partido: {team.recent_trend.recent.average_goals_for.toFixed(2)} vs. {team.recent_trend.previous.average_goals_for.toFixed(2)} · GC/partido: {team.recent_trend.recent.average_goals_against.toFixed(2)} vs. {team.recent_trend.previous.average_goals_against.toFixed(2)} · Puntos/partido: {team.recent_trend.recent.points_per_match.toFixed(2)} vs. {team.recent_trend.previous.points_per_match.toFixed(2)}</div>
+      </div> : <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "#0b1220", color: "#fbbf24", fontSize: 10 }}>Tendencia reciente no disponible: se necesitan al menos 10 partidos del equipo (5 recientes y 5 anteriores).</div>}
       <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700 }}>Desglose por sede · mínimo exploratorio: 3 partidos</div>
       <div style={metricGrid}>
         {(["home", "away"] as const).map((venueKey) => {
