@@ -780,28 +780,29 @@ export default function NFLApp() {
           </p>
           {calibration.temporal_stability?.eligible ? (
             <>
-              <p className="model-note">
-                Ventana anterior: {calibration.temporal_stability.windows?.[0]?.start_date}
-                {" – "}{calibration.temporal_stability.windows?.[0]?.end_date}.
-                Ventana reciente: {calibration.temporal_stability.windows?.[1]?.start_date}
-                {" – "}{calibration.temporal_stability.windows?.[1]?.end_date}.
-                Corte antes del {calibration.temporal_stability.split_before}.
+              <p className="model-note nfl-temporal-intro">
+                Las dos ventanas se separan por fecha real de kickoff y no mezclan partidos del mismo día UTC.
+                Compara confianza media y acierto observado; IC95% Wilson expresa la incertidumbre del acierto.
+                El Brier Score resume el error probabilístico (menor es mejor). La diferencia entre ventanas
+                es descriptiva y no demuestra por sí sola que el modelo haya mejorado o empeorado.
               </p>
-              <div className="percentage-signal-grid">
+              <div className="nfl-temporal-cut">Corte cronológico: antes del {calibration.temporal_stability.split_before}</div>
+              <div className="percentage-signal-grid nfl-temporal-grid">
                 {(calibration.temporal_stability.windows || []).map((window: AnyRecord) => (
-                  <article className="percentage-band-card" key={window.period}>
+                  <article className="percentage-band-card nfl-temporal-card" key={window.period}>
                     <div className="percentage-band-heading">
                       <strong>{window.period === "earlier" ? "Ventana anterior" : "Ventana reciente"}</strong>
-                      <span>N = {window.sample_size}</span>
+                      <span>N = {window.sample_size} partidos</span>
                     </div>
+                    <p className="nfl-temporal-dates">{window.start_date} – {window.end_date}</p>
                     <div className="percentage-band-signals">
                       <PercentageSignal label="Confianza media" value={window.mean_confidence} />
                       <PercentageSignal label="Acierto observado" value={window.observed_accuracy} />
                     </div>
                     <div className="factor-grid">
-                      <TeamFactor label="Brier Score" value={number(window.brier_score, 4)} />
+                      <TeamFactor label="Brier Score · menor es mejor" value={number(window.brier_score, 4)} />
                       <TeamFactor
-                        label="IC95% Wilson"
+                        label="IC95% Wilson del acierto"
                         value={window.accuracy_ci_95 ? `${pct(window.accuracy_ci_95.lower)} – ${pct(window.accuracy_ci_95.upper)}` : "—"}
                       />
                       <TeamFactor
@@ -818,9 +819,9 @@ export default function NFLApp() {
               {calibration.temporal_stability?.reason || "No hay datos suficientes para comparar ventanas."}
             </p>
           )}
-          <div className="factor-grid">
-            <TeamFactor label="Kickoff ausente" value={calibration.temporal_stability?.excluded_missing_kickoff ?? 0} />
-            <TeamFactor label="Observaciones inválidas excluidas" value={calibration.temporal_stability?.excluded_invalid_observation ?? 0} />
+          <div className="factor-grid nfl-temporal-exclusions">
+            <TeamFactor label="Kickoff ausente · excluidos" value={calibration.temporal_stability?.excluded_missing_kickoff ?? 0} />
+            <TeamFactor label="Observaciones inválidas · excluidas" value={calibration.temporal_stability?.excluded_invalid_observation ?? 0} />
           </div>
           <p className="model-note">
             Los partidos de una misma fecha UTC permanecen juntos. Esta comparación utiliza
