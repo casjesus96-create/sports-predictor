@@ -153,6 +153,7 @@ def project_players_from_recent_games(team_histories, cutoff, max_games=15):
             kickoff = _parse_datetime(game.get("kickoff"))
             if game_id and kickoff and kickoff < cutoff_dt and game.get("completed", True):
                 eligible.append(game)
+        eligible.sort(key=lambda item: _parse_datetime(item.get("kickoff")) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
         for game in eligible[:max_games]:
             selected[str(game["game_id"])] = game
 
