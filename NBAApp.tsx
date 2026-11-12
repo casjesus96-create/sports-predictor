@@ -533,33 +533,60 @@ export default function NBAApp() {
       )}
 
       {summary.confidence_calibration?.sample_size !== undefined && summary.temporal_calibration_stability && (
-        <section className="panel analysis-content" aria-label="Estabilidad temporal de calibración NBA">
+        <section className="panel analysis-content nba-temporal-audit" aria-label="Estabilidad temporal de calibración NBA">
           <div className="section-heading">
-            <div><div className="section-kicker">VALIDACIÓN CRONOLÓGICA</div><h2>Estabilidad temporal · NBA-1.1.0</h2></div>
-            <span className="muted">{summary.temporal_calibration_stability.sample_size ?? 0} observaciones</span>
+            <div>
+              <div className="section-kicker">VALIDACIÓN CRONOLÓGICA</div>
+              <h2>Estabilidad temporal · NBA-1.1.0</h2>
+            </div>
+            <span className="nba-temporal-total">{summary.temporal_calibration_stability.sample_size ?? 0} observaciones válidas</span>
           </div>
-          <p className="muted">Compara dos ventanas cronológicas no solapadas. Todos los partidos de una misma fecha UTC permanecen juntos. Solo se incluyen predicciones oficiales liquidadas con confianza y fecha válidas; no modifica el modelo.</p>
+          <p className="muted nba-temporal-intro">Esta auditoría comprueba si el rendimiento se mantiene entre dos periodos históricos separados. Utiliza únicamente predicciones oficiales liquidadas con fecha y confianza válidas. Los partidos de una misma fecha UTC se mantienen en la misma ventana.</p>
           {summary.temporal_calibration_stability.eligible ? (
             <>
-              <p className="muted">Separación antes del {summary.temporal_calibration_stability.split_before} · mínimo {summary.temporal_calibration_stability.minimum_per_window} observaciones por ventana.</p>
-              <div className="metrics-grid">
+              <div className="nba-temporal-cut">
+                <span><b>Corte cronológico:</b> {summary.temporal_calibration_stability.split_before}</span>
+                <span><b>Mínimo:</b> {summary.temporal_calibration_stability.minimum_per_window} observaciones por ventana</span>
+              </div>
+              <div className="nba-temporal-grid">
                 {summary.temporal_calibration_stability.windows?.map((window) => (
-                  <article className="panel" key={window.period}>
-                    <h3>{window.period === "earlier" ? "Ventana anterior" : "Ventana reciente"}</h3>
-                    <p className="muted">{window.start_date} a {window.end_date} · N = {window.sample_size}</p>
-                    <div className="score-row"><span>Confianza media</span><b>{pct(window.mean_confidence)}</b></div>
-                    <div className="score-row"><span>Acierto observado</span><b>{pct(window.observed_accuracy)}</b></div>
-                    <div className="score-row"><span>IC95% Wilson</span><b>{window.accuracy_ci_95 ? pct(window.accuracy_ci_95.lower) + "–" + pct(window.accuracy_ci_95.upper) : "—"}</b></div>
-                    <div className="score-row"><span>Error de calibración</span><b className={window.calibration_error > 0 ? "tone-positive" : window.calibration_error < 0 ? "tone-negative" : "tone-neutral"}>{window.calibration_error > 0 ? "+" : ""}{(window.calibration_error * 100).toFixed(1)} pp</b></div>
-                    <div className="score-row"><span>Brier del favorito</span><b>{numberLabel(window.brier_score, 4)}</b></div>
+                  <article className="nba-temporal-card" key={window.period}>
+                    <div className="nba-temporal-card-head">
+                      <h3>{window.period === "earlier" ? "Periodo anterior" : "Periodo reciente"}</h3>
+                      <span>N = {window.sample_size}</span>
+                    </div>
+                    <p className="nba-temporal-dates">{window.start_date} – {window.end_date}</p>
+                    <div className="nba-temporal-comparison">
+                      <div className="nba-temporal-measure">
+                        <div><span>Confianza media</span><b>{pct(window.mean_confidence)}</b></div>
+                        <div className="nba-temporal-track"><i className="nba-temporal-confidence" style={{ width: `${Math.max(0, Math.min(100, window.mean_confidence * 100))}%` }} /></div>
+                      </div>
+                      <div className="nba-temporal-measure">
+                        <div><span>Acierto observado</span><b>{pct(window.observed_accuracy)}</b></div>
+                        <div className="nba-temporal-track"><i className="nba-temporal-observed" style={{ width: `${Math.max(0, Math.min(100, window.observed_accuracy * 100))}%` }} /></div>
+                      </div>
+                    </div>
+                    <div className="nba-temporal-detail">
+                      <div><span>IC95% Wilson del acierto</span><b>{window.accuracy_ci_95 ? pct(window.accuracy_ci_95.lower) + "–" + pct(window.accuracy_ci_95.upper) : "—"}</b></div>
+                      <div><span>Diferencia de calibración</span><b className={window.calibration_error > 0 ? "tone-positive" : window.calibration_error < 0 ? "tone-negative" : "tone-neutral"}>{window.calibration_error > 0 ? "+" : ""}{(window.calibration_error * 100).toFixed(1)} pp</b></div>
+                      <div><span>Brier del favorito</span><b>{numberLabel(window.brier_score, 4)}</b></div>
+                    </div>
                   </article>
                 ))}
               </div>
+              <p className="nba-temporal-legend"><b>Cómo leerlo:</b> confianza media = promedio de la probabilidad asignada al favorito; acierto observado = proporción de favoritos ganadores; IC95% = intervalo de incertidumbre del acierto; Brier = error probabilístico (menor es mejor).</p>
             </>
           ) : (
-            <p className="muted">{summary.temporal_calibration_stability.reason || "Muestra insuficiente para comparar ventanas."} Observaciones excluidas por fecha ausente: {summary.temporal_calibration_stability.excluded_missing_kickoff ?? 0}; fecha inválida u observación: {summary.temporal_calibration_stability.excluded_invalid_observation ?? 0}.</p>
+            <div className="nba-temporal-empty">
+              <b>Comparación temporal todavía no disponible</b>
+              <p>{summary.temporal_calibration_stability.reason || "La muestra aún no alcanza el mínimo necesario para comparar periodos."}</p>
+              <div className="nba-temporal-exclusions">
+                <span>Sin fecha válida: <b>{summary.temporal_calibration_stability.excluded_missing_kickoff ?? 0}</b></span>
+                <span>Observación o fecha inválida: <b>{summary.temporal_calibration_stability.excluded_invalid_observation ?? 0}</b></span>
+              </div>
+            </div>
           )}
-          <p className="muted">Diagnóstico descriptivo; una diferencia entre ventanas no demuestra causalidad ni autoriza recalibración automática.</p>
+          <p className="nba-temporal-footnote">Diagnóstico descriptivo y de solo lectura. Una diferencia entre periodos no demuestra causalidad ni activa recalibración automática; el modelo oficial y sus probabilidades permanecen intactos.</p>
         </section>
       )}
 
