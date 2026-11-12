@@ -215,7 +215,7 @@ button:disabled{cursor:not-allowed;opacity:.55}
 .percentage-signal-top strong{font-size:1.12rem;color:#f8fafc;font-variant-numeric:tabular-nums;white-space:nowrap}
 .percentage-signal-track{height:7px;margin-top:8px;border-radius:8px;background:#334155;overflow:hidden}
 .percentage-signal-track span{display:block;height:100%;border-radius:8px;transition:width .2s ease}
-.percentage-signal small{display:block;margin-top:4px;font-size:.66rem;font-weight:700}
+.percentage-signal .percentage-signal-level{display:block;margin-top:4px;font-size:.66rem;font-weight:700;line-height:1.2}
 .percentage-band-footer{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:10px;line-height:1.45}
 .percentage-band-footer strong{font-size:.72rem}
 @media(max-width:420px){.percentage-band-signals{grid-template-columns:1fr}.percentage-signal-top strong{font-size:1.05rem}}
@@ -834,5 +834,23 @@ button:disabled{cursor:not-allowed;opacity:.55}
   }
   .tennis-app .tennis-profile-card > div[style*="grid-template-columns"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* Indicadores porcentuales: nivel textual alineado con el color y semántica accesible. */
+.percentage-signal-track {
+  min-width: 0;
+}
+.percentage-signal-track > span {
+  min-width: 0;
+  transition: width .2s ease;
+}
+.percentage-signal-level {
+  min-height: .8em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .percentage-signal-track > span {
+    transition: none;
   }
 }
