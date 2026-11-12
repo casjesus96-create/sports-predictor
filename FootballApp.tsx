@@ -1839,6 +1839,15 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
                   <tbody>{(["HOME", "DRAW", "AWAY"] as const).map((predicted) => <tr key={predicted}><td style={cellStyle}>{predicted}</td>{(["HOME", "DRAW", "AWAY"] as const).map((actual) => <td key={actual} style={cellStyle}>{window.confusion_matrix?.[predicted]?.[actual] ?? 0}</td>)}</tr>)}</tbody>
                 </table></div>
                 <div style={{ overflowX: "auto", marginTop: 6 }}><table style={tableStyle}>
+                  <thead><tr><th style={cellStyle}>Resultado</th><th style={cellStyle}>N real</th><th style={cellStyle}>Recall</th><th style={cellStyle}>N pronóstico</th><th style={cellStyle}>Precisión</th></tr></thead>
+                  <tbody>{(["HOME", "DRAW", "AWAY"] as const).map((outcome) => {
+                    const metric = window.outcome_error_profile?.outcomes?.[outcome] || {};
+                    const labels: Record<string, string> = { HOME: "Local", DRAW: "Empate", AWAY: "Visitante" };
+                    const rate = (value: number | null | undefined) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "N insuficiente";
+                    return <tr key={outcome}><td style={cellStyle}>{labels[outcome]}</td><td style={cellStyle}>{metric.actual_count ?? 0}</td><td style={cellStyle}>{rate(metric.recall)}</td><td style={cellStyle}>{metric.predicted_count ?? 0}</td><td style={cellStyle}>{rate(metric.precision)}</td></tr>;
+                  })}</tbody>
+                </table></div>
+                <div style={{ overflowX: "auto", marginTop: 6 }}><table style={tableStyle}>
                   <thead><tr><th style={cellStyle}>Goles</th><th style={cellStyle}>N</th><th style={cellStyle}>Sesgo</th><th style={cellStyle}>MAE</th><th style={cellStyle}>RMSE</th></tr></thead>
                   <tbody>{([["home_goals", "Local"], ["away_goals", "Visitante"], ["total_goals", "Total"]] as const).map(([key, label]) => {
                     const metric = window.goal_residuals?.[key];
@@ -1846,6 +1855,19 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
                   })}</tbody>
                 </table></div>
               </div>)}
+            </div>}
+            {segment.eligible && <div style={{ overflowX: "auto", marginTop: 8 }}>
+              <strong style={{ fontSize: 11 }}>Cambio entre ventanas (reciente − anterior)</strong>
+              <table style={tableStyle}>
+                <thead><tr><th style={cellStyle}>Resultado</th><th style={cellStyle}>Δ Recall</th><th style={cellStyle}>Δ Precisión</th></tr></thead>
+                <tbody>{(["HOME", "DRAW", "AWAY"] as const).map((outcome) => {
+                  const change = segment.outcome_changes?.[outcome] || {};
+                  const labels: Record<string, string> = { HOME: "Victoria local", DRAW: "Empate", AWAY: "Victoria visitante" };
+                  const delta = (value: number | null | undefined) => typeof value === "number" ? `${value > 0 ? "+" : ""}${(value * 100).toFixed(1)} pp` : "No comparable (N insuficiente)";
+                  return <tr key={outcome}><td style={cellStyle}>{labels[outcome]}</td><td style={cellStyle}>{delta(change.recall_delta)}</td><td style={cellStyle}>{delta(change.precision_delta)}</td></tr>;
+                })}</tbody>
+              </table>
+              <p style={{ color: "#9ca3af", fontSize: 10 }}>{segment.comparison_note}</p>
             </div>}
           </div>) : <p style={{ color: "#9ca3af" }}>Sin datos temporales segmentables.</p>}
           {stability.excluded_missing_competition_or_kickoff > 0 && <p style={{ color: "#fbbf24", fontSize: 10 }}>Excluidos por competición o fecha inválida: {stability.excluded_missing_competition_or_kickoff}.</p>}
