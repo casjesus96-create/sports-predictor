@@ -164,13 +164,19 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
   if (!Number.isFinite(line) || line < 0) return { error: "Línea inválida" };
   const components = PLAYER_MARKETS[market];
   if (!components) return { error: "Mercado no disponible" };
-  const values = (records || [])
+  const usedGames = (records || [])
     .filter((record) => record.completed === true && !!record.kickoff)
-    .map((record) => components.every((key) => typeof (record as any)[key] === "number" && Number.isFinite((record as any)[key]))
-      ? components.reduce((sum, key) => sum + (record as any)[key], 0)
-      : null)
-    .filter((value): value is number => value !== null)
+    .map((record) => {
+      const valid = components.every((key) => typeof (record as any)[key] === "number" && Number.isFinite((record as any)[key]));
+      return valid ? {
+        game_id: record.game_id,
+        kickoff: record.kickoff as string,
+        value: components.reduce((sum, key) => sum + (record as any)[key], 0),
+      } : null;
+    })
+    .filter((record): record is { game_id: string; kickoff: string; value: number } => record !== null)
     .slice(0, 15);
+  const values = usedGames.map((record) => record.value);
   const windowAverages: Record<string, number | null> = {};
   for (const windowSize of [5, 10, 15]) {
     const sample = values.slice(0, windowSize);
@@ -188,7 +194,7 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
     standardDeviation > 0 ? lineDistance > 1.5 * standardDeviation : lineDistance > 0
   );
   if (values.length < 5) {
-    return { insufficient: true, sample: values.length, minimum: 5, windowAverages };
+    return { insufficient: true, sample: values.length, minimum: 5, windowAverages, usedGames };
   }
   const over = values.filter((value) => value > line).length;
   const under = values.filter((value) => value < line).length;
@@ -199,7 +205,7 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
   const underProbability = decisive ? (1 - pushShare) * (under + 1) / (decisive + 2) : 0;
   return {
     sample: values.length, over, under, push, overProbability, underProbability, pushProbability: pushShare,
-    windowAverages, average15, standardDeviation, lineDistance, lineIsDistant,
+    windowAverages, average15, standardDeviation, lineDistance, lineIsDistant, usedGames,
     lineRelation: average15 == null || line === average15 ? "igual" : line < average15 ? "por debajo" : "por encima",
     overInterval: wilsonInterval(over, decisive, 1 - pushShare),
     underInterval: wilsonInterval(under, decisive, 1 - pushShare),
@@ -779,12 +785,20 @@ export default function NBAApp() {
                                                         {evaluation && ("error" in evaluation ? (
                                                           <small className="muted">{evaluation.error}</small>
                                                         ) : "insufficient" in evaluation ? (
-                                                          <small className="muted">
+                                                          <div className="muted">
                                                             Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}<br />
                                                             Muestra: {evaluation.sample}/5 · Sin probabilidades
-                                                          </small>
+                                                            {evaluation.usedGames.length > 0 && (
+                                                              <details>
+                                                                <summary>Ver partidos usados ({evaluation.usedGames.length})</summary>
+                                                                <ul>{evaluation.usedGames.map((game) => (
+                                                                  <li key={game.game_id}>{new Date(game.kickoff).toLocaleDateString()} · {game.game_id} · {numberLabel(game.value)}</li>
+                                                                ))}</ul>
+                                                              </details>
+                                                            )}
+                                                          </div>
                                                         ) : (
-                                                          <small>
+                                                          <div>
                                                             <b>Over {evaluation.over}/{evaluation.sample} · Under {evaluation.under}/{evaluation.sample} · Push {evaluation.push}/{evaluation.sample}</b><br />
                                                             O {(evaluation.overProbability * 100).toFixed(1)}% · U {(evaluation.underProbability * 100).toFixed(1)}%<br />
                                                             IC95% O {(evaluation.overInterval[0] * 100).toFixed(1)}–{(evaluation.overInterval[1] * 100).toFixed(1)}%<br />
@@ -793,7 +807,13 @@ export default function NBAApp() {
                                                             Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}<br />
                                                             Línea {evaluation.lineRelation} al promedio 15 ({numberLabel(evaluation.average15)}).
                                                             {evaluation.lineIsDistant ? <><br /><b className="tone-negative">Aviso: línea alejada de la dispersión histórica (más de 1.5 desviaciones estándar).</b></> : null}
-                                                          </small>
+                                                            <details>
+                                                              <summary>Ver partidos usados ({evaluation.usedGames.length})</summary>
+                                                              <ul>{evaluation.usedGames.map((game) => (
+                                                                <li key={game.game_id}>{new Date(game.kickoff).toLocaleDateString()} · {game.game_id} · {numberLabel(game.value)}</li>
+                                                              ))}</ul>
+                                                            </details>
+                                                          </div>
                                                         ))}
                                                       </td>
                                                     );
