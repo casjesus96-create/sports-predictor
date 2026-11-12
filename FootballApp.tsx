@@ -1557,6 +1557,16 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
   const panel: React.CSSProperties = { padding: 9, borderRadius: 8, background: "#111827", minWidth: 0 };
   const metricGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,115px),1fr))", gap: 6, marginTop: 7 };
   const metric = (label: string, value: string | number) => <div style={{ ...panel, background: "#0b1220" }}><div style={{ color: "#94a3b8", fontSize: 10 }}>{label}</div><strong style={{ display: "block", marginTop: 3, fontSize: 14, overflowWrap: "anywhere" }}>{value}</strong></div>;
+  const competitionGoals = data?.competition_context?.goal_patterns;
+  const leagueGoalsPerTeam = data?.competition_context?.eligible &&
+    typeof competitionGoals?.average_home_goals === "number" &&
+    typeof competitionGoals?.average_away_goals === "number"
+      ? (competitionGoals.average_home_goals + competitionGoals.average_away_goals) / 2
+      : null;
+  const compareWithLeague = (value: number) => {
+    const delta = value - (leagueGoalsPerTeam as number);
+    return `${value.toFixed(2)} · ${delta > 0 ? "+" : ""}${delta.toFixed(2)} vs media`;
+  };
   const renderSampleProgress = (label: string, sampleValue: unknown, minimumValue: unknown) => {
     const sample = Number.isFinite(Number(sampleValue)) ? Math.max(0, Math.floor(Number(sampleValue))) : 0;
     const minimum = Number.isFinite(Number(minimumValue)) ? Math.max(1, Math.floor(Number(minimumValue))) : 1;
@@ -1589,6 +1599,14 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
         {metric("Portería a cero", team.goals.clean_sheets)}
         {metric("No marcó", team.goals.failed_to_score)}
       </div>
+      {leagueGoalsPerTeam !== null && <>
+        <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700 }}>Comparación descriptiva con la media de la competición</div>
+        <div style={metricGrid}>
+          {metric("GF por partido · media liga", compareWithLeague(team.goals.average_for))}
+          {metric("GC por partido · media liga", compareWithLeague(team.goals.average_against))}
+        </div>
+        <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 5 }}>Referencia: promedio de goles por equipo (media entre los promedios local y visitante) en los partidos históricos de la competición. No es una proyección del encuentro actual.</div>
+      </>}
       <div style={{ marginTop: 8, fontSize: 11, color: "#cbd5e1" }}>Forma observada: {percent(team.results.win_rate)} victorias · {percent(team.results.draw_rate)} empates · {percent(team.results.loss_rate)} derrotas · {team.results.points} puntos acumulados.</div>
       <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700 }}>Desglose por sede · mínimo exploratorio: 3 partidos</div>
       <div style={metricGrid}>
