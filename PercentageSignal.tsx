@@ -39,11 +39,11 @@ export default function PercentageSignal({
               "aria-valuemin": 0,
               "aria-valuemax": 100,
               "aria-valuenow": percentage,
-              "aria-valuetext": \`${percentage.toFixed(1)}%\`,
+              "aria-valuetext": percentage.toFixed(1) + "%",
             }
           : { "aria-hidden": true })}
       >
-        <span style={{ width: \`${percentage}%\`, background: color }} />
+        <span style={{ width: percentage + "%", background: color }} />
       </div>
       <small className="percentage-signal-level" style={{ color }}>{level}</small>
     </div>
