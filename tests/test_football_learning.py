@@ -710,3 +710,59 @@ def test_recurring_confusion_patterns_require_two_evaluable_seasons_and_stable_e
     assert empty["by_competition"] == []
     assert empty["read_only"] is True
     assert empty["model_changed"] is False
+
+
+
+def test_match_learning_context_exposes_competition_patterns_at_minimum_sample():
+    rows = []
+    scores = [(2, 1), (1, 1), (0, 2), (3, 0), (1, 2), (2, 2), (1, 0), (0, 0), (3, 2), (1, 3)]
+    for index, (home_score, away_score) in enumerate(scores):
+        row = snapshot(0.60, 0.25, 0.15, home_score, away_score, 2000 + index)
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        rows.append(row)
+    report = build_match_learning_context(rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z")
+    league = report["competition_context"]
+    assert league["eligible"] is True
+    assert league["outcomes"]["home_wins"] == 4
+    assert league["outcomes"]["draws"] == 3
+    assert league["outcomes"]["away_wins"] == 3
+    assert league["goal_patterns"]["btts_count"] == 6
+    assert league["goal_patterns"]["over_2_5_count"] == 6
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_match_learning_context_exposes_team_form_and_home_away_split():
+    rows = []
+    scores = [(2, 1), (1, 1), (0, 2), (3, 0), (1, 2), (2, 2)]
+    for index, (home_score, away_score) in enumerate(scores):
+        row = snapshot(0.60, 0.25, 0.15, home_score, away_score, 3000 + index)
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        if index % 2:
+            row["home_team"], row["away_team"] = "Chelsea", "Manchester City"
+        rows.append(row)
+    report = build_match_learning_context(rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z")
+    team = report["home_team"]
+    assert team["eligible"] is True
+    assert team["sample_size"] == 6
+    assert team["results"]["wins"] + team["results"]["draws"] + team["results"]["losses"] == 6
+    assert team["goals"]["btts_count"] == 4
+    assert team["venue_split"]["home"]["sample_size"] == 3
+    assert team["venue_split"]["away"]["sample_size"] == 3
+    assert report["model_changed"] is False
+
+
+def test_match_learning_context_keeps_competition_patterns_hidden_below_minimum():
+    rows = []
+    for index in range(9):
+        row = snapshot(0.60, 0.25, 0.15, 2, 1, 4000 + index)
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        rows.append(row)
+    report = build_match_learning_context(rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z")
+    assert report["competition_context"]["eligible"] is False
+    assert "outcomes" not in report["competition_context"]
+    assert "goal_patterns" not in report["competition_context"]
+    assert report["home_team"]["eligible"] is True
+    assert "goals" in report["home_team"]
