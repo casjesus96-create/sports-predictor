@@ -5,6 +5,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import logging
+from statistics import median, pstdev
 
 from nba_player_stats import fetch_player_boxscore
 
@@ -29,7 +30,7 @@ def _parse_datetime(value):
         return None
 
 
-def aggregate_player_projections(game_reports, team_histories, max_games=5):
+def aggregate_player_projections(game_reports, team_histories, max_games=15):
     """Aggregate per-appearance player averages from already completed game reports."""
     team_meta = {}
     for team_id, games in (team_histories or {}).items():
@@ -41,11 +42,17 @@ def aggregate_player_projections(game_reports, team_histories, max_games=5):
                 team_meta[str(team_id)] = game.get("away") or game.get("away_abbreviation") or "Equipo"
                 break
 
-    aggregates = defaultdict(lambda: defaultdict(lambda: {"name": "", "position": None, "games": set(), "totals": defaultdict(float), "counts": defaultdict(int), "stat_games": defaultdict(set)}))
+    aggregates = defaultdict(lambda: defaultdict(lambda: {"name": "", "position": None, "games": set(), "values": defaultdict(list), "stat_games": defaultdict(set)}))
     # Only project players belonging to the two teams whose histories were requested.
     # Historical boxscores also contain opponents; including them pollutes coverage.
     target_team_ids = {str(team_id) for team_id in (team_histories or {})}
     team_game_ids = defaultdict(set)
+    kickoff_by_game = {}
+    for games in (team_histories or {}).values():
+        for game in games or []:
+            game_id = str(game.get("game_id") or "")
+            if game_id:
+                kickoff_by_game[game_id] = _parse_datetime(game.get("kickoff"))
 
     for game_id, report in (game_reports or {}).items():
         if not report or not report.get("available"):
@@ -67,24 +74,48 @@ def aggregate_player_projections(game_reports, team_histories, max_games=5):
                 item["position"] = player.get("position") or item["position"]
                 item["games"].add(str(game_id))
                 for key in present_stats:
-                    item["totals"][key] += float(player[key])
-                    item["counts"][key] += 1
+                    item["values"][key].append({
+                        "game_id": str(game_id),
+                        "kickoff": kickoff_by_game.get(str(game_id)),
+                        "value": float(player[key]),
+                    })
                     item["stat_games"][key].add(str(game_id))
 
     teams = []
     for team_id in sorted(set(team_meta) | set(aggregates)):
         players = []
         for player_id, item in aggregates.get(team_id, {}).items():
+            ordered_stats = {}
+            recent_windows = {}
+            for key in STAT_KEYS:
+                ordered = sorted(
+                    item["values"].get(key, []),
+                    key=lambda record: (record["kickoff"] is not None, record["kickoff"] or datetime.min.replace(tzinfo=timezone.utc)),
+                    reverse=True,
+                )
+                ordered_stats[key] = ordered
+                recent_windows[key] = {}
+                for window in (5, 10, 15):
+                    sample = [record["value"] for record in ordered[:window]]
+                    recent_windows[key][str(window)] = {
+                        "games": len(sample),
+                        "average": round(sum(sample) / len(sample), 1) if sample else None,
+                        "median": round(median(sample), 1) if sample else None,
+                        "stddev": round(pstdev(sample), 2) if len(sample) >= 2 else (0.0 if sample else None),
+                    }
             row = {
                 "player_id": player_id,
                 "name": item["name"],
                 "position": item["position"],
                 "games_sampled": len(item["games"]),
                 "games_sampled_by_stat": {key: len(item["stat_games"].get(key, set())) for key in STAT_KEYS},
+                "recent_windows": recent_windows,
             }
+            # Preserve the existing projection contract: projected_* remains the
+            # mean of the latest five available appearances, not the expanded 15-game pool.
             for key, output_key in PROJECTION_KEYS.items():
-                count = item["counts"].get(key, 0)
-                row[output_key] = round(item["totals"][key] / count, 1) if count else None
+                sample = [record["value"] for record in ordered_stats[key][:5]]
+                row[output_key] = round(sum(sample) / len(sample), 1) if sample else None
             players.append(row)
         players.sort(key=lambda p: (-(p["projected_points"] if p["projected_points"] is not None else -1), p["name"].casefold()))
         if players:
@@ -99,18 +130,19 @@ def aggregate_player_projections(game_reports, team_histories, max_games=5):
         "available": bool(teams and any(team["players"] for team in teams)),
         "method": "Promedio por aparición en los últimos partidos finalizados disponibles antes del inicio; no ajusta por lesiones, minutos ni quinteto confirmado.",
         "max_games_per_team": max_games,
+        "windows": [5, 10, 15],
         "teams": teams,
         "player_count": sum(len(team["players"]) for team in teams),
     }
 
 
-def project_players_from_recent_games(team_histories, cutoff, max_games=5):
+def project_players_from_recent_games(team_histories, cutoff, max_games=15):
     """Fetch recent completed boxscores, strictly before cutoff, and average each player's stats."""
     cutoff_dt = _parse_datetime(cutoff)
     if cutoff_dt is None:
         return {
             "available": False, "method": "No hay una hora de corte válida.",
-            "max_games_per_team": max_games, "teams": [], "player_count": 0,
+            "max_games_per_team": max_games, "windows": [5, 10, 15], "teams": [], "player_count": 0,
         }
 
     selected = {}

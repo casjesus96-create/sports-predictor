@@ -26,6 +26,9 @@ def test_aggregates_player_stats_by_appearances_and_team():
     assert player["projected_points"] == 20
     assert player["projected_assists"] == 5
     assert player["projected_rebounds"] == 7
+    assert player["recent_windows"]["points"]["5"]["average"] == 20
+    assert player["recent_windows"]["points"]["10"]["games"] == 1
+    assert player["recent_windows"]["points"]["15"]["median"] == 20
     assert player["projected_blocks"] == 1
     assert player["projected_steals"] == 2
     assert player["games_sampled"] == 1
