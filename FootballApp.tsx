@@ -256,7 +256,7 @@ function HighlightlyLeagueExplorer() {
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 5 }}>
               <span>Local {percent(prediction.probabilities?.home)}</span><span>Empate {percent(prediction.probabilities?.draw)}</span><span>Visitante {percent(prediction.probabilities?.away)}</span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 7, marginTop: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 7, marginTop: 8 }}>
               <div style={{ background: "#0f172a", padding: 8, borderRadius: 7 }}>Goles esperados local <strong>{prediction.expected_goals?.home ?? "—"}</strong></div>
               <div style={{ background: "#0f172a", padding: 8, borderRadius: 7 }}>Goles esperados visitante <strong>{prediction.expected_goals?.away ?? "—"}</strong></div>
               <div style={{ background: "#0f172a", padding: 8, borderRadius: 7 }}>Total esperado <strong>{prediction.expected_goals?.total ?? "—"}</strong></div>
@@ -315,7 +315,7 @@ function TeamRecentFormPanel({ competition, match }: { competition: string; matc
       <div style={{ color: "#94a3b8", fontSize: 10, margin: "3px 0 8px" }}>
         {team.sample_size} partidos encontrados · identidad: {team.resolution === "verified_alias" ? "alias confirmado" : team.resolution === "exact" ? "coincidencia exacta" : "nombre aún no verificado"}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 6 }}>
         {(["5", "10", "15"] as const).map(windowSize => {
           const stats = team.windows?.[windowSize];
           return <div key={windowSize} style={{ background: "#0b1220", borderRadius: 7, padding: 7, minWidth: 0 }}>
@@ -413,7 +413,7 @@ function FootballMarketPatternsPanel({ competition, match }: { competition: stri
       <div style={{ color: "#94a3b8", fontSize: 10, margin: "3px 0 8px" }}>
         {team.sample_size} partidos · {team.sample_start || "sin fecha"} a {team.sample_end || "sin fecha"}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 6 }}>
         {(["5", "10", "15"] as const).map(size => {
           const stats = team.windows?.[size];
           return <div key={size} style={{ background: "#0b1220", padding: 7, borderRadius: 7, minWidth: 0 }}>
@@ -460,7 +460,7 @@ function FootballMarketPatternsPanel({ competition, match }: { competition: stri
             <strong>{value?.count ?? 0}/{data.competition_sample?.sample_size ?? 0} · {rate(value)}</strong>
           </div>)}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 7, marginTop: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 7, marginTop: 8 }}>
           <div style={{ background: "#0b1220", padding: 8, borderRadius: 7, fontSize: 10 }}>Media goles <strong>{data.competition_sample?.average_total_goals ?? "—"}</strong></div>
           <div style={{ background: "#0b1220", padding: 8, borderRadius: 7, fontSize: 10 }}>Media local <strong>{data.competition_sample?.average_home_goals ?? "—"}</strong></div>
           <div style={{ background: "#0b1220", padding: 8, borderRadius: 7, fontSize: 10 }}>Media visitante <strong>{data.competition_sample?.average_away_goals ?? "—"}</strong></div>
@@ -792,10 +792,10 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
         {crossBase?.available && crossBase.probabilities && crossBase.expected_goals && <section style={{ background: "#1c2435", border: "1px solid #a16207", padding: 12, borderRadius: 8, marginBottom: 10 }}>
           <strong>Proyección base intercompetición · Experimental</strong>
           <p style={{ color: "#fbbf24", fontSize: 12 }}>La muestra combina forma reciente de ambos equipos en sus competiciones disponibles, normalizada por el promedio goleador de cada torneo. No modifica el modelo oficial ni está calibrada.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 8 }}>
             {[{ label: "Gana local", value: crossBase.probabilities.home }, { label: "Empate", value: crossBase.probabilities.draw }, { label: "Gana visitante", value: crossBase.probabilities.away }].map((item) => <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: 9, textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 18 }}>{percent(item.value)}</strong></div>)}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 8, marginTop: 8 }}>
             {[{ label: "Goles local", value: crossBase.expected_goals.home }, { label: "Goles visitante", value: crossBase.expected_goals.away }, { label: "Total", value: crossBase.expected_goals.total ?? 0 }].map((item) => <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: 9, textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong>{item.value.toFixed(2)}</strong></div>)}
           </div>
           <p style={{ fontSize: 11, color: "#cbd5e1", marginBottom: 8 }}>Muestra: {crossBase.sample?.home_matches ?? 0} partidos local · {crossBase.sample?.away_matches ?? 0} visitante · Competiciones: {crossBase.sample?.competitions_used?.join(", ") || "—"} · {crossBase.model_version}</p>
@@ -808,7 +808,7 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
             <strong>Forma reciente + fuerza de rivales (Elo) · Experimental</strong>
             <p style={{ color: "#99f6e4", fontSize: 12 }}>Pondera los últimos resultados, ajusta la forma por la calidad de los rivales y calcula Elo cronológicamente. No modifica el Poisson oficial y todavía no está calibrado.</p>
             {formElo?.available && formElo.probabilities ? <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 8 }}>
                 {[{ label: "Gana local", value: formElo.probabilities.home }, { label: "Empate", value: formElo.probabilities.draw }, { label: "Gana visitante", value: formElo.probabilities.away }].map((item) => <div key={item.label} style={{ background: "#0f172a", borderRadius: 8, padding: 9, textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 18 }}>{percent(item.value)}</strong></div>)}
               </div>
               <p style={{ fontSize: 11, color: "#cbd5e1" }}>Goles esperados: {formElo.expected_goals.home.toFixed(2)}–{formElo.expected_goals.away.toFixed(2)} · Elo: {formElo.strength.home_elo} vs {formElo.strength.away_elo} · Muestra: {formElo.sample.home_matches} local / {formElo.sample.away_matches} visitante · {formElo.model_version}</p>
@@ -1340,7 +1340,7 @@ function FootballHistoricalIntelligenceCenter() {
           {(seasonData.cross_competition || []).map((item: any) => <div key={item.competition} style={{ background: "#0b1220", borderRadius: 7, padding: 8, fontSize: 11 }}><strong>{item.competition_name}</strong><div>{item.matches ?? 0} partidos</div><div style={{ color: "#94a3b8" }}>Local {pct(item.home_win_percentage)} · Empate {pct(item.draw_percentage)} · Visitante {pct(item.away_win_percentage)}</div><div style={{ color: "#94a3b8" }}>Over 2.5 {pct(item.over_2_5?.percentage)} · BTTS {pct(item.both_teams_scored?.percentage)}</div></div>)}
         </div>
         <div style={{ marginTop: 8, fontSize: 11 }}><strong>Evolución de {seasonData.selected_competition_name || competition}</strong></div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 6, marginTop: 6 }}>
           {(seasonData.season_trend || []).map((item: any) => <div key={item.season} style={{ background: "#0b1220", borderRadius: 7, padding: 7, fontSize: 10 }}><strong>{item.season}</strong><div>{item.matches ?? 0} partidos</div><div>Over 2.5 {pct(item.over_2_5?.percentage)}</div><div>BTTS {pct(item.both_teams_scored?.percentage)}</div></div>)}
         </div>
       </section>}
@@ -1482,13 +1482,13 @@ function ProbabilitySignal({ label, value }: { label: string; value?: number }) 
   const pct = valid ? Math.max(0, Math.min(100, value * 100)) : 0;
   const color = pct >= 70 ? "#22c55e" : pct >= 55 ? "#14b8a6" : pct >= 45 ? "#f59e0b" : "#64748b";
   const level = !valid ? "Sin dato" : pct >= 70 ? "Alta" : pct >= 55 ? "Media" : "Baja";
-  return <div style={{ minWidth: 0, padding: 9, borderRadius: 8, background: "#0f172a" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
-      <span style={{ color: "#cbd5e1", fontSize: 11 }}>{label}</span>
-      <strong style={{ fontSize: 18, color: valid ? "#f8fafc" : "#94a3b8" }}>{valid ? percent(value) : "—"}</strong>
+  return <div style={{ minWidth: 0, width: "100%", boxSizing: "border-box", overflow: "hidden", padding: 9, borderRadius: 8, background: "#0f172a" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "baseline", flexWrap: "wrap", minWidth: 0 }}>
+      <span style={{ color: "#cbd5e1", fontSize: 11, minWidth: 0, overflowWrap: "anywhere" }}>{label}</span>
+      <strong style={{ fontSize: 18, color: valid ? "#f8fafc" : "#94a3b8", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{valid ? percent(value) : "—"}</strong>
     </div>
-    <div style={{ height: 7, background: "#334155", borderRadius: 8, overflow: "hidden", marginTop: 7 }}>
-      <div style={{ width: valid ? pct + "%" : "0%", height: "100%", background: color, borderRadius: 8 }} />
+    <div style={{ height: 7, width: "100%", boxSizing: "border-box", background: "#334155", borderRadius: 8, overflow: "hidden", marginTop: 7 }}>
+      <div style={{ width: `${Math.min(100, Math.max(0, pct))}%`, maxWidth: "100%", height: "100%", background: color, borderRadius: 8 }} />
     </div>
     <div style={{ color, fontSize: 10, marginTop: 4, fontWeight: 700 }}>{level}</div>
   </div>;
@@ -2368,7 +2368,7 @@ export default function FootballApp() {
             const overall = data.calibration?.outcomes || {};
             return <article key={code} style={{ marginTop: 10, padding: 10, border: "1px solid #475569", borderRadius: 8 }}>
               <strong>{code} · {data.sample_size || 0} partidos en ventana común</strong>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 6, marginTop: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 6, marginTop: 8 }}>
                 {(["home", "draw", "away"] as const).map((outcome) => {
                   const item = overall[outcome];
                   return <div key={outcome} style={{ background: "#0b1220", padding: 7, borderRadius: 6, fontSize: 11 }}>
@@ -2398,7 +2398,7 @@ export default function FootballApp() {
         </section>}
         {historyEvaluation && <section style={{ margin: "12px 0", padding: 11, borderRadius: 8, background: "#172033" }}>
           <strong>Rendimiento del modelo oficial · {historyEvaluation.sample_size ?? 0} partidos liquidados</strong>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, marginTop: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 8, marginTop: 8 }}>
             <div>Accuracy <strong>{percent(historyEvaluation.metrics?.accuracy)}</strong></div>
             <div>Brier <strong>{typeof historyEvaluation.metrics?.brier_score === "number" ? historyEvaluation.metrics.brier_score.toFixed(4) : "—"}</strong></div>
             <div>Log Loss <strong>{typeof historyEvaluation.metrics?.log_loss === "number" ? historyEvaluation.metrics.log_loss.toFixed(4) : "—"}</strong></div>
@@ -2418,7 +2418,7 @@ export default function FootballApp() {
           return <article key={item.id} style={{ marginTop: 10, padding: 12, border: "1px solid #475569", borderRadius: 9, background: "#0b1220" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}><strong>{item.home_team} vs {item.away_team}</strong><span style={{ color: item.result_status === "SETTLED" ? "#86efac" : "#fbbf24" }}>{item.result_status === "SETTLED" ? "Liquidado" : item.result_status}</span></div>
             <p style={{ margin: "5px 0", color: "#9ca3af", fontSize: 12 }}>{item.competition_code} · {localDate(item.kickoff_at)} · {item.model_version} · {String(item.model_version || "").startsWith("FOOTBALL-CROSSCOMP-SHADOW-") ? "EXPERIMENTAL" : "OFICIAL"}</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 7 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 7 }}>
               <div style={{ background: "#172033", padding: 8, borderRadius: 7 }}>Local <strong>{percent(probs.home)}</strong></div>
               <div style={{ background: "#172033", padding: 8, borderRadius: 7 }}>Empate <strong>{percent(probs.draw)}</strong></div>
               <div style={{ background: "#172033", padding: 8, borderRadius: 7 }}>Visitante <strong>{percent(probs.away)}</strong></div>
@@ -2478,10 +2478,10 @@ export default function FootballApp() {
                 {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <FootballMarketPatternsPanel competition={competition} match={match} />}
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
               <strong>Probabilidades 1X2</strong>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 8, marginTop: 10 }}>
                 {[{ label: "Gana local", value: prediction.probabilities.home }, { label: "Empate", value: prediction.probabilities.draw }, { label: "Gana visitante", value: prediction.probabilities.away }].map((item) => <ProbabilitySignal key={item.label} label={item.label} value={item.value} />)}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 8, marginTop: 12 }}>
                 {[{ label: "Goles local", value: prediction.expected_goals.home }, { label: "Goles visitante", value: prediction.expected_goals.away }, { label: "Total esperado", value: prediction.expected_goals.total ?? (prediction.expected_goals.home + prediction.expected_goals.away) }].map((item) => <div key={item.label} style={{ padding: 9, borderRadius: 8, background: "#0f172a", textAlign: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{item.label}</div><strong style={{ fontSize: 20 }}>{item.value.toFixed(2)}</strong></div>)}
               </div>
               {prediction.goal_markets && <section style={{ marginTop: 12 }}>
@@ -2522,7 +2522,7 @@ export default function FootballApp() {
                 {prediction.most_likely_scorelines && <div style={{ marginTop: 10 }}><strong>Marcadores exactos más probables</strong><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, marginTop: 8 }}>{prediction.most_likely_scorelines.map((score) => <ProbabilitySignal key={score.home + "-" + score.away} label={score.home + "–" + score.away} value={score.probability} />)}</div></div>}
                 {prediction.double_chance && <div style={{ marginTop: 10 }}>
                   <strong style={{ fontSize: 12 }}>Doble oportunidad</strong>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 8, marginTop: 8 }}>
                     <ProbabilitySignal label="1X" value={prediction.double_chance.home_or_draw?.probability} />
                     <ProbabilitySignal label="X2" value={prediction.double_chance.draw_or_away?.probability} />
                     <ProbabilitySignal label="12" value={prediction.double_chance.home_or_away?.probability} />
