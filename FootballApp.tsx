@@ -1644,6 +1644,15 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
               <div style={{ color: "#86efac", fontSize: 10, marginTop: 5 }}>Muestra descriptiva mínima alcanzada; interpretar con cautela.</div>
               <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 6 }}>{venue.wins}V · {venue.draws}E · {venue.losses}D · {venue.points} puntos</div>
               <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 3 }}>Promedio GF/GC: {venue.average_goals_for.toFixed(2)} / {venue.average_goals_against.toFixed(2)}</div>
+              {venue.comparison_to_overall?.eligible && <div style={{ marginTop: 7, padding: 7, borderRadius: 6, background: "#111827" }}>
+                <div style={{ color: "#7dd3fc", fontSize: 10, fontWeight: 700 }}>Diferencia frente al rendimiento global del equipo</div>
+                <div style={{ color: "#cbd5e1", fontSize: 10, marginTop: 4 }}>
+                  Puntos/partido: {venue.comparison_to_overall.points_per_match_delta > 0 ? "+" : ""}{venue.comparison_to_overall.points_per_match_delta.toFixed(2)} ·
+                  GF/partido: {venue.comparison_to_overall.goals_for_per_match_delta > 0 ? "+" : ""}{venue.comparison_to_overall.goals_for_per_match_delta.toFixed(2)} ·
+                  GC/partido: {venue.comparison_to_overall.goals_against_per_match_delta > 0 ? "+" : ""}{venue.comparison_to_overall.goals_against_per_match_delta.toFixed(2)}
+                </div>
+                <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 3 }}>Muestra de sede: {venue.sample_size} · global: {venue.comparison_to_overall.overall_sample_size}. Valores positivos en GC significan que concede más goles que su promedio global.</div>
+              </div>}
               {data?.competition_context?.eligible &&
                 typeof competitionGoals?.average_home_goals === "number" &&
                 typeof competitionGoals?.average_away_goals === "number" && <>
