@@ -124,6 +124,46 @@ const errorText = (value: unknown) =>
 const numberLabel = (value: unknown, digits = 1) =>
   typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "—";
 
+
+type MarketHistoryRecord = {
+  game_id: string;
+  kickoff?: string | null;
+  completed: boolean;
+  points?: number;
+  rebounds?: number;
+  assists?: number;
+};
+
+const PLAYER_MARKETS: Record<string, string[]> = {
+  PTS: ["points"],
+  REB: ["rebounds"],
+  AST: ["assists"],
+  PRA: ["points", "rebounds", "assists"],
+};
+
+function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: string, rawLine: string) {
+  if (!rawLine.trim()) return null;
+  const line = Number(rawLine);
+  if (!Number.isFinite(line) || line < 0) return { error: "Línea inválida" };
+  const components = PLAYER_MARKETS[market];
+  if (!components) return { error: "Mercado no disponible" };
+  const values = (records || [])
+    .filter((record) => record.completed === true && !!record.kickoff)
+    .map((record) => components.every((key) => typeof (record as any)[key] === "number" && Number.isFinite((record as any)[key]))
+      ? components.reduce((sum, key) => sum + (record as any)[key], 0)
+      : null)
+    .filter((value): value is number => value !== null);
+  if (values.length < 5) return { insufficient: true, sample: values.length, minimum: 5 };
+  const over = values.filter((value) => value > line).length;
+  const under = values.filter((value) => value < line).length;
+  const push = values.length - over - under;
+  const decisive = over + under;
+  const pushShare = push / values.length;
+  const overProbability = decisive ? (1 - pushShare) * (over + 1) / (decisive + 2) : 0;
+  const underProbability = decisive ? (1 - pushShare) * (under + 1) / (decisive + 2) : 0;
+  return { sample: values.length, over, under, push, overProbability, underProbability, pushProbability: pushShare };
+}
+
 const statLabel = (value: unknown, percent = false) =>
   typeof value === "number" && Number.isFinite(value)
     ? `${value.toFixed(1)}${percent ? "%" : ""}`
@@ -159,6 +199,7 @@ export default function NBAApp() {
   const [games, setGames] = useState<Game[]>([]);
   const [predictions, setPredictions] = useState<PredictionRow[]>([]);
   const [playerBoxscores, setPlayerBoxscores] = useState<Record<string, PlayerBoxscore>>({});
+  const [marketLines, setMarketLines] = useState<Record<string, string>>({});
   const [boxscoreBusy, setBoxscoreBusy] = useState<string | null>(null);
   const [performance, setPerformance] = useState<Performance | null>(null);
   const [quarterAudit, setQuarterAudit] = useState<any>(null);
@@ -655,10 +696,11 @@ export default function NBAApp() {
                                         <b>{playerTeam.team} · promedios recientes por jugador</b>
                                         <small className="muted">Boxscores consultados: {playerTeam.games_available ?? 0} · Jugadores: {playerTeam.players?.length ?? 0}</small>
                                         <small className="muted">Cobertura por estadística: PTS {playerTeam.statistical_coverage?.points ?? 0}, AST {playerTeam.statistical_coverage?.assists ?? 0}, REB {playerTeam.statistical_coverage?.rebounds ?? 0}, BLK {playerTeam.statistical_coverage?.blocks ?? 0}, STL {playerTeam.statistical_coverage?.steals ?? 0}</small>
+                                        <small className="muted">Laboratorio experimental O/U: introduce una línea manual para PTS, REB, AST o PRA. Probabilidades Beta suavizadas; Push separado. Se requieren al menos 5 partidos pregame válidos. No son cuotas ni recomendaciones.</small>
                                         <div style={{ overflowX: "auto" }}>
                                           <table>
                                             <thead>
-                                              <tr><th>Jugador</th><th>Muestra</th><th>PTS (5/10/15)</th><th>AST (5/10/15)</th><th>REB (5/10/15)</th><th>BLK (5/10/15)</th><th>STL (5/10/15)</th></tr>
+                                              <tr><th>Jugador</th><th>Muestra</th><th>PTS (5/10/15)</th><th>AST (5/10/15)</th><th>REB (5/10/15)</th><th>BLK (5/10/15)</th><th>STL (5/10/15)</th><th>PTS O/U</th><th>REB O/U</th><th>AST O/U</th><th>PRA O/U</th></tr>
                                             </thead>
                                             <tbody>
                                               {playerTeam.players.map((player: any) => (
@@ -674,6 +716,36 @@ export default function NBAApp() {
                                                       })}
                                                     </td>
                                                   ))}
+                                                  {["PTS", "REB", "AST", "PRA"].map((market) => {
+                                                    const lineKey = String(player.player_id || player.name) + ":" + market;
+                                                    const line = marketLines[lineKey] || "";
+                                                    const evaluation = evaluateMarketLine(player.market_history, market, line);
+                                                    return (
+                                                      <td key={market}>
+                                                        <input
+                                                          aria-label={player.name + " línea " + market}
+                                                          type="number"
+                                                          min="0"
+                                                          step="0.5"
+                                                          inputMode="decimal"
+                                                          placeholder="Línea"
+                                                          value={line}
+                                                          onChange={(event) => setMarketLines((current) => ({ ...current, [lineKey]: event.target.value }))}
+                                                          style={{ width: 76 }}
+                                                        />
+                                                        {evaluation && ("error" in evaluation ? (
+                                                          <small className="muted">{evaluation.error}</small>
+                                                        ) : "insufficient" in evaluation ? (
+                                                          <small className="muted">Muestra: {evaluation.sample}/5</small>
+                                                        ) : (
+                                                          <small>
+                                                            O {(evaluation.overProbability * 100).toFixed(1)}% · U {(evaluation.underProbability * 100).toFixed(1)}%<br />
+                                                            Push {(evaluation.pushProbability * 100).toFixed(1)}% · N={evaluation.sample}
+                                                          </small>
+                                                        ))}
+                                                      </td>
+                                                    );
+                                                  })}
                                                 </tr>
                                               ))}
                                             </tbody>
