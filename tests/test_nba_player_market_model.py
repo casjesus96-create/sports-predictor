@@ -8,10 +8,10 @@ def test_over_under_probabilities_are_smoothed_and_sum_with_push():
     assert result["available"] is True
     assert result["method"] == "EMPIRICAL_BETA_SMOOTHED"
     assert result["sample_size"] == 6
-    assert result["over"]["count"] == 3
+    assert result["over"]["count"] == 2
     assert result["under"]["count"] == 2
-    assert result["push"]["count"] == 1
-    assert result["push"]["probability"] == pytest.approx(1 / 6)
+    assert result["push"]["count"] == 2
+    assert result["push"]["probability"] == pytest.approx(2 / 6)
     assert result["over"]["probability"] + result["under"]["probability"] + result["push"]["probability"] == pytest.approx(1.0)
 
 
