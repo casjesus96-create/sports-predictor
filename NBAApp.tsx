@@ -777,7 +777,7 @@ export default function NBAApp() {
                                                           </small>
                                                         ) : (
                                                           <small>
-                                                            <b>{evaluation.over} Over · {evaluation.under} Under · {evaluation.push} Push</b><br />
+                                                            <b>Over {evaluation.over}/{evaluation.sample} · Under {evaluation.under}/{evaluation.sample} · Push {evaluation.push}/{evaluation.sample}</b><br />
                                                             O {(evaluation.overProbability * 100).toFixed(1)}% · U {(evaluation.underProbability * 100).toFixed(1)}%<br />
                                                             IC95% O {(evaluation.overInterval[0] * 100).toFixed(1)}–{(evaluation.overInterval[1] * 100).toFixed(1)}%<br />
                                                             IC95% U {(evaluation.underInterval[0] * 100).toFixed(1)}–{(evaluation.underInterval[1] * 100).toFixed(1)}%<br />
