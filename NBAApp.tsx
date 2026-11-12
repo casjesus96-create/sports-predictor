@@ -785,7 +785,7 @@ export default function NBAApp() {
                                                         {evaluation && ("error" in evaluation ? (
                                                           <small className="muted">{evaluation.error}</small>
                                                         ) : "insufficient" in evaluation ? (
-                                                          <small className="muted">
+                                                          <div className="muted">
                                                             Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}<br />
                                                             Muestra: {evaluation.sample}/5 · Sin probabilidades
                                                             {evaluation.usedGames.length > 0 && (
@@ -796,9 +796,9 @@ export default function NBAApp() {
                                                                 ))}</ul>
                                                               </details>
                                                             )}
-                                                          </small>
+                                                          </div>
                                                         ) : (
-                                                          <small>
+                                                          <div>
                                                             <b>Over {evaluation.over}/{evaluation.sample} · Under {evaluation.under}/{evaluation.sample} · Push {evaluation.push}/{evaluation.sample}</b><br />
                                                             O {(evaluation.overProbability * 100).toFixed(1)}% · U {(evaluation.underProbability * 100).toFixed(1)}%<br />
                                                             IC95% O {(evaluation.overInterval[0] * 100).toFixed(1)}–{(evaluation.overInterval[1] * 100).toFixed(1)}%<br />
@@ -813,7 +813,7 @@ export default function NBAApp() {
                                                                 <li key={game.game_id}>{new Date(game.kickoff).toLocaleDateString()} · {game.game_id} · {numberLabel(game.value)}</li>
                                                               ))}</ul>
                                                             </details>
-                                                          </small>
+                                                          </div>
                                                         ))}
                                                       </td>
                                                     );
