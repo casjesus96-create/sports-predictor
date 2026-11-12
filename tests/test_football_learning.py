@@ -878,11 +878,11 @@ def test_match_learning_context_compares_clean_sheets_and_failed_to_score_rates(
     assert trend["previous"]["clean_sheet_rate"] == 0.2
     assert trend["recent"]["clean_sheet_rate"] == 0.8
     assert trend["deltas"]["clean_sheet_rate"] == 0.6
-    assert trend["clean_sheets"] == "IMPROVING"
+    assert trend["clean_sheet_frequency"] == "INCREASED"
     assert trend["previous"]["failed_to_score_rate"] == 0.2
-    assert trend["recent"]["failed_to_score_rate"] == 0.4
-    assert trend["deltas"]["failed_to_score_rate"] == 0.2
-    assert trend["failed_to_score"] == "IMPROVING"
+    assert trend["recent"]["failed_to_score_rate"] == 0.6
+    assert trend["deltas"]["failed_to_score_rate"] == 0.4
+    assert trend["failed_to_score_frequency"] == "INCREASED"
     assert report["read_only"] is True
     assert report["model_changed"] is False
     assert report["snapshots_written"] == 0
