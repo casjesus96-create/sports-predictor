@@ -668,9 +668,8 @@ export default function NBAApp() {
                                                   {["points", "assists", "rebounds", "blocks", "steals"].map((stat: string) => (
                                                     <td key={stat}>
                                                       {[5, 10, 15].map((windowSize) => {
-                                                        const statWindows = player.recent_windows?.[stat];
-                                                        const sample = statWindows?.[String(windowSize)];
-                                                        return <div key={windowSize}><small>{windowSize}: </small>{!statWindows ? <small className="muted">No capturado</small> : sample?.games ? <>{sample.average == null ? "—" : numberLabel(sample.average)} <small>({sample.games})</small></> : <small className="muted">Sin muestra (0)</small>}</div>;
+                                                        const sample = player.recent_windows?.[stat]?.[String(windowSize)];
+                                                        return <div key={windowSize}><small>{windowSize}: </small>{sample?.average == null ? "—" : numberLabel(sample.average)} <small>({sample?.games ?? 0})</small></div>;
                                                       })}
                                                     </td>
                                                   ))}
