@@ -859,6 +859,36 @@ def test_match_learning_context_reports_goal_scoring_and_conceding_volatility_re
     assert report["provider_calls"] == 0
 
 
+def test_match_learning_context_compares_clean_sheets_and_failed_to_score_rates():
+    rows = []
+    previous_scores = [(1, 1), (1, 0), (0, 2), (2, 2), (1, 3)]
+    recent_scores = [(0, 0), (2, 0), (0, 1), (1, 0), (0, 0)]
+    for index in range(10):
+        home_score, away_score = recent_scores[index - 5] if index >= 5 else previous_scores[index]
+        row = snapshot(0.60, 0.25, 0.15, home_score, away_score, 15000 + index)
+        row["home_team"], row["away_team"] = "Manchester City", "Chelsea"
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    report = build_match_learning_context(
+        rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z"
+    )
+    trend = report["home_team"]["recent_trend"]
+
+    assert trend["previous"]["clean_sheet_rate"] == 0.2
+    assert trend["recent"]["clean_sheet_rate"] == 0.8
+    assert trend["deltas"]["clean_sheet_rate"] == 0.6
+    assert trend["clean_sheet_frequency"] == "INCREASED"
+    assert trend["previous"]["failed_to_score_rate"] == 0.2
+    assert trend["recent"]["failed_to_score_rate"] == 0.6
+    assert trend["deltas"]["failed_to_score_rate"] == 0.4
+    assert trend["failed_to_score_frequency"] == "INCREASED"
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
 def test_match_learning_context_hides_recent_trend_below_ten_team_matches():
     rows = []
     for index in range(9):
