@@ -1589,10 +1589,27 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
         {metric("No marcó", team.goals.failed_to_score)}
       </div>
       <div style={{ marginTop: 8, fontSize: 11, color: "#cbd5e1" }}>Forma observada: {percent(team.results.win_rate)} victorias · {percent(team.results.draw_rate)} empates · {percent(team.results.loss_rate)} derrotas · {team.results.points} puntos acumulados.</div>
-      <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700 }}>Desglose por sede</div>
+      <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700 }}>Desglose por sede · mínimo exploratorio: 3 partidos</div>
       <div style={metricGrid}>
-        {team.venue_split?.home && metric(`Como local · ${team.venue_split.home.sample_size}`, `${team.venue_split.home.wins}V-${team.venue_split.home.draws}E-${team.venue_split.home.losses}D · ${team.venue_split.home.points} pts · GF/GC ${team.venue_split.home.average_goals_for}/${team.venue_split.home.average_goals_against}`)}
-        {team.venue_split?.away && metric(`Como visitante · ${team.venue_split.away.sample_size}`, `${team.venue_split.away.wins}V-${team.venue_split.away.draws}E-${team.venue_split.away.losses}D · ${team.venue_split.away.points} pts · GF/GC ${team.venue_split.away.average_goals_for}/${team.venue_split.away.average_goals_against}`)}
+        {(["home", "away"] as const).map((venueKey) => {
+          const venue = team.venue_split?.[venueKey];
+          if (!venue) return null;
+          const venueLabel = venueKey === "home" ? "Como local" : "Como visitante";
+          const venueEligible = venue.sample_size >= 3;
+          return <div key={venueKey} style={{ ...panel, background: "#0b1220", border: "1px solid #26384c" }}>
+            <strong style={{ fontSize: 11 }}>{venueLabel}</strong>
+            {renderSampleProgress(`Muestra · ${venueLabel.toLowerCase()}`, venue.sample_size, 3)}
+            {venueEligible ? <>
+              <div style={{ color: "#86efac", fontSize: 10, marginTop: 5 }}>Muestra descriptiva mínima alcanzada; interpretar con cautela.</div>
+              <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 6 }}>{venue.wins}V · {venue.draws}E · {venue.losses}D · {venue.points} puntos</div>
+              <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 3 }}>Promedio GF/GC: {venue.average_goals_for.toFixed(2)} / {venue.average_goals_against.toFixed(2)}</div>
+            </> : <>
+              <div style={{ color: "#fcd34d", fontSize: 10, marginTop: 5 }}>Muestra exploratoria: todavía no se presenta como patrón.</div>
+              <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 6 }}>Registro bruto: {venue.wins}V · {venue.draws}E · {venue.losses}D · {venue.points} puntos</div>
+              <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 3 }}>Partidos observados: {venue.sample_size}. Se necesitan 3 para mostrar promedios descriptivos.</div>
+            </>}
+          </div>;
+        })}
       </div>
       <div style={{ marginTop: 9, fontSize: 11, fontWeight: 700 }}>Últimos cinco encuentros del histórico oficial</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,165px),1fr))", gap: 6, marginTop: 6 }}>
