@@ -132,3 +132,27 @@ def test_project_players_fetches_up_to_fifteen_most_recent_pregame_games(monkeyp
     assert player["recent_windows"]["points"]["10"]["games"] == 10
     assert player["recent_windows"]["points"]["15"]["games"] == 15
     assert player["recent_windows"]["points"]["5"]["average"] != player["recent_windows"]["points"]["15"]["average"]
+
+
+def test_player_market_history_preserves_raw_pregame_boxscore_records():
+    histories = {
+        "1": [
+            {"game_id": "g1", "home_team_id": "1", "home": "Home", "kickoff": "2026-10-01T00:00:00Z", "completed": True},
+            {"game_id": "g2", "home_team_id": "1", "home": "Home", "kickoff": "2026-10-02T00:00:00Z", "completed": True},
+        ]
+    }
+    reports = {
+        "g1": {"available": True, "teams": [{"team_id": "1", "players": [
+            {"player_id": "p1", "name": "Player", "points": 10, "rebounds": 4, "assists": 3}
+        ]}]},
+        "g2": {"available": True, "teams": [{"team_id": "1", "players": [
+            {"player_id": "p1", "name": "Player", "points": 20, "rebounds": 5, "assists": 6}
+        ]}]},
+    }
+    result = aggregate_player_projections(reports, histories)
+    player = result["teams"][0]["players"][0]
+    assert [row["game_id"] for row in player["market_history"]] == ["g2", "g1"]
+    assert player["market_history"][0]["completed"] is True
+    assert player["market_history"][0]["points"] == 20
+    assert player["market_history"][0]["rebounds"] == 5
+    assert player["market_history"][0]["assists"] == 6
