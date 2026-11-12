@@ -162,8 +162,27 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
     .map((record) => components.every((key) => typeof (record as any)[key] === "number" && Number.isFinite((record as any)[key]))
       ? components.reduce((sum, key) => sum + (record as any)[key], 0)
       : null)
-    .filter((value): value is number => value !== null);
-  if (values.length < 5) return { insufficient: true, sample: values.length, minimum: 5 };
+    .filter((value): value is number => value !== null)
+    .slice(0, 15);
+  const windowAverages: Record<string, number | null> = {};
+  for (const windowSize of [5, 10, 15]) {
+    const sample = values.slice(0, windowSize);
+    windowAverages[String(windowSize)] = sample.length
+      ? sample.reduce((sum, value) => sum + value, 0) / sample.length
+      : null;
+  }
+  const average15 = windowAverages["15"];
+  const variance = values.length
+    ? values.reduce((sum, value) => sum + Math.pow(value - (average15 as number), 2), 0) / values.length
+    : 0;
+  const standardDeviation = Math.sqrt(variance);
+  const lineDistance = average15 == null ? null : Math.abs(line - average15);
+  const lineIsDistant = lineDistance != null && (
+    standardDeviation > 0 ? lineDistance > 1.5 * standardDeviation : lineDistance > 0
+  );
+  if (values.length < 5) {
+    return { insufficient: true, sample: values.length, minimum: 5, windowAverages };
+  }
   const over = values.filter((value) => value > line).length;
   const under = values.filter((value) => value < line).length;
   const push = values.length - over - under;
@@ -173,6 +192,8 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
   const underProbability = decisive ? (1 - pushShare) * (under + 1) / (decisive + 2) : 0;
   return {
     sample: values.length, over, under, push, overProbability, underProbability, pushProbability: pushShare,
+    windowAverages, average15, standardDeviation, lineDistance, lineIsDistant,
+    lineRelation: average15 == null || line === average15 ? "igual" : line < average15 ? "por debajo" : "por encima",
     overInterval: wilsonInterval(over, decisive, 1 - pushShare),
     underInterval: wilsonInterval(under, decisive, 1 - pushShare),
   };
@@ -710,7 +731,7 @@ export default function NBAApp() {
                                         <b>{playerTeam.team} · promedios recientes por jugador</b>
                                         <small className="muted">Boxscores consultados: {playerTeam.games_available ?? 0} · Jugadores: {playerTeam.players?.length ?? 0}</small>
                                         <small className="muted">Cobertura por estadística: PTS {playerTeam.statistical_coverage?.points ?? 0}, AST {playerTeam.statistical_coverage?.assists ?? 0}, REB {playerTeam.statistical_coverage?.rebounds ?? 0}, BLK {playerTeam.statistical_coverage?.blocks ?? 0}, STL {playerTeam.statistical_coverage?.steals ?? 0}</small>
-                                        <small className="muted">Laboratorio experimental O/U: introduce una línea manual para PTS, REB, AST o PRA. Probabilidades Beta suavizadas; Push separado. Se requieren al menos 5 partidos pregame válidos. No son cuotas ni recomendaciones.</small>
+                                        <small className="muted">Laboratorio experimental O/U: introduce una línea manual para PTS, REB, AST o PRA. Se muestran conteos reales, promedios de las ventanas 5/10/15 y comparación descriptiva con el promedio de 15. Las líneas alejadas se señalan usando 1.5 desviaciones estándar históricas. Probabilidades Beta suavizadas e IC95%; mínimo 5 partidos pregame válidos. No son cuotas ni recomendaciones.</small>
                                         <div style={{ overflowX: "auto" }}>
                                           <table>
                                             <thead>
@@ -750,13 +771,20 @@ export default function NBAApp() {
                                                         {evaluation && ("error" in evaluation ? (
                                                           <small className="muted">{evaluation.error}</small>
                                                         ) : "insufficient" in evaluation ? (
-                                                          <small className="muted">Muestra: {evaluation.sample}/5</small>
+                                                          <small className="muted">
+                                                            Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}<br />
+                                                            Muestra: {evaluation.sample}/5 · Sin probabilidades
+                                                          </small>
                                                         ) : (
                                                           <small>
+                                                            <b>Over {evaluation.over}/{evaluation.sample} · Under {evaluation.under}/{evaluation.sample} · Push {evaluation.push}/{evaluation.sample}</b><br />
                                                             O {(evaluation.overProbability * 100).toFixed(1)}% · U {(evaluation.underProbability * 100).toFixed(1)}%<br />
                                                             IC95% O {(evaluation.overInterval[0] * 100).toFixed(1)}–{(evaluation.overInterval[1] * 100).toFixed(1)}%<br />
                                                             IC95% U {(evaluation.underInterval[0] * 100).toFixed(1)}–{(evaluation.underInterval[1] * 100).toFixed(1)}%<br />
-                                                            Push {(evaluation.pushProbability * 100).toFixed(1)}% · N={evaluation.sample}
+                                                            Push {(evaluation.pushProbability * 100).toFixed(1)}% · N={evaluation.sample}<br />
+                                                            Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}<br />
+                                                            Línea {evaluation.lineRelation} al promedio 15 ({numberLabel(evaluation.average15)}).
+                                                            {evaluation.lineIsDistant ? <><br /><b className="tone-negative">Aviso: línea alejada de la dispersión histórica (más de 1.5 desviaciones estándar).</b></> : null}
                                                           </small>
                                                         ))}
                                                       </td>
