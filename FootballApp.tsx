@@ -1833,12 +1833,14 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
           {(recurring.by_competition || []).length ? recurring.by_competition.map((competition: any) => <div key={competition.competition} style={{ padding: 10, borderRadius: 8, background: "#111827", marginTop: 8 }}>
             <strong>{competition.competition} · {competition.season_count} temporadas con datos</strong>
             <div style={{ overflowX: "auto", marginTop: 6 }}><table style={tableStyle}>
-              <thead><tr><th style={cellStyle}>Pronóstico → real</th><th style={cellStyle}>Temporadas con N suficiente</th><th style={cellStyle}>Temporadas con error</th><th style={cellStyle}>Recurrencia</th></tr></thead>
+              <thead><tr><th style={cellStyle}>Pronóstico → real</th><th style={cellStyle}>Temporadas evaluables</th><th style={cellStyle}>Temporadas con error</th><th style={cellStyle}>Recurrencia</th><th style={cellStyle}>Errores / N agrupado</th><th style={cellStyle}>Tasa agrupada · IC 95%</th></tr></thead>
               <tbody>{(competition.patterns || []).map((pattern: any) => <tr key={pattern.predicted + "-" + pattern.actual}>
                 <td style={cellStyle}>{labels[pattern.predicted]} → {labels[pattern.actual]}</td>
                 <td style={cellStyle}>{pattern.evaluable_seasons}</td>
                 <td style={cellStyle}>{pattern.recurring_seasons}</td>
                 <td style={cellStyle}>{pattern.status === "COMPARABLE" ? percent(pattern.recurrence_rate) : "Menos de 2 temporadas evaluables"}</td>
+                <td style={cellStyle}>{pattern.status === "COMPARABLE" ? `${pattern.pooled_confusion_count} / ${pattern.pooled_sample_size}` : "—"}</td>
+                <td style={cellStyle}>{pattern.pooled_rate_ci_95 ? `${percent(pattern.pooled_rate)} · ${percent(pattern.pooled_rate_ci_95.lower)}–${percent(pattern.pooled_rate_ci_95.upper)}` : "—"}</td>
               </tr>)}</tbody>
             </table></div>
             {(competition.patterns || []).filter((pattern: any) => pattern.seasons?.length).map((pattern: any) => <details key={"detail-" + pattern.predicted + "-" + pattern.actual} style={{ marginTop: 5 }}>
