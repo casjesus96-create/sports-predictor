@@ -842,7 +842,7 @@ export default function MLBApp() {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell mlb-app">
 
       <header className="topbar">
 

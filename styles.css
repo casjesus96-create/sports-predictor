@@ -223,3 +223,197 @@ button:disabled{cursor:not-allowed;opacity:.55}
 
 /* Mantiene el indicador de confianza legible dentro de las fichas NBA. */
 .prediction-strip .prediction-confidence{grid-column:1/-1;min-width:0}
+
+/* MLB: acabado responsivo aislado del resto de deportes. */
+.mlb-app,
+.mlb-app .content-grid,
+.mlb-app .games-list,
+.mlb-app .side-column,
+.mlb-app .side-panel,
+.mlb-app .detail-panel,
+.mlb-app .game-card,
+.mlb-app .metric,
+.mlb-app .prob-card,
+.mlb-app .factor {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.mlb-app .metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr));
+}
+
+.mlb-app .content-grid {
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, .8fr);
+}
+
+.mlb-app .factor-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+}
+
+.mlb-app .prob-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr));
+}
+
+.mlb-app .prediction-strip {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 135px), 1fr));
+}
+
+.mlb-app .bar-label {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.mlb-app .bar-label > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mlb-app .bar-label b {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mlb-app .bar-track {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.mlb-app .bar-track i {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.mlb-app .score-box {
+  min-width: 0;
+  max-width: 100%;
+  padding: 12px;
+  border: 1px solid #29465f;
+  border-radius: 12px;
+  background: #0d2133;
+  overflow-wrap: anywhere;
+}
+
+.mlb-app .score-box span {
+  display: block;
+  margin-bottom: 6px;
+  color: #8ba2b7;
+  font-size: .72rem;
+}
+
+.mlb-app .score-box strong {
+  display: block;
+  font-size: clamp(.82rem, 3vw, 1rem);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.mlb-app .experimental-probability,
+.mlb-app .percentage-band-card {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.mlb-app [style*="overflowX: auto"] {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.mlb-app table {
+  max-width: 100%;
+}
+
+@media (max-width: 900px) {
+  .mlb-app .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .mlb-app {
+    width: 100%;
+    padding-left: 11px;
+    padding-right: 11px;
+  }
+
+  .mlb-app .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mlb-app .metric {
+    padding: 11px;
+    overflow: hidden;
+  }
+
+  .mlb-app .metric strong {
+    font-size: clamp(1.1rem, 6vw, 1.45rem);
+    overflow-wrap: anywhere;
+  }
+
+  .mlb-app .game-card {
+    overflow: hidden;
+  }
+
+  .mlb-app .matchup {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .mlb-app .matchup strong {
+    font-size: clamp(.78rem, 3.5vw, .96rem);
+    overflow-wrap: anywhere;
+  }
+
+  .mlb-app .prediction-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mlb-app .factor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mlb-app .prob-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mlb-app .card-actions {
+    flex-wrap: wrap;
+  }
+
+  .mlb-app .card-actions > button {
+    flex: 1 1 130px;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .mlb-app .metrics-grid,
+  .mlb-app .factor-grid,
+  .mlb-app .prediction-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mlb-app .matchup {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .mlb-app .home-team {
+    text-align: left;
+    align-items: flex-start;
+  }
+
+  .mlb-app .matchup .vs {
+    display: none;
+  }
+
+  .mlb-app .toolbar-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
