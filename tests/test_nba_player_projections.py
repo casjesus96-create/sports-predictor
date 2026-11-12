@@ -92,7 +92,7 @@ def test_project_players_fetches_up_to_fifteen_most_recent_pregame_games(monkeyp
         "1": [
             {
                 "game_id": f"g{index}",
-                "kickoff": f"2026-10-{15-index:02d}T00:00:00Z",
+                "kickoff": f"2026-10-{index:02d}T00:00:00Z",
                 "completed": True,
                 "home_team_id": "1",
                 "home": "Home",
@@ -126,7 +126,7 @@ def test_project_players_fetches_up_to_fifteen_most_recent_pregame_games(monkeyp
     )
 
     assert len(fetched) == 15
-    assert set(fetched) == {f"g{index}" for index in range(1, 16)}
+    assert set(fetched) == {f"g{index}" for index in range(2, 17)}
     player = result["teams"][0]["players"][0]
     assert player["recent_windows"]["points"]["5"]["games"] == 5
     assert player["recent_windows"]["points"]["10"]["games"] == 10
