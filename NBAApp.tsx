@@ -658,18 +658,21 @@ export default function NBAApp() {
                                         <div style={{ overflowX: "auto" }}>
                                           <table>
                                             <thead>
-                                              <tr><th>Jugador</th><th>Muestra</th><th>PTS</th><th>AST</th><th>REB</th><th>BLK</th><th>STL</th></tr>
+                                              <tr><th>Jugador</th><th>Muestra</th><th>PTS (5/10/15)</th><th>AST (5/10/15)</th><th>REB (5/10/15)</th><th>BLK (5/10/15)</th><th>STL (5/10/15)</th></tr>
                                             </thead>
                                             <tbody>
                                               {playerTeam.players.map((player: any) => (
                                                 <tr key={player.player_id || player.name}>
                                                   <td>{player.name}{player.position ? ` · ${player.position}` : ""}</td>
                                                   <td>{player.games_sampled} ({player.games_sampled_by_stat?.points ?? 0} PTS)</td>
-                                                  <td>{numberLabel(player.projected_points)}</td>
-                                                  <td>{numberLabel(player.projected_assists)}</td>
-                                                  <td>{numberLabel(player.projected_rebounds)}</td>
-                                                  <td>{numberLabel(player.projected_blocks)}</td>
-                                                  <td>{numberLabel(player.projected_steals)}</td>
+                                                  {["points", "assists", "rebounds", "blocks", "steals"].map((stat: string) => (
+                                                    <td key={stat}>
+                                                      {[5, 10, 15].map((windowSize) => {
+                                                        const sample = player.recent_windows?.[stat]?.[String(windowSize)];
+                                                        return <div key={windowSize}><small>{windowSize}: </small>{sample?.average == null ? "—" : numberLabel(sample.average)} <small>({sample?.games ?? 0})</small></div>;
+                                                      })}
+                                                    </td>
+                                                  ))}
                                                 </tr>
                                               ))}
                                             </tbody>
