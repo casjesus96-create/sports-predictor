@@ -83,3 +83,52 @@ def test_projection_coverage_excludes_opponents_from_historical_boxscores():
     assert home["statistical_coverage"]["points"] == 1
     assert home["players"][0]["projected_points"] == 20
 
+
+
+def test_project_players_fetches_up_to_fifteen_most_recent_pregame_games(monkeypatch):
+    import nba_player_projections as module
+
+    histories = {
+        "1": [
+            {
+                "game_id": f"g{index}",
+                "kickoff": f"2026-10-{15-index:02d}T00:00:00Z",
+                "completed": True,
+                "home_team_id": "1",
+                "home": "Home",
+            }
+            for index in range(1, 17)
+        ]
+    }
+    fetched = []
+
+    def fake_fetch(game_id):
+        fetched.append(game_id)
+        return {
+            "available": True,
+            "teams": [{
+                "team_id": "1",
+                "players": [{
+                    "player_id": "p1",
+                    "name": "Player One",
+                    "points": float(int(game_id[1:])),
+                    "assists": 2,
+                    "rebounds": 3,
+                    "blocks": 1,
+                    "steals": 0,
+                }],
+            }],
+        }
+
+    monkeypatch.setattr(module, "fetch_player_boxscore", fake_fetch)
+    result = module.project_players_from_recent_games(
+        histories, "2026-10-20T00:00:00Z"
+    )
+
+    assert len(fetched) == 15
+    assert set(fetched) == {f"g{index}" for index in range(1, 16)}
+    player = result["teams"][0]["players"][0]
+    assert player["recent_windows"]["points"]["5"]["games"] == 5
+    assert player["recent_windows"]["points"]["10"]["games"] == 10
+    assert player["recent_windows"]["points"]["15"]["games"] == 15
+    assert player["recent_windows"]["points"]["5"]["average"] != player["recent_windows"]["points"]["15"]["average"]
