@@ -211,12 +211,42 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
   const pushShare = push / values.length;
   const overProbability = decisive ? (1 - pushShare) * (over + 1) / (decisive + 2) : 0;
   const underProbability = decisive ? (1 - pushShare) * (under + 1) / (decisive + 2) : 0;
+  const originalSide = over > under ? "OVER" : under > over ? "UNDER" : "BALANCED";
+  const leaveOneOutRates = values.map((_, removedIndex) => {
+    const remaining = values.filter((__, index) => index !== removedIndex);
+    const remainingOver = remaining.filter((value) => value > line).length;
+    const remainingUnder = remaining.filter((value) => value < line).length;
+    const remainingDecisive = remainingOver + remainingUnder;
+    return {
+      side: remainingOver > remainingUnder ? "OVER" : remainingUnder > remainingOver ? "UNDER" : "BALANCED",
+      overRate: remainingDecisive ? remainingOver / remainingDecisive : null,
+    };
+  });
+  const sensitivityComparisons = leaveOneOutRates.length;
+  const sensitivityMatches = originalSide === "BALANCED"
+    ? 0
+    : leaveOneOutRates.filter((item) => item.side === originalSide).length;
+  const sensitivityRate = originalSide === "BALANCED" || !sensitivityComparisons
+    ? null
+    : sensitivityMatches / sensitivityComparisons;
+  const validLeaveOneOutRates = leaveOneOutRates
+    .map((item) => item.overRate)
+    .filter((value): value is number => value !== null);
+  const sensitivityStatus = originalSide === "BALANCED"
+    ? "BALANCED"
+    : sensitivityRate !== null && sensitivityRate >= 0.8 ? "ROBUST" : "SENSITIVE";
   return {
     sample: values.length, over, under, push, overProbability, underProbability, pushProbability: pushShare,
     windowAverages, average15, standardDeviation, lineDistance, lineIsDistant, usedGames,
     lineRelation: average15 == null || line === average15 ? "igual" : line < average15 ? "por debajo" : "por encima",
     overInterval: wilsonInterval(over, decisive, 1 - pushShare),
     underInterval: wilsonInterval(under, decisive, 1 - pushShare),
+    sensitivity: {
+      originalSide, status: sensitivityStatus, comparisons: sensitivityComparisons,
+      matchingComparisons: sensitivityMatches, consistencyRate: sensitivityRate,
+      minimumOverRate: validLeaveOneOutRates.length ? Math.min(...validLeaveOneOutRates) : null,
+      maximumOverRate: validLeaveOneOutRates.length ? Math.max(...validLeaveOneOutRates) : null,
+    },
   };
 }
 
@@ -853,6 +883,15 @@ export default function NBAApp() {
                                                             <small className="muted" style={{ display: "block" }}>IC95% U {(evaluation.underInterval[0] * 100).toFixed(1)}–{(evaluation.underInterval[1] * 100).toFixed(1)}%</small>
                                                             <small className="muted" style={{ display: "block", marginTop: 5 }}>Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}</small>
                                                             <small className="muted" style={{ display: "block" }}>Línea {evaluation.lineRelation} al promedio 15 ({numberLabel(evaluation.average15)}).</small>
+                                                            <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
+                                                              <b style={{ fontSize: 11 }}>Estabilidad al retirar un partido</b>
+                                                              <small className="muted" style={{ display: "block", marginTop: 3 }}>Se recalcula la ventaja histórica Over/Under retirando, uno por uno, cada juego de la muestra. No es una probabilidad futura.</small>
+                                                              <div className="score-row"><span>Lectura original</span><b>{evaluation.sensitivity.originalSide === "BALANCED" ? "Equilibrada" : evaluation.sensitivity.originalSide}</b></div>
+                                                              <div className="score-row"><span>Clasificación</span><b>{evaluation.sensitivity.status === "ROBUST" ? "Consistente" : evaluation.sensitivity.status === "SENSITIVE" ? "Sensible" : "Sin ventaja clara"}</b></div>
+                                                              {evaluation.sensitivity.consistencyRate !== null && <div className="score-row"><span>Mantiene la misma lectura</span><b>{(evaluation.sensitivity.consistencyRate * 100).toFixed(1)}% · {evaluation.sensitivity.matchingComparisons}/{evaluation.sensitivity.comparisons}</b></div>}
+                                                              <div className="score-row"><span>Rango Over tras retirar un juego</span><b>{evaluation.sensitivity.minimumOverRate === null || evaluation.sensitivity.maximumOverRate === null ? "—" : (evaluation.sensitivity.minimumOverRate * 100).toFixed(1) + "–" + (evaluation.sensitivity.maximumOverRate * 100).toFixed(1) + "%"}</b></div>
+                                                              <small className="muted">Consistente = conserva la misma ventaja en al menos 80% de las pruebas. Con muestra pequeña, interpretar con cautela.</small>
+                                                            </div>
                                                             {evaluation.lineIsDistant && <p className="tone-negative" style={{ margin: "6px 0" }}><b>Aviso: línea a más de 1.5 desviaciones estándar.</b></p>}
                                                           </div>
                                                         )}
