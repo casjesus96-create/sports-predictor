@@ -148,8 +148,9 @@ def test_evaluate_player_market_combines_pregame_filtering_and_probability():
     assert result["market"] == "PTS"
     assert result["history_sample_size"] == 5
     assert result["sample_size"] == 5
-    assert result["over"]["count"] == 4
+    assert result["over"]["count"] == 3
     assert result["under"]["count"] == 1
+    assert result["push"]["count"] == 1
     assert result["excluded"]["at_or_after_cutoff"] == 1
 
 
