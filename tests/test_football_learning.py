@@ -863,6 +863,39 @@ def test_match_learning_context_compares_recent_five_with_previous_five_read_onl
     assert report["provider_calls"] == 0
 
 
+
+def test_match_learning_context_reports_leave_one_out_trend_sensitivity_read_only():
+    rows = []
+    for index in range(10):
+        home_score, away_score = (3, 0) if index >= 5 else (1, 2)
+        row = snapshot(0.60, 0.25, 0.15, home_score, away_score, 18000 + index)
+        row["home_team"], row["away_team"] = "Manchester City", "Chelsea"
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    report = build_match_learning_context(
+        rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z"
+    )
+    trend = report["home_team"]["recent_trend"]
+    attack = trend["sensitivity"]["goals_for_per_match"]
+    defense = trend["sensitivity"]["goals_against_per_match"]
+    results = trend["sensitivity"]["points_per_match"]
+
+    assert attack["comparisons"] == 25
+    assert attack["matching_comparisons"] == 25
+    assert attack["consistency_rate"] == 1.0
+    assert attack["status"] == "ROBUST"
+    assert attack["minimum_delta"] > 0
+    assert defense["status"] == "ROBUST"
+    assert defense["maximum_delta"] < 0
+    assert results["status"] == "ROBUST"
+    assert results["consistency_rate"] == 1.0
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
 def test_match_learning_context_reports_goal_scoring_and_conceding_volatility_read_only():
     rows = []
     previous_scores = [(1, 0), (1, 1), (1, 2), (1, 3), (1, 4)]
