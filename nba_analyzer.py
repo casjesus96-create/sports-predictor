@@ -187,7 +187,7 @@ def analyze_nba_game(game_id):
     generated_at = now.isoformat()
     projections = _build_projections(game, home_history, away_history)
     # Player projections use only completed boxscores before this game's kickoff.
-    projections["player_projections"] = project_players_from_recent_games(histories, cutoff, max_games=5)
+    projections["player_projections"] = project_players_from_recent_games(histories, cutoff, max_games=15)
     # Shadow evaluation only: this signal must not modify NBA-1.1.0 probabilities.
     projections["player_impact_evaluation"] = evaluate_player_impact(
         projections["player_projections"], home_id, away_id
