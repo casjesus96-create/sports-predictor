@@ -1526,6 +1526,7 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
   const home = match.homeTeam?.name || "";
   const away = match.awayTeam?.name || "";
   const kickoff = match.utcDate || "";
@@ -1550,7 +1551,7 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
     }
     load();
     return () => { active = false; };
-  }, [competition, home, away, kickoff, status]);
+  }, [competition, home, away, kickoff, status, retryCount]);
 
   if (["FINISHED", "AWARDED", "CANCELLED", "CANCELED"].includes(status)) return null;
   const panel: React.CSSProperties = { padding: 9, borderRadius: 8, background: "#111827", minWidth: 0 };
@@ -1636,7 +1637,7 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
     <strong style={{ color: "#67e8f9" }}>🧠 Lecciones del modelo</strong>
     <p style={{ color: "#94a3b8", fontSize: 11, margin: "4px 0 8px" }}>Ventana móvil de 90 días antes del kickoff. Patrones descriptivos; no cambian las probabilidades oficiales.</p>
     {loading && !data && <p style={{ color: "#cbd5e1", fontSize: 12 }}>Consultando histórico anterior al encuentro…</p>}
-    {error && <p role="alert" style={{ color: "#fecaca", fontSize: 11 }}>{error}</p>}
+    {error && <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}><p role="alert" style={{ color: "#fecaca", fontSize: 11, margin: 0 }}>{error}</p><button type="button" onClick={() => setRetryCount(value => value + 1)} disabled={loading} style={{ ...buttonStyle, minHeight: 32, padding: "5px 10px", background: "#334155", fontSize: 11 }}>{loading ? "Reintentando…" : "Reintentar consulta"}</button></div>}
     {data && <>
       <div style={{ ...panel, marginBottom: 8 }}>
         <strong style={{ fontSize: 12 }}>Contexto de {competition}</strong>
