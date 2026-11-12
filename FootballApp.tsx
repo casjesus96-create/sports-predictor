@@ -1553,39 +1553,67 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
   }, [competition, home, away, kickoff, status]);
 
   if (["FINISHED", "AWARDED", "CANCELLED", "CANCELED"].includes(status)) return null;
-  const renderTeam = (team: any) => <div style={{ padding: 9, borderRadius: 8, background: "#0b1220" }}>
+  const panel = { padding: 9, borderRadius: 8, background: "#111827", minWidth: 0 };
+  const metricGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,115px),1fr))", gap: 6, marginTop: 7 };
+  const metric = (label: string, value: string | number) => <div style={{ ...panel, background: "#0b1220" }}><div style={{ color: "#94a3b8", fontSize: 10 }}>{label}</div><strong style={{ display: "block", marginTop: 3, fontSize: 14, overflowWrap: "anywhere" }}>{value}</strong></div>;
+  const renderTeam = (team: any) => <div style={{ ...panel, border: "1px solid #334155" }}>
     <strong>{team.team}</strong>
-    <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 3 }}>{team.sample_size} partidos previos · mínimo descriptivo: {team.minimum_sample} {team.eligible ? "· muestra disponible" : "· muestra insuficiente"}</div>
+    <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 3 }}>{team.sample_size} partidos previos · mínimo descriptivo: {team.minimum_sample} · {team.eligible ? "muestra disponible" : "muestra insuficiente"}</div>
     {team.eligible ? <>
-      <div style={{ fontSize: 12, marginTop: 6 }}>Probabilidad media asignada al equipo en esos partidos: <strong>{percent(team.mean_win_probability)}</strong></div>
-      <div style={{ fontSize: 12 }}>Victorias realmente obtenidas: <strong>{percent(team.observed_win_rate)}</strong></div>
+      <div style={metricGrid}>
+        {metric("Victorias · Empates · Derrotas", `${team.results.wins} · ${team.results.draws} · ${team.results.losses}`)}
+        {metric("Puntos por partido", team.results.points_per_match.toFixed(2))}
+        {metric("Goles a favor / contra", `${team.goals.for} / ${team.goals.against}`)}
+        {metric("Promedio GF / GC", `${team.goals.average_for.toFixed(2)} / ${team.goals.average_against.toFixed(2)}`)}
+        {metric("BTTS", `${percent(team.goals.btts_rate)} · ${team.goals.btts_count}/${team.sample_size}`)}
+        {metric("Más de 2.5 goles", `${percent(team.goals.over_2_5_rate)} · ${team.goals.over_2_5_count}/${team.sample_size}`)}
+        {metric("Portería a cero", team.goals.clean_sheets)}
+        {metric("No marcó", team.goals.failed_to_score)}
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, color: "#cbd5e1" }}>Forma observada: {percent(team.results.win_rate)} victorias · {percent(team.results.draw_rate)} empates · {percent(team.results.loss_rate)} derrotas · {team.results.points} puntos acumulados.</div>
+      <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700 }}>Desglose por sede</div>
+      <div style={metricGrid}>
+        {team.venue_split?.home && metric(`Como local · ${team.venue_split.home.sample_size}`, `${team.venue_split.home.wins}V-${team.venue_split.home.draws}E-${team.venue_split.home.losses}D · ${team.venue_split.home.points} pts · GF/GC ${team.venue_split.home.average_goals_for}/${team.venue_split.home.average_goals_against}`)}
+        {team.venue_split?.away && metric(`Como visitante · ${team.venue_split.away.sample_size}`, `${team.venue_split.away.wins}V-${team.venue_split.away.draws}E-${team.venue_split.away.losses}D · ${team.venue_split.away.points} pts · GF/GC ${team.venue_split.away.average_goals_for}/${team.venue_split.away.average_goals_against}`)}
+      </div>
+      <div style={{ fontSize: 11, marginTop: 7 }}>Probabilidad media que el modelo asignó al equipo en esos partidos: <strong>{percent(team.mean_win_probability)}</strong> · victorias observadas: <strong>{percent(team.observed_win_rate)}</strong></div>
       <CalibrationDiagnostic diagnostic={team.win_rate_diagnostic} />
-      {typeof team.goals_for_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Goles a favor frente a lo esperado: {team.goals_for_bias > 0 ? "+" : ""}{team.goals_for_bias.toFixed(2)}</div>}
-      {typeof team.goals_against_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Goles recibidos frente a lo esperado: {team.goals_against_bias > 0 ? "+" : ""}{team.goals_against_bias.toFixed(2)}</div>}
-    </> : <p style={{ color: "#94a3b8", fontSize: 11, marginBottom: 0 }}>Todavía no hay suficientes predicciones oficiales liquidadas de este equipo para extraer una señal fiable.</p>}
+      {typeof team.goals_for_bias === "number" && <div style={{ color: "#cbd5e1", fontSize: 10 }}>Diferencia de goles a favor (real − esperado): {team.goals_for_bias > 0 ? "+" : ""}{team.goals_for_bias.toFixed(2)}</div>}
+      {typeof team.goals_against_bias === "number" && <div style={{ color: "#cbd5e1", fontSize: 10 }}>Diferencia de goles recibidos (real − esperado): {team.goals_against_bias > 0 ? "+" : ""}{team.goals_against_bias.toFixed(2)}</div>}
+    </> : <p style={{ color: "#94a3b8", fontSize: 11, marginBottom: 0 }}>Todavía no hay suficientes predicciones oficiales liquidadas de este equipo para extraer patrones fiables. Se necesitan {team.minimum_sample} encuentros.</p>}
   </div>;
 
-  return <section style={{ margin: "10px 0", padding: 11, borderRadius: 9, border: "1px solid #0e7490", background: "#0c1b2a" }}>
+  return <section style={{ margin: "10px 0", padding: 11, borderRadius: 9, border: "1px solid #0e7490", background: "#0c1b2a", minWidth: 0, overflow: "hidden" }}>
     <strong style={{ color: "#67e8f9" }}>🧠 Lecciones del modelo</strong>
     <p style={{ color: "#94a3b8", fontSize: 11, margin: "4px 0 8px" }}>Ventana móvil de 90 días antes del kickoff. Patrones descriptivos; no cambian las probabilidades oficiales.</p>
     {loading && !data && <p style={{ color: "#cbd5e1", fontSize: 12 }}>Consultando histórico anterior al encuentro…</p>}
     {error && <p role="alert" style={{ color: "#fecaca", fontSize: 11 }}>{error}</p>}
     {data && <>
-      <div style={{ padding: 9, background: "#111827", borderRadius: 8, marginBottom: 8 }}>
+      <div style={{ ...panel, marginBottom: 8 }}>
         <strong style={{ fontSize: 12 }}>Contexto de {competition}</strong>
         <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{data.competition_context.sample_size} partidos liquidados anteriores a este encuentro · {data.competition_context.favorite_sample} con favorito de al menos 50%.</div>
         <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Periodo consultado: {data.window_start ? new Date(data.window_start).toLocaleDateString() : "—"} hasta antes del kickoff · ventana de {data.window_days || 90} días · registros recibidos: {data.records_returned ?? data.competition_context.sample_size}.</div>
         {data.competition_context.eligible ? <>
-          <div style={{ fontSize: 12, marginTop: 5 }}>Confianza media asignada al favorito: <strong>{percent(data.competition_context.mean_favorite_confidence)}</strong> · Acierto observado: <strong>{percent(data.competition_context.favorite_accuracy)}</strong></div>
+          <div style={metricGrid}>
+            {metric("Victorias locales", `${data.competition_context.outcomes.home_wins} · ${percent(data.competition_context.outcomes.home_win_rate)}`)}
+            {metric("Empates", `${data.competition_context.outcomes.draws} · ${percent(data.competition_context.outcomes.draw_rate)}`)}
+            {metric("Victorias visitantes", `${data.competition_context.outcomes.away_wins} · ${percent(data.competition_context.outcomes.away_win_rate)}`)}
+            {metric("Goles medios local", data.competition_context.goal_patterns.average_home_goals.toFixed(2))}
+            {metric("Goles medios visitante", data.competition_context.goal_patterns.average_away_goals.toFixed(2))}
+            {metric("Goles totales medios", data.competition_context.goal_patterns.average_total_goals.toFixed(2))}
+            {metric("BTTS", `${percent(data.competition_context.goal_patterns.btts_rate)} · ${data.competition_context.goal_patterns.btts_count}/${data.competition_context.sample_size}`)}
+            {metric("Más de 2.5 goles", `${percent(data.competition_context.goal_patterns.over_2_5_rate)} · ${data.competition_context.goal_patterns.over_2_5_count}/${data.competition_context.sample_size}`)}
+          </div>
+          <div style={{ fontSize: 11, marginTop: 8 }}>Confianza media asignada al favorito: <strong>{percent(data.competition_context.mean_favorite_confidence)}</strong> · acierto observado: <strong>{percent(data.competition_context.favorite_accuracy)}</strong></div>
           <CalibrationDiagnostic diagnostic={data.competition_context.favorite_calibration} />
           {typeof data.competition_context.expected_total_goals_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Sesgo de goles totales (real − esperado): {data.competition_context.expected_total_goals_bias > 0 ? "+" : ""}{data.competition_context.expected_total_goals_bias.toFixed(2)}</div>}
-        </> : <p style={{ color: "#fbbf24", fontSize: 11, marginBottom: 0 }}>Muestra insuficiente: se requieren al menos {data.competition_context.minimum_sample} partidos para mostrar señales de competición.</p>}
+        </> : <p style={{ color: "#fbbf24", fontSize: 11, marginBottom: 0 }}>Muestra insuficiente: se requieren al menos {data.competition_context.minimum_sample} partidos para mostrar patrones de competición.</p>}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,190px),1fr))", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,220px),1fr))", gap: 8, minWidth: 0 }}>
         {renderTeam(data.home_team)}
         {renderTeam(data.away_team)}
       </div>
-      <p style={{ color: "#94a3b8", fontSize: 10, margin: "7px 0 0" }}>Lectura correcta: la probabilidad media refleja lo que el modelo asignó a cada equipo en sus partidos anteriores, tanto de local como de visitante; el porcentaje de victorias es el resultado observado. No representa una predicción directa del partido actual.</p>
+      <p style={{ color: "#94a3b8", fontSize: 10, margin: "7px 0 0" }}>Lectura correcta: los patrones reflejan resultados reales de partidos anteriores; la probabilidad media es la que el modelo asignó entonces. No representan una predicción directa del encuentro actual.</p>
       <p style={{ color: "#64748b", fontSize: 10, marginBottom: 0 }}>Solo snapshots oficiales liquidados anteriores al kickoff · sin proveedores externos · solo lectura.</p>
     </>}
   </section>;
