@@ -1576,6 +1576,20 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
         {team.venue_split?.home && metric(`Como local · ${team.venue_split.home.sample_size}`, `${team.venue_split.home.wins}V-${team.venue_split.home.draws}E-${team.venue_split.home.losses}D · ${team.venue_split.home.points} pts · GF/GC ${team.venue_split.home.average_goals_for}/${team.venue_split.home.average_goals_against}`)}
         {team.venue_split?.away && metric(`Como visitante · ${team.venue_split.away.sample_size}`, `${team.venue_split.away.wins}V-${team.venue_split.away.draws}E-${team.venue_split.away.losses}D · ${team.venue_split.away.points} pts · GF/GC ${team.venue_split.away.average_goals_for}/${team.venue_split.away.average_goals_against}`)}
       </div>
+      <div style={{ marginTop: 9, fontSize: 11, fontWeight: 700 }}>Últimos cinco encuentros del histórico oficial</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,165px),1fr))", gap: 6, marginTop: 6 }}>
+        {team.recent_matches.map((game: any, index: number) => <div key={`${game.kickoff_at}-${index}`} style={{ ...panel, background: "#0b1220", border: "1px solid #334155" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 5, alignItems: "center" }}>
+            <strong style={{ fontSize: 12 }}>{game.result === "W" ? "Victoria" : game.result === "D" ? "Empate" : "Derrota"}</strong>
+            <span style={{ fontSize: 10, color: game.result === "W" ? "#86efac" : game.result === "D" ? "#fcd34d" : "#fca5a5" }}>{game.venue === "HOME" ? "Local" : "Visitante"}</span>
+          </div>
+          <div style={{ fontSize: 11, marginTop: 4, overflowWrap: "anywhere" }}>vs. {game.opponent || "Rival no disponible"}</div>
+          <strong style={{ display: "block", fontSize: 16, marginTop: 3 }}>{game.goals_for}–{game.goals_against}</strong>
+          <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 3 }}>{game.kickoff_at ? new Date(game.kickoff_at).toLocaleDateString() : "Fecha no disponible"}</div>
+          <div style={{ color: "#cbd5e1", fontSize: 10, marginTop: 3 }}>Prob. victoria asignada: {percent(game.team_win_probability)}</div>
+          <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 2 }}>El modelo {game.model_predicted_team_win ? "sí" : "no"} lo señaló como ganador más probable</div>
+        </div>)}
+      </div>
       <div style={{ fontSize: 11, marginTop: 7 }}>Probabilidad media que el modelo asignó al equipo en esos partidos: <strong>{percent(team.mean_win_probability)}</strong> · victorias observadas: <strong>{percent(team.observed_win_rate)}</strong></div>
       <CalibrationDiagnostic diagnostic={team.win_rate_diagnostic} />
       {typeof team.goals_for_bias === "number" && <div style={{ color: "#cbd5e1", fontSize: 10 }}>Diferencia de goles a favor (real − esperado): {team.goals_for_bias > 0 ? "+" : ""}{team.goals_for_bias.toFixed(2)}</div>}
