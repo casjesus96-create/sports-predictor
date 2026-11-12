@@ -677,6 +677,11 @@ def test_recurring_confusion_patterns_compare_directional_errors_across_local_se
     assert home_to_draw["evaluable_seasons"] == 2
     assert home_to_draw["recurring_seasons"] == 2
     assert home_to_draw["recurrence_rate"] == 1.0
+    assert home_to_draw["pooled_sample_size"] == 60
+    assert home_to_draw["pooled_confusion_count"] == 36
+    assert home_to_draw["pooled_rate"] == 0.6
+    assert home_to_draw["pooled_rate_ci_95"] is not None
+    assert home_to_draw["pooled_rate_ci_95"]["lower"] < 0.6 < home_to_draw["pooled_rate_ci_95"]["upper"]
     assert [season["confusion_count"] for season in home_to_draw["seasons"]] == [30, 6]
     assert all(season["rate_ci_95"] is not None for season in home_to_draw["seasons"])
     assert diagnostic["read_only"] is True
@@ -697,6 +702,10 @@ def test_recurring_confusion_patterns_require_two_evaluable_seasons_and_stable_e
     assert pattern["status"] == "INSUFFICIENT_SEASONS"
     assert pattern["evaluable_seasons"] == 0
     assert pattern["recurrence_rate"] is None
+    assert pattern["pooled_sample_size"] == 0
+    assert pattern["pooled_confusion_count"] == 0
+    assert pattern["pooled_rate"] is None
+    assert pattern["pooled_rate_ci_95"] is None
     empty = build_postmatch_learning_report([], "PL")["recurring_confusion_patterns"]
     assert empty["by_competition"] == []
     assert empty["read_only"] is True
