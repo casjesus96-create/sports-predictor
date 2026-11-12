@@ -1567,6 +1567,10 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
     const delta = value - (leagueGoalsPerTeam as number);
     return `${value.toFixed(2)} · ${delta > 0 ? "+" : ""}${delta.toFixed(2)} vs media`;
   };
+  const compareWithVenueBaseline = (value: number, baseline: number) => {
+    const delta = value - baseline;
+    return `${value.toFixed(2)} (${delta > 0 ? "+" : ""}${delta.toFixed(2)} vs media)`;
+  };
   const renderSampleProgress = (label: string, sampleValue: unknown, minimumValue: unknown) => {
     const sample = Number.isFinite(Number(sampleValue)) ? Math.max(0, Math.floor(Number(sampleValue))) : 0;
     const minimum = Number.isFinite(Number(minimumValue)) ? Math.max(1, Math.floor(Number(minimumValue))) : 1;
@@ -1622,6 +1626,16 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
               <div style={{ color: "#86efac", fontSize: 10, marginTop: 5 }}>Muestra descriptiva mínima alcanzada; interpretar con cautela.</div>
               <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 6 }}>{venue.wins}V · {venue.draws}E · {venue.losses}D · {venue.points} puntos</div>
               <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 3 }}>Promedio GF/GC: {venue.average_goals_for.toFixed(2)} / {venue.average_goals_against.toFixed(2)}</div>
+              {data?.competition_context?.eligible &&
+                typeof competitionGoals?.average_home_goals === "number" &&
+                typeof competitionGoals?.average_away_goals === "number" && <>
+                <div style={{ color: "#7dd3fc", fontSize: 10, marginTop: 5 }}>Comparación con la media de la liga para esta sede</div>
+                <div style={{ color: "#cbd5e1", fontSize: 10, marginTop: 3 }}>
+                  GF: {compareWithVenueBaseline(venue.average_goals_for, venueKey === "home" ? competitionGoals.average_home_goals : competitionGoals.average_away_goals)}
+                  {" · "}
+                  GC: {compareWithVenueBaseline(venue.average_goals_against, venueKey === "home" ? competitionGoals.average_away_goals : competitionGoals.average_home_goals)}
+                </div>
+              </>}
             </> : <>
               <div style={{ color: "#fcd34d", fontSize: 10, marginTop: 5 }}>Muestra exploratoria: todavía no se presenta como patrón.</div>
               <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 6 }}>Registro bruto: {venue.wins}V · {venue.draws}E · {venue.losses}D · {venue.points} puntos</div>
