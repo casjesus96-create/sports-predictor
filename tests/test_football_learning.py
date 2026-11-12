@@ -751,6 +751,13 @@ def test_match_learning_context_exposes_team_form_and_home_away_split():
     assert team["goals"]["btts_count"] == 4
     assert team["venue_split"]["home"]["sample_size"] == 3
     assert team["venue_split"]["away"]["sample_size"] == 3
+    for venue in ("home", "away"):
+        comparison = team["venue_split"][venue]["comparison_to_overall"]
+        assert comparison["eligible"] is True
+        assert comparison["overall_sample_size"] == 6
+        assert isinstance(comparison["points_per_match_delta"], float)
+        assert isinstance(comparison["goals_for_per_match_delta"], float)
+        assert isinstance(comparison["goals_against_per_match_delta"], float)
     assert report["model_changed"] is False
 
 
