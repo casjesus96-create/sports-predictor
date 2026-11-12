@@ -1644,6 +1644,19 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
               <div style={{ color: "#86efac", fontSize: 10, marginTop: 5 }}>Muestra descriptiva mínima alcanzada; interpretar con cautela.</div>
               <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 6 }}>{venue.wins}V · {venue.draws}E · {venue.losses}D · {venue.points} puntos</div>
               <div style={{ color: "#cbd5e1", fontSize: 11, marginTop: 3 }}>Promedio GF/GC: {venue.average_goals_for.toFixed(2)} / {venue.average_goals_against.toFixed(2)}</div>
+              {venue.recent_trend?.eligible && <div style={{ marginTop: 7, padding: 7, borderRadius: 6, background: "#111827" }}>
+                <div style={{ color: "#a5b4fc", fontSize: 10, fontWeight: 700 }}>Evolución reciente en esta sede · últimos 3 vs 3 anteriores</div>
+                <div style={{ color: "#cbd5e1", fontSize: 10, marginTop: 4 }}>
+                  Puntos/partido: {venue.recent_trend.recent.points_per_match.toFixed(2)} vs {venue.recent_trend.previous.points_per_match.toFixed(2)} ·
+                  GF: {venue.recent_trend.recent.average_goals_for.toFixed(2)} vs {venue.recent_trend.previous.average_goals_for.toFixed(2)} ·
+                  GC: {venue.recent_trend.recent.average_goals_against.toFixed(2)} vs {venue.recent_trend.previous.average_goals_against.toFixed(2)}
+                </div>
+                <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 3 }}>
+                  BTTS: {(venue.recent_trend.recent.btts_rate * 100).toFixed(0)}% vs {(venue.recent_trend.previous.btts_rate * 100).toFixed(0)}% ·
+                  Over 2.5: {(venue.recent_trend.recent.over_2_5_rate * 100).toFixed(0)}% vs {(venue.recent_trend.previous.over_2_5_rate * 100).toFixed(0)}%
+                </div>
+              </div>}
+              {venue.recent_trend && !venue.recent_trend.eligible && <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 5 }}>Tendencia por sede no disponible: se requieren 6 partidos (3 recientes y 3 anteriores).</div>}
               {venue.comparison_to_overall?.eligible && <div style={{ marginTop: 7, padding: 7, borderRadius: 6, background: "#111827" }}>
                 <div style={{ color: "#7dd3fc", fontSize: 10, fontWeight: 700 }}>Diferencia frente al rendimiento global del equipo</div>
                 <div style={{ color: "#cbd5e1", fontSize: 10, marginTop: 4 }}>

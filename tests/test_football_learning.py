@@ -761,6 +761,33 @@ def test_match_learning_context_exposes_team_form_and_home_away_split():
     assert report["model_changed"] is False
 
 
+def test_match_learning_context_compares_recent_form_with_previous_matches_by_venue():
+    rows = []
+    scores = [(2, 0), (0, 1), (1, 1), (3, 0), (1, 2), (2, 1),
+              (0, 0), (1, 0), (0, 2), (2, 0), (1, 1), (0, 1)]
+    for index, (home_score, away_score) in enumerate(scores):
+        row = snapshot(0.60, 0.25, 0.15, home_score, away_score, 4000 + index)
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        if index % 2:
+            row["home_team"], row["away_team"] = "Chelsea", "Manchester City"
+        rows.append(row)
+    report = build_match_learning_context(rows, "PL", "Manchester City", "Chelsea", "2026-11-20T12:00:00Z")
+    for venue in ("home", "away"):
+        trend = report["home_team"]["venue_split"][venue]["recent_trend"]
+        assert trend["eligible"] is True
+        assert trend["minimum_sample"] == 6
+        assert trend["window_size"] == 3
+        assert trend["recent"]["matches"] == 3
+        assert trend["previous"]["matches"] == 3
+        assert set(trend["deltas"]) == {
+            "points_per_match", "average_goals_for", "average_goals_against", "btts_rate", "over_2_5_rate"
+        }
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
 def test_match_learning_context_keeps_competition_patterns_hidden_below_minimum():
     rows = []
     for index in range(9):
