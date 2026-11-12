@@ -5,10 +5,123 @@ frequencies only; it does not create picks, consume odds, or modify official pre
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import math
 from typing import Iterable
 
 MIN_SAMPLE_DEFAULT = 5
+
+MARKET_COMPONENTS = {
+    "PTS": ("points",),
+    "REB": ("rebounds",),
+    "AST": ("assists",),
+    "PRA": ("points", "rebounds", "assists"),
+    "PR": ("points", "rebounds"),
+    "PA": ("points", "assists"),
+    "RA": ("rebounds", "assists"),
+    "BLK": ("blocks",),
+    "STL": ("steals",),
+}
+
+
+def _parse_datetime(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _finite_stat(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def extract_pregame_market_observations(
+    game_records: Iterable[dict],
+    market: str,
+    cutoff: object,
+) -> dict:
+    """Build a market series using completed games strictly before the target kickoff.
+
+    Each record must contain game_id, kickoff, completed=True, and the required
+    raw player stat fields. Missing components are excluded rather than treated
+    as zero. Duplicate game IDs are counted once.
+    """
+    market_key = str(market or "").strip().upper()
+    components = MARKET_COMPONENTS.get(market_key)
+    if not components:
+        return {"available": False, "reason": "UNSUPPORTED_MARKET", "market": market_key}
+
+    cutoff_dt = _parse_datetime(cutoff)
+    if cutoff_dt is None:
+        return {"available": False, "reason": "INVALID_CUTOFF", "market": market_key}
+
+    observations = []
+    seen_game_ids = set()
+    excluded = {
+        "missing_game_id": 0,
+        "duplicate_game": 0,
+        "not_completed": 0,
+        "missing_or_invalid_kickoff": 0,
+        "at_or_after_cutoff": 0,
+        "missing_or_invalid_stats": 0,
+    }
+
+    for record in game_records or []:
+        if not isinstance(record, dict):
+            excluded["missing_game_id"] += 1
+            continue
+        game_id = str(record.get("game_id") or "").strip()
+        if not game_id:
+            excluded["missing_game_id"] += 1
+            continue
+        if game_id in seen_game_ids:
+            excluded["duplicate_game"] += 1
+            continue
+        seen_game_ids.add(game_id)
+
+        if record.get("completed") is not True:
+            excluded["not_completed"] += 1
+            continue
+        kickoff = _parse_datetime(record.get("kickoff"))
+        if kickoff is None:
+            excluded["missing_or_invalid_kickoff"] += 1
+            continue
+        if kickoff >= cutoff_dt:
+            excluded["at_or_after_cutoff"] += 1
+            continue
+
+        values = [_finite_stat(record.get(component)) for component in components]
+        if any(value is None for value in values):
+            excluded["missing_or_invalid_stats"] += 1
+            continue
+
+        observations.append({
+            "game_id": game_id,
+            "kickoff": kickoff.isoformat(),
+            "value": round(sum(values), 4),
+        })
+
+    observations.sort(key=lambda item: item["kickoff"], reverse=True)
+    return {
+        "available": bool(observations),
+        "market": market_key,
+        "components": list(components),
+        "observations": observations,
+        "sample_size": len(observations),
+        "excluded": excluded,
+        "cutoff": cutoff_dt.isoformat(),
+    }
 
 
 def _wilson_interval(successes: int, total: int, z: float = 1.959963984540054):
@@ -97,3 +210,36 @@ def evaluate_over_under(
             "El intervalo Wilson refleja incertidumbre de la tasa observada, no garantiza rendimiento futuro.",
         ],
     }
+
+
+def evaluate_player_market(
+    game_records: Iterable[dict],
+    market: str,
+    line: object,
+    cutoff: object,
+    *,
+    min_sample: int = MIN_SAMPLE_DEFAULT,
+) -> dict:
+    """Evaluate a real supplied line against strictly pregame player game history."""
+    history = extract_pregame_market_observations(game_records, market, cutoff)
+    if not history.get("available"):
+        return {
+            "available": False,
+            "reason": history.get("reason", "NO_VALID_HISTORICAL_OBSERVATIONS"),
+            "market": history.get("market"),
+            "sample_size": history.get("sample_size", 0),
+            "excluded": history.get("excluded", {}),
+        }
+
+    result = evaluate_over_under(
+        [item["value"] for item in history["observations"]],
+        line,
+        min_sample=min_sample,
+    )
+    result["market"] = history["market"]
+    result["history_sample_size"] = history["sample_size"]
+    result["excluded"] = history["excluded"]
+    result["cutoff"] = history["cutoff"]
+    if not result.get("available"):
+        result["reason"] = result.get("reason", "INSUFFICIENT_SAMPLE")
+    return result
