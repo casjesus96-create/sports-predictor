@@ -819,6 +819,10 @@ def test_match_learning_context_compares_recent_five_with_previous_five_read_onl
     assert trend["attack"] == "IMPROVING"
     assert trend["defense"] == "IMPROVING"
     assert trend["results"] == "IMPROVING"
+    assert trend["deltas"]["btts_rate"] == -1.0
+    assert trend["btts"] == "DECLINING"
+    assert trend["deltas"]["over_2_5_rate"] == 0.0
+    assert trend["over_2_5"] == "STABLE"
     assert report["read_only"] is True
     assert report["model_changed"] is False
     assert report["snapshots_written"] == 0
