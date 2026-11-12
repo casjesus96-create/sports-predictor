@@ -417,3 +417,263 @@ button:disabled{cursor:not-allowed;opacity:.55}
   }
 }
 
+/* NFL: acabado responsivo aislado del módulo de fútbol americano. */
+.nfl-app,
+.nfl-app .content-grid,
+.nfl-app .games-list,
+.nfl-app .side-column,
+.nfl-app .detail-panel,
+.nfl-app .game-card,
+.nfl-app .metric,
+.nfl-app .prob-card,
+.nfl-app .factor,
+.nfl-app .percentage-band-card,
+.nfl-app .percentage-signal {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.nfl-app .content-grid {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, .8fr);
+}
+
+.nfl-app .metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr));
+}
+
+.nfl-app .factor-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+}
+
+.nfl-app .prob-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+.nfl-app .prediction-strip {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 125px), 1fr));
+}
+
+.nfl-app .game-head,
+.nfl-app .section-heading,
+.nfl-app .percentage-band-heading,
+.nfl-app .percentage-band-footer,
+.nfl-app .quality {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nfl-app .game-head > *,
+.nfl-app .section-heading > *,
+.nfl-app .game-meta > *,
+.nfl-app .score-row > *,
+.nfl-app .percentage-band-heading > *,
+.nfl-app .percentage-band-footer > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nfl-app .matchup {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 9px;
+}
+
+.nfl-app .matchup strong {
+  overflow-wrap: anywhere;
+}
+
+.nfl-app .prediction-strip > *,
+.nfl-app .factor > *,
+.nfl-app .prob-card > * {
+  min-width: 0;
+}
+
+.nfl-app .prediction-strip b,
+.nfl-app .factor b,
+.nfl-app .prob-card strong,
+.nfl-app .percentage-signal-top strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.nfl-app .bar-label {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.nfl-app .bar-label > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nfl-app .bar-label b {
+  white-space: nowrap;
+}
+
+.nfl-app .bar-track,
+.nfl-app .percentage-signal-track {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.nfl-app .bar-track i,
+.nfl-app .percentage-signal-track span {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.nfl-app .percentage-signal-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+.nfl-app .percentage-band-signals {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.nfl-app .percentage-signal-top {
+  min-width: 0;
+  gap: 6px;
+}
+
+.nfl-app .percentage-signal-top strong {
+  white-space: nowrap;
+}
+
+.nfl-app .winner-box,
+.nfl-app .model-note,
+.nfl-app .message {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.nfl-app .model-note {
+  flex-wrap: wrap;
+}
+
+.nfl-app .model-note span {
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.nfl-app [style*="overflowX: auto"] {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.nfl-app table {
+  max-width: 100%;
+}
+
+@media (max-width: 900px) {
+  .nfl-app .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nfl-app .side-column {
+    order: initial;
+  }
+}
+
+@media (max-width: 600px) {
+  .nfl-app {
+    width: 100%;
+    padding-left: 11px;
+    padding-right: 11px;
+  }
+
+  .nfl-app .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nfl-app .metric {
+    padding: 11px;
+    overflow: hidden;
+  }
+
+  .nfl-app .metric strong {
+    font-size: clamp(1.1rem, 6vw, 1.45rem);
+    overflow-wrap: anywhere;
+  }
+
+  .nfl-app .game-card {
+    padding: 12px;
+    overflow: hidden;
+  }
+
+  .nfl-app .game-head {
+    align-items: flex-start;
+  }
+
+  .nfl-app .matchup {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .nfl-app .matchup strong {
+    font-size: clamp(.78rem, 3.5vw, .96rem);
+  }
+
+  .nfl-app .prediction-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nfl-app .result {
+    justify-self: start;
+  }
+
+  .nfl-app .factor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nfl-app .prob-grid,
+  .nfl-app .percentage-signal-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nfl-app .percentage-band-signals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nfl-app .card-actions {
+    flex-wrap: wrap;
+  }
+
+  .nfl-app .card-actions > button {
+    flex: 1 1 130px;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 400px) {
+  .nfl-app .metrics-grid,
+  .nfl-app .factor-grid,
+  .nfl-app .prediction-strip,
+  .nfl-app .percentage-band-signals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nfl-app .matchup {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .nfl-app .home-team {
+    text-align: left;
+    align-items: flex-start;
+  }
+
+  .nfl-app .vs {
+    display: none;
+  }
+
+  .nfl-app .toolbar-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+

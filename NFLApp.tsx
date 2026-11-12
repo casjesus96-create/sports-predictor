@@ -597,7 +597,7 @@ export default function NFLApp() {
   const detailIsSettled = storedDetail?.result_status === "SETTLED";
 
   return (
-    <main className="app-shell">
+    <main className="app-shell nfl-app">
       <header className="topbar">
         <div>
           <div className="eyebrow">
