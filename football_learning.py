@@ -1038,12 +1038,28 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                 if subset:
                     v_wins = sum(x["won"] for x in subset)
                     v_draws = sum(x["drawn"] for x in subset)
-                    result["venue_split"][label] = {
+                    venue_summary = {
                         "sample_size": len(subset), "wins": v_wins, "draws": v_draws,
                         "losses": sum(x["lost"] for x in subset), "points": v_wins * 3 + v_draws,
                         "average_goals_for": round(sum(x["af"] for x in subset) / len(subset), 2),
                         "average_goals_against": round(sum(x["aa"] for x in subset) / len(subset), 2),
                     }
+                    if len(subset) >= 3:
+                        overall_points_per_match = round((wins * 3 + draws) / n, 2)
+                        overall_goals_for = sum(x["af"] for x in games) / n
+                        overall_goals_against = sum(x["aa"] for x in games) / n
+                        venue_points_per_match = (v_wins * 3 + v_draws) / len(subset)
+                        venue_goals_for = sum(x["af"] for x in subset) / len(subset)
+                        venue_goals_against = sum(x["aa"] for x in subset) / len(subset)
+                        venue_summary["comparison_to_overall"] = {
+                            "eligible": True,
+                            "overall_sample_size": n,
+                            "points_per_match_delta": round(venue_points_per_match - overall_points_per_match, 2),
+                            "goals_for_per_match_delta": round(venue_goals_for - overall_goals_for, 2),
+                            "goals_against_per_match_delta": round(venue_goals_against - overall_goals_against, 2),
+                            "definition": "Diferencia de la sede frente al promedio global del equipo en la misma ventana histórica; descriptiva, no predictiva.",
+                        }
+                    result["venue_split"][label] = venue_summary
             for label, exp_key, actual_key in (("goals_for_bias", "ef", "af"), ("goals_against_bias", "ea", "aa")):
                 subset = [x for x in games if x[exp_key] is not None]
                 result[label] = round(sum(x[actual_key] - x[exp_key] for x in subset) / len(subset), 4) if subset else None
