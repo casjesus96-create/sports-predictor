@@ -365,6 +365,83 @@ def _build_segmented_error_diagnostics(valid: list[dict[str, Any]]) -> dict[str,
     }
 
 
+RECURRING_CONFUSION_MINIMUM_SAMPLE = 30
+
+
+def _build_recurring_confusion_patterns(valid: list[dict[str, Any]]) -> dict[str, Any]:
+    """Measure whether the same directional 1X2 confusion recurs across local seasons."""
+    by_competition_season: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    excluded = 0
+    for item in valid:
+        row = item["row"]
+        competition = str(row.get("competition_code") or "").strip().upper()
+        season = _football_season(row.get("kickoff_at"), competition)
+        if not competition or not season:
+            excluded += 1
+            continue
+        by_competition_season[(competition, season)].append(item)
+
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for (competition, season), items in sorted(by_competition_season.items()):
+        for predicted in OUTCOMES:
+            predicted_items = [item for item in items if item["predicted"] == predicted]
+            denominator = len(predicted_items)
+            for actual in OUTCOMES:
+                if actual == predicted:
+                    continue
+                count = sum(item["actual"] == actual for item in predicted_items)
+                eligible = denominator >= RECURRING_CONFUSION_MINIMUM_SAMPLE
+                grouped[competition].append({
+                    "predicted": predicted,
+                    "actual": actual,
+                    "season": season,
+                    "sample_size": denominator,
+                    "confusion_count": count,
+                    "rate": round(count / denominator, 4) if eligible else None,
+                    "rate_ci_95": _wilson_interval(count, denominator) if eligible else None,
+                    "eligible": eligible,
+                })
+
+    competitions = []
+    for competition, records in sorted(grouped.items()):
+        patterns = []
+        for predicted in OUTCOMES:
+            for actual in OUTCOMES:
+                if actual == predicted:
+                    continue
+                seasons = sorted(
+                    (record for record in records if record["predicted"] == predicted and record["actual"] == actual),
+                    key=lambda record: record["season"],
+                )
+                evaluable = [record for record in seasons if record["eligible"]]
+                recurrence_count = sum(record["confusion_count"] > 0 for record in evaluable)
+                patterns.append({
+                    "predicted": predicted,
+                    "actual": actual,
+                    "evaluable_seasons": len(evaluable),
+                    "recurring_seasons": recurrence_count,
+                    "recurrence_rate": round(recurrence_count / len(evaluable), 4) if evaluable else None,
+                    "status": "COMPARABLE" if len(evaluable) >= 2 else "INSUFFICIENT_SEASONS",
+                    "seasons": evaluable,
+                })
+        competitions.append({
+            "competition": competition,
+            "season_count": len({record["season"] for record in records}),
+            "patterns": patterns,
+        })
+
+    return {
+        "minimum_predicted_class_sample_per_season": RECURRING_CONFUSION_MINIMUM_SAMPLE,
+        "minimum_evaluable_seasons": 2,
+        "season_definition": "Temporada local julio–junio según la zona horaria oficial de cada competición.",
+        "by_competition": competitions,
+        "excluded_missing_competition_or_season": excluded,
+        "interpretation": "Cada tasa usa como denominador los pronósticos de la clase indicada. Una temporada cuenta como recurrencia si registra al menos una confusión de esa dirección; se muestran también N, tasa e IC 95% de Wilson. No implica causalidad.",
+        "read_only": True,
+        "model_changed": False,
+    }
+
+
 TEMPORAL_ERROR_WINDOW_MINIMUM_SAMPLE = 30
 
 
@@ -545,6 +622,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
             "error_diagnostics": _build_error_diagnostics([]),
             "segmented_error_diagnostics": _build_segmented_error_diagnostics([]),
             "temporal_error_stability": _build_temporal_error_stability([]),
+            "recurring_confusion_patterns": _build_recurring_confusion_patterns([]),
             "signals": [
                 "Todavía no hay suficientes snapshots oficiales liquidados y válidos para extraer patrones."
             ],
@@ -679,6 +757,7 @@ def build_postmatch_learning_report(rows: list[dict[str, Any]], competition: str
         "error_diagnostics": _build_error_diagnostics(valid),
         "segmented_error_diagnostics": _build_segmented_error_diagnostics(valid),
         "temporal_error_stability": _build_temporal_error_stability(valid),
+        "recurring_confusion_patterns": _build_recurring_confusion_patterns(valid),
         "data_scope": "Solo snapshots oficiales inmutables FOOTBALL-POISSON-0.5.0 con resultado SETTLED; no usa resultados sin pronóstico prepartido.",
         "learning_policy": "Aprendizaje diagnóstico: mide errores, calibración, sorpresas y residuos de goles. No entrena, recalibra ni modifica probabilidades oficiales.",
         "model_changed": False, "snapshots_written": 0, "provider_calls": 0,

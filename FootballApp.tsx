@@ -1823,6 +1823,35 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
           {segmented.excluded_missing_competition_or_season > 0 && <p style={{ color: "#fbbf24", fontSize: 10 }}>Excluidos por competición o temporada no identificable: {segmented.excluded_missing_competition_or_season}.</p>}
         </div>;
       })()}
+      <h3 style={{ marginBottom: 6 }}>Errores 1X2 recurrentes entre temporadas</h3>
+      {(() => {
+        const recurring = report.recurring_confusion_patterns || {};
+        const labels: Record<string, string> = { HOME: "Victoria local", DRAW: "Empate", AWAY: "Victoria visitante" };
+        const percent = (value: number | null | undefined) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "N insuficiente";
+        return <div style={{ marginBottom: 14 }}>
+          <p style={{ color: "#9ca3af", fontSize: 11 }}>Busca si una misma confusión direccional (pronóstico → resultado real) aparece en varias temporadas de la competición. Cada temporada exige N≥{recurring.minimum_predicted_class_sample_per_season ?? 30} pronósticos de la clase predicha; para comparar recurrencia se necesitan al menos {recurring.minimum_evaluable_seasons ?? 2} temporadas evaluables. La presencia de una confusión no implica causalidad ni cambia el modelo.</p>
+          {(recurring.by_competition || []).length ? recurring.by_competition.map((competition: any) => <div key={competition.competition} style={{ padding: 10, borderRadius: 8, background: "#111827", marginTop: 8 }}>
+            <strong>{competition.competition} · {competition.season_count} temporadas con datos</strong>
+            <div style={{ overflowX: "auto", marginTop: 6 }}><table style={tableStyle}>
+              <thead><tr><th style={cellStyle}>Pronóstico → real</th><th style={cellStyle}>Temporadas con N suficiente</th><th style={cellStyle}>Temporadas con error</th><th style={cellStyle}>Recurrencia</th></tr></thead>
+              <tbody>{(competition.patterns || []).map((pattern: any) => <tr key={pattern.predicted + "-" + pattern.actual}>
+                <td style={cellStyle}>{labels[pattern.predicted]} → {labels[pattern.actual]}</td>
+                <td style={cellStyle}>{pattern.evaluable_seasons}</td>
+                <td style={cellStyle}>{pattern.recurring_seasons}</td>
+                <td style={cellStyle}>{pattern.status === "COMPARABLE" ? percent(pattern.recurrence_rate) : "Menos de 2 temporadas evaluables"}</td>
+              </tr>)}</tbody>
+            </table></div>
+            {(competition.patterns || []).filter((pattern: any) => pattern.seasons?.length).map((pattern: any) => <details key={"detail-" + pattern.predicted + "-" + pattern.actual} style={{ marginTop: 5 }}>
+              <summary style={{ cursor: "pointer", fontSize: 11 }}>{labels[pattern.predicted]} → {labels[pattern.actual]} · detalle por temporada</summary>
+              <div style={{ overflowX: "auto" }}><table style={tableStyle}>
+                <thead><tr><th style={cellStyle}>Temporada</th><th style={cellStyle}>N pronósticos</th><th style={cellStyle}>Confusiones</th><th style={cellStyle}>Tasa</th><th style={cellStyle}>IC 95% Wilson</th></tr></thead>
+                <tbody>{pattern.seasons.map((season: any) => <tr key={season.season}><td style={cellStyle}>{season.season}</td><td style={cellStyle}>{season.sample_size}</td><td style={cellStyle}>{season.confusion_count}</td><td style={cellStyle}>{percent(season.rate)}</td><td style={cellStyle}>{season.rate_ci_95 ? `${percent(season.rate_ci_95.lower)}–${percent(season.rate_ci_95.upper)}` : "—"}</td></tr>)}</tbody>
+              </table></div>
+            </details>)}
+          </div>) : <p style={{ color: "#9ca3af" }}>Sin temporadas identificables para comparar recurrencia.</p>}
+          {recurring.excluded_missing_competition_or_season > 0 && <p style={{ color: "#fbbf24", fontSize: 10 }}>Excluidos por competición o temporada no identificable: {recurring.excluded_missing_competition_or_season}.</p>}
+        </div>;
+      })()}
       <h3 style={{ marginBottom: 6 }}>Estabilidad temporal de los errores</h3>
       {(() => {
         const stability = report.temporal_error_stability || {};
