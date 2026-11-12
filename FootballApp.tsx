@@ -1553,8 +1553,8 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
   }, [competition, home, away, kickoff, status]);
 
   if (["FINISHED", "AWARDED", "CANCELLED", "CANCELED"].includes(status)) return null;
-  const panel = { padding: 9, borderRadius: 8, background: "#111827", minWidth: 0 };
-  const metricGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,115px),1fr))", gap: 6, marginTop: 7 };
+  const panel: React.CSSProperties = { padding: 9, borderRadius: 8, background: "#111827", minWidth: 0 };
+  const metricGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,115px),1fr))", gap: 6, marginTop: 7 };
   const metric = (label: string, value: string | number) => <div style={{ ...panel, background: "#0b1220" }}><div style={{ color: "#94a3b8", fontSize: 10 }}>{label}</div><strong style={{ display: "block", marginTop: 3, fontSize: 14, overflowWrap: "anywhere" }}>{value}</strong></div>;
   const renderTeam = (team: any) => <div style={{ ...panel, border: "1px solid #334155" }}>
     <strong>{team.team}</strong>
