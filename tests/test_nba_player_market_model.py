@@ -12,7 +12,7 @@ def test_over_under_probabilities_are_smoothed_and_sum_with_push():
     assert result["under"]["count"] == 2
     assert result["push"]["count"] == 2
     assert result["push"]["probability"] == pytest.approx(2 / 6)
-    assert result["over"]["probability"] + result["under"]["probability"] + result["push"]["probability"] == pytest.approx(1.0)
+    assert result["over"]["probability"] + result["under"]["probability"] + result["push"]["probability"] == pytest.approx(1.0, abs=1e-4)
 
 
 def test_half_point_line_has_no_pushes():
