@@ -164,17 +164,25 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
   if (!Number.isFinite(line) || line < 0) return { error: "Línea inválida" };
   const components = PLAYER_MARKETS[market];
   if (!components) return { error: "Mercado no disponible" };
+  const seenGameIds = new Set<string>();
   const usedGames = (records || [])
-    .filter((record) => record.completed === true && !!record.kickoff)
+    .filter((record) => {
+      const gameId = String(record.game_id || "").trim();
+      const kickoffTime = record.kickoff ? Date.parse(record.kickoff) : NaN;
+      if (record.completed !== true || !gameId || !Number.isFinite(kickoffTime) || seenGameIds.has(gameId)) return false;
+      seenGameIds.add(gameId);
+      return true;
+    })
     .map((record) => {
       const valid = components.every((key) => typeof (record as any)[key] === "number" && Number.isFinite((record as any)[key]));
       return valid ? {
-        game_id: record.game_id,
+        game_id: String(record.game_id).trim(),
         kickoff: record.kickoff as string,
         value: components.reduce((sum, key) => sum + (record as any)[key], 0),
       } : null;
     })
     .filter((record): record is { game_id: string; kickoff: string; value: number } => record !== null)
+    .sort((a, b) => Date.parse(b.kickoff) - Date.parse(a.kickoff))
     .slice(0, 15);
   const values = usedGames.map((record) => record.value);
   const windowAverages: Record<string, number | null> = {};
@@ -745,83 +753,97 @@ export default function NBAApp() {
                                         <small className="muted">Boxscores consultados: {playerTeam.games_available ?? 0} · Jugadores: {playerTeam.players?.length ?? 0}</small>
                                         <small className="muted">Cobertura por estadística: PTS {playerTeam.statistical_coverage?.points ?? 0}, AST {playerTeam.statistical_coverage?.assists ?? 0}, REB {playerTeam.statistical_coverage?.rebounds ?? 0}, BLK {playerTeam.statistical_coverage?.blocks ?? 0}, STL {playerTeam.statistical_coverage?.steals ?? 0}</small>
                                         <small className="muted">Laboratorio experimental O/U: introduce una línea manual para PTS, REB, AST o PRA. Se muestran conteos reales, promedios de las ventanas 5/10/15 y comparación descriptiva con el promedio de 15. Las líneas alejadas se señalan usando 1.5 desviaciones estándar históricas. Probabilidades Beta suavizadas e IC95%; mínimo 5 partidos pregame válidos. No son cuotas ni recomendaciones.</small>
-                                        <div style={{ overflowX: "auto" }}>
-                                          <table>
-                                            <thead>
-                                              <tr><th>Jugador</th><th>Muestra</th><th>PTS (5/10/15)</th><th>AST (5/10/15)</th><th>REB (5/10/15)</th><th>BLK (5/10/15)</th><th>STL (5/10/15)</th><th>PTS O/U</th><th>REB O/U</th><th>AST O/U</th><th>PRA O/U</th></tr>
-                                            </thead>
-                                            <tbody>
-                                              {playerTeam.players.map((player: any) => (
-                                                <tr key={player.player_id || player.name}>
-                                                  <td>{player.name}{player.position ? ` · ${player.position}` : ""}</td>
-                                                  <td>{player.games_sampled} ({player.games_sampled_by_stat?.points ?? 0} PTS)</td>
-                                                  {["points", "assists", "rebounds", "blocks", "steals"].map((stat: string) => (
-                                                    <td key={stat}>
-                                                      {[5, 10, 15].map((windowSize) => {
-                                                        const statWindows = player.recent_windows?.[stat];
-                                                        const sample = statWindows?.[String(windowSize)];
-                                                        return <div key={windowSize}><small>{windowSize}: </small>{!statWindows ? <small className="muted">No capturado</small> : sample?.games ? <>{sample.average == null ? "—" : numberLabel(sample.average)} <small>({sample.games})</small></> : <small className="muted">Sin muestra (0)</small>}</div>;
-                                                      })}
-                                                    </td>
-                                                  ))}
+
+                                        <div className="player-lab-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: 14 }}>
+                                          {playerTeam.players.map((player: any) => (
+                                            <article className="panel player-lab-card" key={player.player_id || player.name} style={{ minWidth: 0 }}>
+                                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                                                <div><h4 style={{ margin: 0 }}>{player.name}</h4><small className="muted">{player.position || "Posición no disponible"}</small></div>
+                                                <span className="status pending">{player.games_sampled ?? 0} partidos</span>
+                                              </div>
+                                              <div style={{ marginTop: 12 }}>
+                                                <b>Promedios recientes · ventanas reales</b>
+                                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(125px, 1fr))", gap: 8, marginTop: 8 }}>
+                                                  {["points", "assists", "rebounds", "blocks", "steals"].map((stat: string) => {
+                                                    const statWindows = player.recent_windows?.[stat];
+                                                    const statNames: Record<string, string> = { points: "PTS", assists: "AST", rebounds: "REB", blocks: "BLK", steals: "STL" };
+                                                    return (
+                                                      <div key={stat} className="panel" style={{ padding: 9, minWidth: 0 }}>
+                                                        <b>{statNames[stat]}</b>
+                                                        {[5, 10, 15].map((windowSize) => {
+                                                          const sample = statWindows?.[String(windowSize)];
+                                                          return <div key={windowSize} className="score-row"><span>Últ. {windowSize}</span><b>{!statWindows ? "No capturado" : sample?.games ? numberLabel(sample.average) + " · n=" + sample.games : "Sin muestra"}</b></div>;
+                                                        })}
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                              <div style={{ marginTop: 14 }}>
+                                                <b>Laboratorio Over / Under</b>
+                                                <p className="muted" style={{ margin: "4px 0 10px" }}>Introduce una línea manual. La evaluación usa los mismos partidos que puedes auditar debajo.</p>
+                                                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 9 }}>
                                                   {["PTS", "REB", "AST", "PRA"].map((market) => {
                                                     const lineKey = String(player.player_id || player.name) + ":" + market;
                                                     const line = marketLines[lineKey] || "";
                                                     const evaluation = evaluateMarketLine(player.market_history, market, line);
                                                     return (
-                                                      <td key={market}>
-                                                        <small className="muted">{PLAYER_MARKET_DESCRIPTIONS[market]}</small>
-                                                        <input
-                                                          aria-label={player.name + " línea " + market + ": " + PLAYER_MARKET_DESCRIPTIONS[market]}
-                                                          type="number"
-                                                          min="0"
-                                                          step="0.5"
-                                                          inputMode="decimal"
-                                                          placeholder="Línea"
-                                                          value={line}
-                                                          onChange={(event) => setMarketLines((current) => ({ ...current, [lineKey]: event.target.value }))}
-                                                          style={{ width: 76 }}
-                                                        />
-                                                        {evaluation && ("error" in evaluation ? (
-                                                          <small className="muted">{evaluation.error}</small>
+                                                      <section key={market} className="panel" style={{ padding: 10, minWidth: 0 }}>
+                                                        <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}><b>{market}</b><small className="muted">{PLAYER_MARKET_DESCRIPTIONS[market]}</small></div>
+                                                        <label style={{ display: "block", marginTop: 8 }}>
+                                                          <span className="muted">Línea</span>
+                                                          <input
+                                                            aria-label={player.name + " línea " + market + ": " + PLAYER_MARKET_DESCRIPTIONS[market]}
+                                                            type="number" min="0" step="0.5" inputMode="decimal" placeholder="Ej. 24.5"
+                                                            value={line}
+                                                            onChange={(event) => setMarketLines((current) => ({ ...current, [lineKey]: event.target.value }))}
+                                                            style={{ width: "100%", boxSizing: "border-box", marginTop: 3 }}
+                                                          />
+                                                        </label>
+                                                        {!evaluation ? (
+                                                          <p className="muted" style={{ marginBottom: 0 }}>Introduce una línea para evaluar.</p>
+                                                        ) : "error" in evaluation ? (
+                                                          <p className="muted">{evaluation.error}</p>
                                                         ) : "insufficient" in evaluation ? (
                                                           <div className="muted">
-                                                            Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}<br />
-                                                            Muestra: {evaluation.sample}/5 · Sin probabilidades
-                                                            {evaluation.usedGames.length > 0 && (
-                                                              <details>
-                                                                <summary>Ver partidos usados ({evaluation.usedGames.length})</summary>
-                                                                <ul>{evaluation.usedGames.map((game) => (
-                                                                  <li key={game.game_id}>{new Date(game.kickoff).toLocaleDateString()} · {game.game_id} · {numberLabel(game.value)}</li>
-                                                                ))}</ul>
-                                                              </details>
-                                                            )}
+                                                            <b>Prom. 5/10/15:</b> {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}
+                                                            <p style={{ margin: "5px 0" }}>Muestra: {evaluation.sample}/5 · Probabilidades no disponibles</p>
                                                           </div>
                                                         ) : (
-                                                          <div>
-                                                            <b>Over {evaluation.over}/{evaluation.sample} · Under {evaluation.under}/{evaluation.sample} · Push {evaluation.push}/{evaluation.sample}</b><br />
-                                                            O {(evaluation.overProbability * 100).toFixed(1)}% · U {(evaluation.underProbability * 100).toFixed(1)}%<br />
-                                                            IC95% O {(evaluation.overInterval[0] * 100).toFixed(1)}–{(evaluation.overInterval[1] * 100).toFixed(1)}%<br />
-                                                            IC95% U {(evaluation.underInterval[0] * 100).toFixed(1)}–{(evaluation.underInterval[1] * 100).toFixed(1)}%<br />
-                                                            Push {(evaluation.pushProbability * 100).toFixed(1)}% · N={evaluation.sample}<br />
-                                                            Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}<br />
-                                                            Línea {evaluation.lineRelation} al promedio 15 ({numberLabel(evaluation.average15)}).
-                                                            {evaluation.lineIsDistant ? <><br /><b className="tone-negative">Aviso: línea alejada de la dispersión histórica (más de 1.5 desviaciones estándar).</b></> : null}
-                                                            <details>
-                                                              <summary>Ver partidos usados ({evaluation.usedGames.length})</summary>
-                                                              <ul>{evaluation.usedGames.map((game) => (
-                                                                <li key={game.game_id}>{new Date(game.kickoff).toLocaleDateString()} · {game.game_id} · {numberLabel(game.value)}</li>
-                                                              ))}</ul>
-                                                            </details>
+                                                          <div style={{ marginTop: 9 }}>
+                                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                                              <div>
+                                                                <div style={{ display: "flex", justifyContent: "space-between", gap: 4 }}><span>Over</span><b>{(evaluation.overProbability * 100).toFixed(1)}%</b></div>
+                                                                <div style={{ height: 7, background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: String(evaluation.overProbability * 100) + "%", background: "#16a34a" }} /></div>
+                                                              </div>
+                                                              <div>
+                                                                <div style={{ display: "flex", justifyContent: "space-between", gap: 4 }}><span>Under</span><b>{(evaluation.underProbability * 100).toFixed(1)}%</b></div>
+                                                                <div style={{ height: 7, background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: String(evaluation.underProbability * 100) + "%", background: "#64748b" }} /></div>
+                                                              </div>
+                                                            </div>
+                                                            <small className="muted" style={{ display: "block", marginTop: 8 }}>Conteos: O {evaluation.over} · U {evaluation.under} · Push {evaluation.push} · N={evaluation.sample}</small>
+                                                            <small className="muted" style={{ display: "block" }}>IC95% O {(evaluation.overInterval[0] * 100).toFixed(1)}–{(evaluation.overInterval[1] * 100).toFixed(1)}%</small>
+                                                            <small className="muted" style={{ display: "block" }}>IC95% U {(evaluation.underInterval[0] * 100).toFixed(1)}–{(evaluation.underInterval[1] * 100).toFixed(1)}%</small>
+                                                            <small className="muted" style={{ display: "block", marginTop: 5 }}>Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}</small>
+                                                            <small className="muted" style={{ display: "block" }}>Línea {evaluation.lineRelation} al promedio 15 ({numberLabel(evaluation.average15)}).</small>
+                                                            {evaluation.lineIsDistant && <p className="tone-negative" style={{ margin: "6px 0" }}><b>Aviso: línea a más de 1.5 desviaciones estándar.</b></p>}
                                                           </div>
-                                                        ))}
-                                                      </td>
+                                                        )}
+                                                        {evaluation && !("error" in evaluation) && evaluation.usedGames.length > 0 && (
+                                                          <details style={{ marginTop: 8 }}>
+                                                            <summary>Partidos usados ({evaluation.usedGames.length})</summary>
+                                                            <ul style={{ paddingLeft: 18 }}>
+                                                              {evaluation.usedGames.map((game) => <li key={game.game_id}>{new Date(game.kickoff).toLocaleDateString()} · <code>{game.game_id}</code> · {numberLabel(game.value)}</li>)}
+                                                            </ul>
+                                                          </details>
+                                                        )}
+                                                      </section>
                                                     );
                                                   })}
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
+                                                </div>
+                                              </div>
+                                            </article>
+                                          ))}
                                         </div>
                                       </div>
                                     ))}
