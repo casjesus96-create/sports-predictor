@@ -141,6 +141,16 @@ const PLAYER_MARKETS: Record<string, string[]> = {
   PRA: ["points", "rebounds", "assists"],
 };
 
+function wilsonInterval(successes: number, total: number, scale: number) {
+  if (!total) return [0, 0];
+  const z = 1.959963984540054;
+  const rate = successes / total;
+  const denominator = 1 + (z * z) / total;
+  const center = (rate + (z * z) / (2 * total)) / denominator;
+  const margin = z * Math.sqrt((rate * (1 - rate) / total) + (z * z) / (4 * total * total)) / denominator;
+  return [Math.max(0, center - margin) * scale, Math.min(1, center + margin) * scale];
+}
+
 function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: string, rawLine: string) {
   if (!rawLine.trim()) return null;
   const line = Number(rawLine);
@@ -161,7 +171,11 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
   const pushShare = push / values.length;
   const overProbability = decisive ? (1 - pushShare) * (over + 1) / (decisive + 2) : 0;
   const underProbability = decisive ? (1 - pushShare) * (under + 1) / (decisive + 2) : 0;
-  return { sample: values.length, over, under, push, overProbability, underProbability, pushProbability: pushShare };
+  return {
+    sample: values.length, over, under, push, overProbability, underProbability, pushProbability: pushShare,
+    overInterval: wilsonInterval(over, decisive, 1 - pushShare),
+    underInterval: wilsonInterval(under, decisive, 1 - pushShare),
+  };
 }
 
 const statLabel = (value: unknown, percent = false) =>
@@ -740,6 +754,8 @@ export default function NBAApp() {
                                                         ) : (
                                                           <small>
                                                             O {(evaluation.overProbability * 100).toFixed(1)}% · U {(evaluation.underProbability * 100).toFixed(1)}%<br />
+                                                            IC95% O {(evaluation.overInterval[0] * 100).toFixed(1)}–{(evaluation.overInterval[1] * 100).toFixed(1)}%<br />
+                                                            IC95% U {(evaluation.underInterval[0] * 100).toFixed(1)}–{(evaluation.underInterval[1] * 100).toFixed(1)}%<br />
                                                             Push {(evaluation.pushProbability * 100).toFixed(1)}% · N={evaluation.sample}
                                                           </small>
                                                         ))}
