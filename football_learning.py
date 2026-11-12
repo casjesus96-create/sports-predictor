@@ -960,6 +960,13 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                     return "LESS_VARIABLE"
                 return "SIMILAR"
 
+            def frequency_direction(delta, threshold=0.2):
+                if delta >= threshold:
+                    return "INCREASED"
+                if delta <= -threshold:
+                    return "DECREASED"
+                return "STABLE"
+
             goals_for_delta = round(recent_metrics["average_goals_for"] - previous_metrics["average_goals_for"], 2)
             goals_against_delta = round(recent_metrics["average_goals_against"] - previous_metrics["average_goals_against"], 2)
             points_delta = round(recent_metrics["points_per_match"] - previous_metrics["points_per_match"], 2)
@@ -991,8 +998,8 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                 "attack": trend_direction(goals_for_delta),
                 "btts": trend_direction(btts_delta, 0.2),
                 "over_2_5": trend_direction(over_2_5_delta, 0.2),
-                "clean_sheets": trend_direction(clean_sheet_delta, 0.2),
-                "failed_to_score": trend_direction(failed_to_score_delta, 0.2),
+                "clean_sheet_frequency": frequency_direction(clean_sheet_delta),
+                "failed_to_score_frequency": frequency_direction(failed_to_score_delta),
                 "defense": trend_direction(-goals_against_delta),
                 "results": trend_direction(points_delta, 0.5),
                 "interpretation": "Comparación descriptiva entre los cinco partidos más recientes y los cinco inmediatamente anteriores; no es una predicción.",
