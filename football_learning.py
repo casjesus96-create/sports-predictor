@@ -415,12 +415,19 @@ def _build_recurring_confusion_patterns(valid: list[dict[str, Any]]) -> dict[str
                 )
                 evaluable = [record for record in seasons if record["eligible"]]
                 recurrence_count = sum(record["confusion_count"] > 0 for record in evaluable)
+                pooled_sample_size = sum(record["sample_size"] for record in evaluable)
+                pooled_confusion_count = sum(record["confusion_count"] for record in evaluable)
+                pooled_eligible = len(evaluable) >= 2 and pooled_sample_size > 0
                 patterns.append({
                     "predicted": predicted,
                     "actual": actual,
                     "evaluable_seasons": len(evaluable),
                     "recurring_seasons": recurrence_count,
                     "recurrence_rate": round(recurrence_count / len(evaluable), 4) if evaluable else None,
+                    "pooled_sample_size": pooled_sample_size,
+                    "pooled_confusion_count": pooled_confusion_count,
+                    "pooled_rate": round(pooled_confusion_count / pooled_sample_size, 4) if pooled_eligible else None,
+                    "pooled_rate_ci_95": _wilson_interval(pooled_confusion_count, pooled_sample_size) if pooled_eligible else None,
                     "status": "COMPARABLE" if len(evaluable) >= 2 else "INSUFFICIENT_SEASONS",
                     "seasons": evaluable,
                 })
