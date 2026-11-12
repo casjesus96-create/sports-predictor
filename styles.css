@@ -927,3 +927,51 @@ button:disabled{cursor:not-allowed;opacity:.55}
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+
+/* NFL: auditoría temporal más legible; presentación únicamente. */
+.nfl-app .nfl-temporal-intro {
+  max-width: 82ch;
+  line-height: 1.55;
+}
+.nfl-app .nfl-temporal-cut {
+  display: inline-flex;
+  max-width: 100%;
+  margin: 0 0 12px;
+  padding: 7px 10px;
+  border: 1px solid #35516a;
+  border-radius: 8px;
+  color: #c4d4e2;
+  font-size: .75rem;
+  overflow-wrap: anywhere;
+}
+.nfl-app .nfl-temporal-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 285px), 1fr));
+}
+.nfl-app .nfl-temporal-card {
+  min-width: 0;
+  overflow: hidden;
+}
+.nfl-app .nfl-temporal-card .percentage-band-heading span {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.nfl-app .nfl-temporal-dates {
+  margin: 5px 0 12px;
+  color: #8fa5b9;
+  font-size: .72rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.nfl-app .nfl-temporal-exclusions {
+  margin-top: 12px;
+}
+@media (max-width: 600px) {
+  .nfl-app .nfl-temporal-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nfl-app .nfl-temporal-card .percentage-band-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
