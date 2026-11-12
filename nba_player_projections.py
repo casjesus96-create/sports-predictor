@@ -103,6 +103,23 @@ def aggregate_player_projections(game_reports, team_histories, max_games=15):
                         "median": round(median(sample), 1) if sample else None,
                         "stddev": round(pstdev(sample), 2) if len(sample) >= 2 else (0.0 if sample else None),
                     }
+            market_history_by_game = {}
+            for stat_key in STAT_KEYS:
+                for record in ordered_stats[stat_key]:
+                    game_id = str(record.get("game_id") or "")
+                    if not game_id:
+                        continue
+                    market_record = market_history_by_game.setdefault(game_id, {
+                        "game_id": game_id,
+                        "kickoff": record["kickoff"].isoformat() if record.get("kickoff") else None,
+                        "completed": True,
+                    })
+                    market_record[stat_key] = record["value"]
+            market_history = sorted(
+                market_history_by_game.values(),
+                key=lambda record: record.get("kickoff") or "",
+                reverse=True,
+            )
             row = {
                 "player_id": player_id,
                 "name": item["name"],
@@ -110,6 +127,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=15):
                 "games_sampled": len(item["games"]),
                 "games_sampled_by_stat": {key: len(item["stat_games"].get(key, set())) for key in STAT_KEYS},
                 "recent_windows": recent_windows,
+                "market_history": market_history[:max_games],
             }
             # Preserve the existing projection contract: projected_* remains the
             # mean of the latest five available appearances, not the expanded 15-game pool.
