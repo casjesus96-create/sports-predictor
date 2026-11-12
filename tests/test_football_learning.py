@@ -792,3 +792,53 @@ def test_match_learning_context_includes_five_most_recent_team_snapshots():
     assert report["model_changed"] is False
     assert report["snapshots_written"] == 0
     assert report["provider_calls"] == 0
+
+
+
+def test_match_learning_context_compares_recent_five_with_previous_five_read_only():
+    rows = []
+    for index in range(10):
+        # The five most recent matches are wins with stronger attack and defense.
+        home_score, away_score = (3, 0) if index >= 5 else (1, 2)
+        row = snapshot(0.60, 0.25, 0.15, home_score, away_score, 12000 + index)
+        row["home_team"], row["away_team"] = "Manchester City", "Chelsea"
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    report = build_match_learning_context(
+        rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z"
+    )
+    trend = report["home_team"]["recent_trend"]
+
+    assert trend["eligible"] is True
+    assert trend["recent"]["matches"] == 5
+    assert trend["previous"]["matches"] == 5
+    assert trend["deltas"]["goals_for_per_match"] == 2.0
+    assert trend["deltas"]["goals_against_per_match"] == -2.0
+    assert trend["deltas"]["points_per_match"] == 3.0
+    assert trend["attack"] == "IMPROVING"
+    assert trend["defense"] == "IMPROVING"
+    assert trend["results"] == "IMPROVING"
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_match_learning_context_hides_recent_trend_below_ten_team_matches():
+    rows = []
+    for index in range(9):
+        row = snapshot(0.60, 0.25, 0.15, 2, 1, 13000 + index)
+        row["home_team"], row["away_team"] = "Manchester City", "Chelsea"
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    report = build_match_learning_context(
+        rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z"
+    )
+    trend = report["home_team"]["recent_trend"]
+
+    assert trend["eligible"] is False
+    assert trend["status"] == "INSUFFICIENT_SAMPLE"
+    assert trend["sample_size"] == 9
+    assert report["model_changed"] is False
