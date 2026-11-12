@@ -974,6 +974,49 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
             over_2_5_delta = round(recent_metrics["over_2_5_rate"] - previous_metrics["over_2_5_rate"], 4)
             clean_sheet_delta = round(recent_metrics["clean_sheet_rate"] - previous_metrics["clean_sheet_rate"], 4)
             failed_to_score_delta = round(recent_metrics["failed_to_score_rate"] - previous_metrics["failed_to_score_rate"], 4)
+
+            # Sensitivity audit: remove one match from each five-match window.
+            # 5 x 5 = 25 paired comparisons; this is not a confidence probability.
+            sensitivity_specs = {
+                "goals_for_per_match": ("average_goals_for", goals_for_delta, 0.25),
+                "goals_against_per_match": ("average_goals_against", goals_against_delta, 0.25),
+                "points_per_match": ("points_per_match", points_delta, 0.5),
+                "btts_rate": ("btts_rate", btts_delta, 0.2),
+                "over_2_5_rate": ("over_2_5_rate", over_2_5_delta, 0.2),
+                "clean_sheet_rate": ("clean_sheet_rate", clean_sheet_delta, 0.2),
+                "failed_to_score_rate": ("failed_to_score_rate", failed_to_score_delta, 0.2),
+            }
+            sensitivity = {}
+            for metric_key, (period_key, original_delta, threshold) in sensitivity_specs.items():
+                loo_deltas = []
+                for recent_index in range(len(recent)):
+                    recent_subset = recent[:recent_index] + recent[recent_index + 1:]
+                    for previous_index in range(len(previous)):
+                        previous_subset = previous[:previous_index] + previous[previous_index + 1:]
+                        recent_value = period_metrics(recent_subset)[period_key]
+                        previous_value = period_metrics(previous_subset)[period_key]
+                        loo_deltas.append(round(recent_value - previous_value, 4))
+
+                def delta_direction(value):
+                    if value >= threshold:
+                        return "INCREASED"
+                    if value <= -threshold:
+                        return "DECREASED"
+                    return "STABLE"
+
+                original_direction = delta_direction(original_delta)
+                matching = sum(delta_direction(value) == original_direction for value in loo_deltas)
+                consistency = matching / len(loo_deltas) if loo_deltas else 0.0
+                sensitivity[metric_key] = {
+                    "comparisons": len(loo_deltas),
+                    "original_direction": original_direction,
+                    "matching_comparisons": matching,
+                    "consistency_rate": round(consistency, 4),
+                    "minimum_delta": round(min(loo_deltas), 4) if loo_deltas else None,
+                    "maximum_delta": round(max(loo_deltas), 4) if loo_deltas else None,
+                    "status": "ROBUST" if consistency >= 0.8 else "SENSITIVE",
+                }
+
             goals_for_volatility_delta = round(recent_metrics["goals_for_std_dev"] - previous_metrics["goals_for_std_dev"], 2)
             goals_against_volatility_delta = round(recent_metrics["goals_against_std_dev"] - previous_metrics["goals_against_std_dev"], 2)
             result["recent_trend"] = {
@@ -982,6 +1025,7 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                 "window_size": trend_window_size,
                 "recent": recent_metrics,
                 "previous": previous_metrics,
+                "sensitivity": sensitivity,
                 "deltas": {
                     "goals_for_per_match": goals_for_delta,
                     "goals_against_per_match": goals_against_delta,

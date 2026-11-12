@@ -1626,6 +1626,18 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
           {metric("Regularidad ofensiva · σ GF", `${team.recent_trend.recent.goals_for_std_dev.toFixed(2)} vs. ${team.recent_trend.previous.goals_for_std_dev.toFixed(2)} · ${team.recent_trend.attack_volatility === "MORE_VARIABLE" ? "Más variable" : team.recent_trend.attack_volatility === "LESS_VARIABLE" ? "Menos variable" : "Similar"}`)}
           {metric("Regularidad defensiva · σ GC", `${team.recent_trend.recent.goals_against_std_dev.toFixed(2)} vs. ${team.recent_trend.previous.goals_against_std_dev.toFixed(2)} · ${team.recent_trend.defense_volatility === "MORE_VARIABLE" ? "Más variable" : team.recent_trend.defense_volatility === "LESS_VARIABLE" ? "Menos variable" : "Similar"}`)}
         </div>
+        {team.recent_trend.sensitivity && <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "#111827", border: "1px solid #334155" }}>
+          <strong style={{ fontSize: 10 }}>Robustez de la tendencia · prueba de sensibilidad</strong>
+          <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 3 }}>Se repite la comparación 25 veces, retirando un partido de cada ventana en cada prueba. Mide cuánto depende la dirección de encuentros individuales; no es una probabilidad ni una garantía.</div>
+          <div style={metricGrid}>
+            {[
+              ["Ataque", team.recent_trend.sensitivity.goals_for_per_match],
+              ["Defensa · goles recibidos", team.recent_trend.sensitivity.goals_against_per_match],
+              ["Puntos/partido", team.recent_trend.sensitivity.points_per_match],
+            ].map(([label, item]: any) => item ? metric(label, `${item.status === "ROBUST" ? "Consistente" : "Sensible"} · ${Math.round(item.consistency_rate * 100)}% (${item.matching_comparisons}/25)`) : null)}
+          </div>
+          <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 4 }}>Consistente: mantiene la misma clasificación en al menos 80% de las pruebas. Sensible: cambia con mayor facilidad al retirar partidos. Las demás métricas también se calculan en el diagnóstico técnico.</div>
+        </div>}
         <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 5 }}>σ = desviación estándar de goles por partido en cada periodo. Un valor mayor indica más dispersión entre encuentros, no necesariamente peor rendimiento; se calcula con los cinco partidos de cada ventana y debe interpretarse con cautela.</div>
         <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 5 }}>BTTS: {(team.recent_trend.recent.btts_rate * 100).toFixed(0)}% vs. {(team.recent_trend.previous.btts_rate * 100).toFixed(0)}% · Over 2.5: {(team.recent_trend.recent.over_2_5_rate * 100).toFixed(0)}% vs. {(team.recent_trend.previous.over_2_5_rate * 100).toFixed(0)}%. El cambio se expresa en puntos porcentuales; no representa probabilidad para el próximo partido.</div>
         <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 5 }}>GF/partido: {team.recent_trend.recent.average_goals_for.toFixed(2)} vs. {team.recent_trend.previous.average_goals_for.toFixed(2)} · GC/partido: {team.recent_trend.recent.average_goals_against.toFixed(2)} vs. {team.recent_trend.previous.average_goals_against.toFixed(2)} · Puntos/partido: {team.recent_trend.recent.points_per_match.toFixed(2)} vs. {team.recent_trend.previous.points_per_match.toFixed(2)}</div>
