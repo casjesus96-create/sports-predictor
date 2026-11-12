@@ -829,6 +829,36 @@ def test_match_learning_context_compares_recent_five_with_previous_five_read_onl
     assert report["provider_calls"] == 0
 
 
+def test_match_learning_context_reports_goal_scoring_and_conceding_volatility_read_only():
+    rows = []
+    previous_scores = [(1, 0), (1, 1), (1, 2), (1, 3), (1, 4)]
+    recent_scores = [(0, 0), (2, 0), (4, 0), (6, 0), (8, 0)]
+    for index in range(10):
+        home_score, away_score = recent_scores[index - 5] if index >= 5 else previous_scores[index]
+        row = snapshot(0.60, 0.25, 0.15, home_score, away_score, 14000 + index)
+        row["home_team"], row["away_team"] = "Manchester City", "Chelsea"
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        rows.append(row)
+
+    report = build_match_learning_context(
+        rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z"
+    )
+    trend = report["home_team"]["recent_trend"]
+
+    assert trend["previous"]["goals_for_std_dev"] == 0.0
+    assert trend["recent"]["goals_for_std_dev"] == 2.83
+    assert trend["previous"]["goals_against_std_dev"] == 1.41
+    assert trend["recent"]["goals_against_std_dev"] == 0.0
+    assert trend["deltas"]["goals_for_volatility"] == 2.83
+    assert trend["deltas"]["goals_against_volatility"] == -1.41
+    assert trend["attack_volatility"] == "MORE_VARIABLE"
+    assert trend["defense_volatility"] == "LESS_VARIABLE"
+    assert report["read_only"] is True
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
 def test_match_learning_context_hides_recent_trend_below_ten_team_matches():
     rows = []
     for index in range(9):
