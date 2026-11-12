@@ -782,14 +782,14 @@ export default function NBAApp() {
                                               <div style={{ marginTop: 14 }}>
                                                 <b>Laboratorio Over / Under</b>
                                                 <p className="muted" style={{ margin: "4px 0 10px" }}>Introduce una línea manual. La evaluación usa los mismos partidos que puedes auditar debajo.</p>
-                                                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 9 }}>
+                                                <div className="nba-market-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))", gap: 9, minWidth: 0, width: "100%" }}>
                                                   {["PTS", "REB", "AST", "PRA"].map((market) => {
                                                     const lineKey = String(player.player_id || player.name) + ":" + market;
                                                     const line = marketLines[lineKey] || "";
                                                     const evaluation = evaluateMarketLine(player.market_history, market, line);
                                                     return (
-                                                      <section key={market} className="panel" style={{ padding: 10, minWidth: 0 }}>
-                                                        <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}><b>{market}</b><small className="muted">{PLAYER_MARKET_DESCRIPTIONS[market]}</small></div>
+                                                      <section key={market} className="panel nba-market-card" style={{ padding: 10, minWidth: 0, width: "100%", boxSizing: "border-box", overflow: "hidden" }}>
+                                                        <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0 }}><b style={{ flex: "0 0 auto" }}>{market}</b><small className="muted" style={{ minWidth: 0, flex: "1 1 130px", overflowWrap: "anywhere", textAlign: "right" }}>{PLAYER_MARKET_DESCRIPTIONS[market]}</small></div>
                                                         <label style={{ display: "block", marginTop: 8 }}>
                                                           <span className="muted">Línea</span>
                                                           <input
@@ -811,14 +811,14 @@ export default function NBAApp() {
                                                           </div>
                                                         ) : (
                                                           <div style={{ marginTop: 9 }}>
-                                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                                            <div className="nba-market-probabilities" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, minWidth: 0, width: "100%" }}>
                                                               <div>
-                                                                <div style={{ display: "flex", justifyContent: "space-between", gap: 4 }}><span>Over</span><b>{(evaluation.overProbability * 100).toFixed(1)}%</b></div>
-                                                                <div style={{ height: 7, background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: String(evaluation.overProbability * 100) + "%", background: "#16a34a" }} /></div>
+                                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 4, minWidth: 0 }}><span>Over</span><b style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{(evaluation.overProbability * 100).toFixed(1)}%</b></div>
+                                                                <div style={{ height: 7, width: "100%", boxSizing: "border-box", background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, evaluation.overProbability * 100))}%`, maxWidth: "100%", background: "#16a34a", borderRadius: 99 }} /></div>
                                                               </div>
                                                               <div>
-                                                                <div style={{ display: "flex", justifyContent: "space-between", gap: 4 }}><span>Under</span><b>{(evaluation.underProbability * 100).toFixed(1)}%</b></div>
-                                                                <div style={{ height: 7, background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: String(evaluation.underProbability * 100) + "%", background: "#64748b" }} /></div>
+                                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 4, minWidth: 0 }}><span>Under</span><b style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{(evaluation.underProbability * 100).toFixed(1)}%</b></div>
+                                                                <div style={{ height: 7, width: "100%", boxSizing: "border-box", background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, evaluation.underProbability * 100))}%`, maxWidth: "100%", background: "#64748b", borderRadius: 99 }} /></div>
                                                               </div>
                                                             </div>
                                                             <small className="muted" style={{ display: "block", marginTop: 8 }}>Conteos: O {evaluation.over} · U {evaluation.under} · Push {evaluation.push} · N={evaluation.sample}</small>
