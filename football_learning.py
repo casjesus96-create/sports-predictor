@@ -890,13 +890,28 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                 "btts": goals_for > 0 and goals_against > 0,
                 "over25": goals_for + goals_against >= 3,
                 "clean_sheet": goals_against == 0, "failed_to_score": goals_for == 0,
+                "kickoff_at": row.get("kickoff_at"),
+                "opponent": row.get("away_team") if is_home else row.get("home_team"),
+                "result": "W" if item["actual"] == side else ("D" if item["actual"] == "DRAW" else "L"),
+                "model_predicted_team_win": item["predicted"] == side,
             })
+        games.sort(key=lambda x: str(x["kickoff_at"] or ""), reverse=True)
         n = len(games)
         wins = sum(x["won"] for x in games)
         draws = sum(x["drawn"] for x in games)
         losses = sum(x["lost"] for x in games)
         mean_win_probability = sum(x["prob"] for x in games) / n if n else None
         result = {"team": name, "sample_size": n, "minimum_sample": 5, "eligible": n >= 5}
+        if n >= 5:
+            result["recent_matches"] = [
+                {
+                    "kickoff_at": game["kickoff_at"], "opponent": game["opponent"],
+                    "venue": game["venue"], "goals_for": game["af"], "goals_against": game["aa"],
+                    "result": game["result"], "team_win_probability": round(game["prob"], 4),
+                    "model_predicted_team_win": game["model_predicted_team_win"],
+                }
+                for game in games[:5]
+            ]
         result["win_rate_diagnostic"] = _calibration_comparison(wins, n, mean_win_probability, 10)
         if n >= 5:
             result["mean_win_probability"] = round(mean_win_probability, 4)

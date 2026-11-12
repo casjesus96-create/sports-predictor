@@ -766,3 +766,29 @@ def test_match_learning_context_keeps_competition_patterns_hidden_below_minimum(
     assert "goal_patterns" not in report["competition_context"]
     assert report["home_team"]["eligible"] is True
     assert "goals" in report["home_team"]
+
+
+
+def test_match_learning_context_includes_five_most_recent_team_snapshots():
+    rows = []
+    scores = [(2, 1), (1, 1), (0, 2), (3, 0), (1, 2), (2, 2), (1, 0)]
+    for index, (home_score, away_score) in enumerate(scores):
+        row = snapshot(0.60, 0.25, 0.15, home_score, away_score, 5000 + index)
+        row["kickoff_at"] = f"2026-11-{index + 1:02d}T15:00:00Z"
+        row["home_team"], row["away_team"] = ("Manchester City", "Chelsea") if index % 2 == 0 else ("Chelsea", "Manchester City")
+        rows.append(row)
+
+    report = build_match_learning_context(
+        rows, "PL", "Manchester City", "Chelsea", "2026-11-15T12:00:00Z"
+    )
+    recent = report["home_team"]["recent_matches"]
+
+    assert len(recent) == 5
+    assert recent[0]["kickoff_at"] == "2026-11-07T15:00:00Z"
+    assert recent[-1]["kickoff_at"] == "2026-11-03T15:00:00Z"
+    assert all(item["venue"] in {"HOME", "AWAY"} for item in recent)
+    assert all(item["result"] in {"W", "D", "L"} for item in recent)
+    assert all(0 <= item["team_win_probability"] <= 1 for item in recent)
+    assert report["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
