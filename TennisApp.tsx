@@ -352,8 +352,8 @@ export default function TennisApp() {
   };
 
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px 28px" }}>
-      <section style={{ ...panelStyle, marginBottom: 16 }}>
+    <main className="tennis-app" style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 16px 28px" }}>
+      <section className="tennis-hero" style={{ ...panelStyle, marginBottom: 16 }}>
         <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.2, color: "#0d9488" }}>
           NUEVA SECCIÓN DEPORTIVA
         </div>
@@ -422,7 +422,7 @@ export default function TennisApp() {
       ) : null}
 
 
-      <section style={{ ...panelStyle, marginBottom: 16 }} aria-label="Rendimiento del modelo de tenis">
+      <section className="tennis-performance" style={{ ...panelStyle, marginBottom: 16 }} aria-label="Rendimiento del modelo de tenis">
         <h2 style={{ margin: "0 0 10px", fontSize: 17 }}>Rendimiento del modelo candidato · {league}</h2>
         {performanceError ? <p role="alert" style={{ color: "#ffd9de" }}>{performanceError}</p> : null}
         {performance ? (
@@ -449,7 +449,7 @@ export default function TennisApp() {
         ) : <p style={{ color: "#b7c8d8" }}>Consultando métricas de rendimiento…</p>}
       </section>
 
-      <section style={{ ...panelStyle, marginBottom: 16 }} aria-label="Resumen del calendario">
+      <section className="tennis-summary" style={{ ...panelStyle, marginBottom: 16 }} aria-label="Resumen del calendario">
         <h2 style={{ margin: "0 0 10px", fontSize: 17 }}>Resumen del {date}</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(125px, 1fr))", gap: 10 }}>
           {[
@@ -477,9 +477,9 @@ export default function TennisApp() {
         </div>
       ) : null}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 12 }}>
+      <div className="tennis-match-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 12 }}>
         {matches.map((match) => (
-          <article key={match.match_id} style={panelStyle}>
+          <article className="tennis-match-card" key={match.match_id} style={panelStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 12, color: "#0d9488", fontWeight: 800 }}>
@@ -521,7 +521,7 @@ export default function TennisApp() {
         const selectedMatch = matches.find((match) => match.match_id === selectedMatchId);
         if (!selectedMatch) return null;
         return (
-          <section style={{ ...panelStyle, marginTop: 16 }} aria-label="Ficha de factores para proyección">
+          <section className="tennis-analysis" style={{ ...panelStyle, marginTop: 16 }} aria-label="Ficha de factores para proyección">
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start", flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontSize: 12, color: "#2dd4bf", fontWeight: 800, letterSpacing: 1 }}>FICHA PREVIA A LA PROYECCIÓN</div>
@@ -622,7 +622,7 @@ export default function TennisApp() {
                       { label: "Break points salvados", value: formatPercent(service.break_points_saved_pct) },
                     ];
                     return (
-                      <article key={profile.player_name} style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, background: "#10253a" }}>
+                      <article className="tennis-profile-card" key={profile.player_name} style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, background: "#10253a" }}>
                         <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{profile.player_name}</h4>
                         <p style={{ margin: "0 0 12px", color: "#b7c8d8", fontSize: 12 }}>Histórico {profile.league} · 365 días · {profile.data_quality.matches_with_service_stats} partidos con estadísticas de saque</p>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>

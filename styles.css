@@ -677,3 +677,162 @@ button:disabled{cursor:not-allowed;opacity:.55}
   }
 }
 
+
+
+/* Tenis: presentación responsiva aislada; no modifica cálculos ni estados. */
+.tennis-app,
+.tennis-app > *,
+.tennis-app section,
+.tennis-app article {
+  min-width: 0;
+  box-sizing: border-box;
+}
+.tennis-app {
+  width: 100%;
+  max-width: 1100px;
+  overflow-x: clip;
+}
+.tennis-app .tennis-hero,
+.tennis-app .tennis-performance,
+.tennis-app .tennis-summary,
+.tennis-app .tennis-analysis {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tennis-app .tennis-hero h1 {
+  font-size: clamp(1.35rem, 5vw, 2rem);
+  line-height: 1.2;
+}
+.tennis-app .tennis-hero p,
+.tennis-app .tennis-analysis p {
+  overflow-wrap: anywhere;
+}
+.tennis-app .tennis-performance > div,
+.tennis-app .tennis-summary > div {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 135px), 1fr));
+}
+.tennis-app .tennis-performance > div > div,
+.tennis-app .tennis-summary > div > div {
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.tennis-app .tennis-performance strong,
+.tennis-app .tennis-summary strong {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.tennis-app .tennis-match-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  min-width: 0;
+}
+.tennis-app .tennis-match-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.tennis-app .tennis-match-card > div,
+.tennis-app .tennis-match-card > div > * {
+  min-width: 0;
+}
+.tennis-app .tennis-match-card h2,
+.tennis-app .tennis-match-card strong,
+.tennis-app .tennis-match-card p,
+.tennis-app .tennis-analysis h2,
+.tennis-app .tennis-analysis h3,
+.tennis-app .tennis-profile-card h4 {
+  overflow-wrap: anywhere;
+}
+.tennis-app .tennis-match-card [style*="grid-template-columns"] {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: 8px 10px !important;
+}
+.tennis-app .tennis-match-card [style*="fontVariantNumeric"] {
+  white-space: nowrap;
+  text-align: right;
+}
+.tennis-app .tennis-analysis [style*="grid-template-columns"],
+.tennis-app .tennis-profile-card [style*="grid-template-columns"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+}
+.tennis-app .tennis-analysis button,
+.tennis-app .tennis-match-card button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.tennis-app .tennis-profile-card {
+  min-width: 0;
+  overflow: hidden;
+}
+.tennis-app .tennis-profile-card > div > div {
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+.tennis-app .percentage-signal-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+}
+.tennis-app .percentage-band-card,
+.tennis-app .percentage-signal {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.tennis-app [role="alert"],
+.tennis-app [role="status"] {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .tennis-app {
+    padding-left: 11px !important;
+    padding-right: 11px !important;
+  }
+  .tennis-app .tennis-hero,
+  .tennis-app .tennis-performance,
+  .tennis-app .tennis-summary,
+  .tennis-app .tennis-analysis {
+    padding: 12px !important;
+  }
+  .tennis-app .tennis-match-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .tennis-app .tennis-match-card {
+    padding: 12px !important;
+  }
+  .tennis-app .tennis-match-card > div[style*="grid-template-columns"] {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+  }
+  .tennis-app .tennis-analysis [style*="display: flex"] {
+    gap: 8px !important;
+  }
+  .tennis-app .tennis-analysis button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+  .tennis-app .tennis-profile-card {
+    padding: 11px !important;
+  }
+  .tennis-app .tennis-profile-card > div > div {
+    padding: 8px !important;
+  }
+}
+@media (max-width: 380px) {
+  .tennis-app .tennis-match-card > div[style*="grid-template-columns"] {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 6px !important;
+  }
+  .tennis-app .tennis-match-card strong {
+    font-size: .9rem;
+  }
+  .tennis-app .tennis-performance > div,
+  .tennis-app .tennis-summary > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tennis-app .tennis-profile-card > div[style*="grid-template-columns"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
