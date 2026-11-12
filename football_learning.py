@@ -1044,6 +1044,42 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                         "average_goals_for": round(sum(x["af"] for x in subset) / len(subset), 2),
                         "average_goals_against": round(sum(x["aa"] for x in subset) / len(subset), 2),
                     }
+                    if len(subset) >= 6:
+                        venue_recent = subset[:3]
+                        venue_previous = subset[3:6]
+
+                        def venue_period_metrics(period):
+                            period_size = len(period)
+                            period_wins = sum(game["won"] for game in period)
+                            period_draws = sum(game["drawn"] for game in period)
+                            return {
+                                "matches": period_size,
+                                "points_per_match": round((period_wins * 3 + period_draws) / period_size, 2),
+                                "average_goals_for": round(sum(game["af"] for game in period) / period_size, 2),
+                                "average_goals_against": round(sum(game["aa"] for game in period) / period_size, 2),
+                                "btts_rate": round(sum(game["btts"] for game in period) / period_size, 4),
+                                "over_2_5_rate": round(sum(game["over25"] for game in period) / period_size, 4),
+                            }
+
+                        venue_recent_metrics = venue_period_metrics(venue_recent)
+                        venue_previous_metrics = venue_period_metrics(venue_previous)
+                        venue_summary["recent_trend"] = {
+                            "eligible": True,
+                            "minimum_sample": 6,
+                            "window_size": 3,
+                            "recent": venue_recent_metrics,
+                            "previous": venue_previous_metrics,
+                            "deltas": {
+                                key: round(venue_recent_metrics[key] - venue_previous_metrics[key], 4)
+                                for key in ("points_per_match", "average_goals_for", "average_goals_against", "btts_rate", "over_2_5_rate")
+                            },
+                            "interpretation": "Compara los tres partidos más recientes y los tres anteriores de esta sede; descriptivo, no predictivo.",
+                        }
+                    elif len(subset) >= 3:
+                        venue_summary["recent_trend"] = {
+                            "eligible": False, "minimum_sample": 6, "window_size": 3,
+                            "sample_size": len(subset), "status": "INSUFFICIENT_SAMPLE",
+                        }
                     if len(subset) >= 3:
                         overall_points_per_match = round((wins * 3 + draws) / n, 2)
                         overall_goals_for = sum(x["af"] for x in games) / n
