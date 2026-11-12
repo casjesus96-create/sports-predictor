@@ -1555,10 +1555,10 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
   if (["FINISHED", "AWARDED", "CANCELLED", "CANCELED"].includes(status)) return null;
   const renderTeam = (team: any) => <div style={{ padding: 9, borderRadius: 8, background: "#0b1220" }}>
     <strong>{team.team}</strong>
-    <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 3 }}>{team.sample_size} partidos previos {team.eligible ? "· muestra descriptiva disponible" : "· se requieren " + team.minimum_sample}</div>
+    <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 3 }}>{team.sample_size} partidos previos · mínimo descriptivo: {team.minimum_sample} {team.eligible ? "· muestra disponible" : "· muestra insuficiente"}</div>
     {team.eligible ? <>
-      <div style={{ fontSize: 12, marginTop: 6 }}>Probabilidad media de victoria: <strong>{percent(team.mean_win_probability)}</strong></div>
-      <div style={{ fontSize: 12 }}>Victorias observadas: <strong>{percent(team.observed_win_rate)}</strong></div>
+      <div style={{ fontSize: 12, marginTop: 6 }}>Probabilidad media asignada al equipo en esos partidos: <strong>{percent(team.mean_win_probability)}</strong></div>
+      <div style={{ fontSize: 12 }}>Victorias realmente obtenidas: <strong>{percent(team.observed_win_rate)}</strong></div>
       <CalibrationDiagnostic diagnostic={team.win_rate_diagnostic} />
       {typeof team.goals_for_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Goles a favor frente a lo esperado: {team.goals_for_bias > 0 ? "+" : ""}{team.goals_for_bias.toFixed(2)}</div>}
       {typeof team.goals_against_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Goles recibidos frente a lo esperado: {team.goals_against_bias > 0 ? "+" : ""}{team.goals_against_bias.toFixed(2)}</div>}
@@ -1573,17 +1573,19 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
     {data && <>
       <div style={{ padding: 9, background: "#111827", borderRadius: 8, marginBottom: 8 }}>
         <strong style={{ fontSize: 12 }}>Contexto de {competition}</strong>
-        <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{data.competition_context.sample_size} partidos liquidados anteriores a este encuentro.</div>
+        <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{data.competition_context.sample_size} partidos liquidados anteriores a este encuentro · {data.competition_context.favorite_sample} con favorito de al menos 50%.</div>
+        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Periodo consultado: {data.window_start ? new Date(data.window_start).toLocaleDateString() : "—"} hasta antes del kickoff · ventana de {data.window_days || 90} días · registros recibidos: {data.records_returned ?? data.competition_context.sample_size}.</div>
         {data.competition_context.eligible ? <>
-          <div style={{ fontSize: 12, marginTop: 5 }}>Confianza media del favorito: <strong>{percent(data.competition_context.mean_favorite_confidence)}</strong> · Acierto: <strong>{percent(data.competition_context.favorite_accuracy)}</strong></div>
+          <div style={{ fontSize: 12, marginTop: 5 }}>Confianza media asignada al favorito: <strong>{percent(data.competition_context.mean_favorite_confidence)}</strong> · Acierto observado: <strong>{percent(data.competition_context.favorite_accuracy)}</strong></div>
           <CalibrationDiagnostic diagnostic={data.competition_context.favorite_calibration} />
           {typeof data.competition_context.expected_total_goals_bias === "number" && <div style={{ fontSize: 11, color: "#cbd5e1" }}>Sesgo de goles totales (real − esperado): {data.competition_context.expected_total_goals_bias > 0 ? "+" : ""}{data.competition_context.expected_total_goals_bias.toFixed(2)}</div>}
         </> : <p style={{ color: "#fbbf24", fontSize: 11, marginBottom: 0 }}>Muestra insuficiente: se requieren al menos {data.competition_context.minimum_sample} partidos para mostrar señales de competición.</p>}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,190px),1fr))", gap: 8 }}>
         {renderTeam(data.home_team)}
         {renderTeam(data.away_team)}
       </div>
+      <p style={{ color: "#94a3b8", fontSize: 10, margin: "7px 0 0" }}>Lectura correcta: la probabilidad media refleja lo que el modelo asignó a cada equipo en sus partidos anteriores, tanto de local como de visitante; el porcentaje de victorias es el resultado observado. No representa una predicción directa del partido actual.</p>
       <p style={{ color: "#64748b", fontSize: 10, marginBottom: 0 }}>Solo snapshots oficiales liquidados anteriores al kickoff · sin proveedores externos · solo lectura.</p>
     </>}
   </section>;
