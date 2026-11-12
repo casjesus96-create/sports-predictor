@@ -1922,32 +1922,70 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
           <p style={{ color: "#9ca3af", fontSize: 10 }}>Muestra: {diagnostic.sample_size ?? 0} partidos · No se interpreta como causalidad ni se usa para ajustar probabilidades.</p>
         </>
       })()}
-      <h3 style={{ marginBottom: 6 }}>Clasificación de fallos del favorito y sorpresas</h3>
-      {(() => {
-        const summary = report.surprise_classification || {};
-        const counts = summary.counts || {};
-        const categories = [
-          ["EXTREME", "Extremas"],
-          ["HIGH", "Altas"],
-          ["MODERATE", "Moderadas"],
-          ["LOW", "Fallos plausibles"],
-        ];
-        return <>
-          <p style={{ color: "#9ca3af", fontSize: 11 }}>Clasificación según la probabilidad que el modelo asignó al resultado real, no solo por el marcador. N={summary.sample_size ?? 0} fallos de favorito.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(115px,1fr))", gap: 6, marginBottom: 8 }}>
-            {categories.map(([key, label]) => <div key={key} style={{ padding: 8, background: "#111827", borderRadius: 7 }}>
-              <strong style={{ fontSize: 17 }}>{counts[key] ?? 0}</strong>
-              <div style={{ color: "#9ca3af", fontSize: 10 }}>{label}</div>
-            </div>)}
-          </div>
-          {(report.surprises || []).length ? (report.surprises || []).map((item: any) => <article key={item.match_id} style={{ padding: 10, marginTop: 8, borderRadius: 8, background: "#0b1220", border: "1px solid #475569" }}>
-            <strong>{item.home_team} {item.score} {item.away_team}</strong>
-            <div style={{ color: "#fbbf24", fontSize: 11, marginTop: 4 }}>{item.classification_label || item.classification}</div>
-            <div style={{ color: "#cbd5e1", fontSize: 12, marginTop: 4 }}>Pronóstico: {item.predicted_outcome} ({percent(item.predicted_confidence)}) · Resultado: {item.actual_outcome} · Probabilidad del resultado real: {percent(item.actual_outcome_probability)} · Brecha del favorito: {percent(item.favorite_probability_gap)} · Log Loss: {item.surprise_score}</div>
-          </article>) : <p style={{ color: "#9ca3af" }}>No hay fallos de favorito en esta muestra.</p>}
-          <p style={{ color: "#64748b", fontSize: 10 }}>Extrema: resultado real por debajo de 10%; alta: 10–&lt;20%; moderada: 20–&lt;35%; plausible: ≥35%. Umbrales descriptivos, no ajustes del modelo.</p>
-        </>;
-      })()}
+      <section aria-label="Clasificación de fallos del favorito y sorpresas" style={{ marginTop: 14, padding: 12, border: "1px solid #334155", borderRadius: 11, background: "#0b1726", minWidth: 0, overflow: "hidden" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <h3 style={{ margin: 0 }}>Clasificación de fallos del favorito y sorpresas</h3>
+          <span style={{ color: "#cbd5e1", fontSize: 11, fontVariantNumeric: "tabular-nums" }}>Muestra: {report.surprise_classification?.sample_size ?? 0}</span>
+        </div>
+        {(() => {
+          const summary = report.surprise_classification || {};
+          const counts = summary.counts || {};
+          const categories = [
+            { key: "EXTREME", label: "Extremas", threshold: "<10%", note: "El resultado real era muy improbable.", color: "#fca5a5", border: "#7f1d1d" },
+            { key: "HIGH", label: "Altas", threshold: "10–<20%", note: "El modelo asignaba una probabilidad baja.", color: "#fdba74", border: "#9a3412" },
+            { key: "MODERATE", label: "Moderadas", threshold: "20–<35%", note: "Había una posibilidad apreciable.", color: "#fde68a", border: "#854d0e" },
+            { key: "LOW", label: "Plausibles", threshold: "≥35%", note: "El resultado tenía respaldo probabilístico relevante.", color: "#86efac", border: "#166534" },
+          ];
+          return <>
+            <p style={{ color: "#aebdcb", fontSize: 11, lineHeight: 1.5, margin: "7px 0 10px" }}>
+              Se clasifican únicamente partidos en los que falló el resultado favorito. La categoría depende de la probabilidad que el modelo había asignado al resultado que finalmente ocurrió; no depende de lo abultado del marcador.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 145px), 1fr))", gap: 8 }}>
+              {categories.map((category) => <article key={category.key} style={{ minWidth: 0, padding: 10, borderRadius: 9, background: "#111827", border: `1px solid ${category.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+                  <strong style={{ color: category.color, fontSize: 13 }}>{category.label}</strong>
+                  <strong style={{ color: "#f8fafc", fontSize: 20, fontVariantNumeric: "tabular-nums" }}>{counts[category.key] ?? 0}</strong>
+                </div>
+                <div style={{ color: "#e2e8f0", fontSize: 11, fontWeight: 700, marginTop: 4 }}>Prob. del resultado: {category.threshold}</div>
+                <p style={{ color: "#94a3b8", fontSize: 10, lineHeight: 1.4, margin: "5px 0 0" }}>{category.note}</p>
+              </article>)}
+            </div>
+            {(report.surprises || []).length ? (
+              <div style={{ marginTop: 12 }}>
+                <strong style={{ color: "#e2e8f0", fontSize: 12 }}>Partidos clasificados</strong>
+                {(report.surprises || []).map((item: any) => <article key={item.match_id} style={{ minWidth: 0, padding: 11, marginTop: 8, borderRadius: 9, background: "#111827", border: "1px solid #334155", overflow: "hidden" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 6 }}>
+                    <strong style={{ color: "#f8fafc", fontSize: 13 }}>{item.home_team} {item.score} {item.away_team}</strong>
+                    <span style={{ color: "#fbbf24", fontSize: 11, fontWeight: 700 }}>{item.classification_label || item.classification}</span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))", gap: 7, marginTop: 9 }}>
+                    <div style={{ padding: 8, borderRadius: 7, background: "#0b1220" }}>
+                      <div style={{ color: "#94a3b8", fontSize: 10 }}>Pronóstico original</div>
+                      <strong style={{ color: "#e2e8f0", fontSize: 13 }}>{item.predicted_outcome} · {percent(item.predicted_confidence)}</strong>
+                    </div>
+                    <div style={{ padding: 8, borderRadius: 7, background: "#0b1220" }}>
+                      <div style={{ color: "#94a3b8", fontSize: 10 }}>Resultado final</div>
+                      <strong style={{ color: "#e2e8f0", fontSize: 13 }}>{item.actual_outcome}</strong>
+                    </div>
+                    <div style={{ padding: 8, borderRadius: 7, background: "#0b1220" }}>
+                      <div style={{ color: "#94a3b8", fontSize: 10 }}>Probabilidad que tenía el resultado real</div>
+                      <strong style={{ color: "#f8fafc", fontSize: 13 }}>{percent(item.actual_outcome_probability)}</strong>
+                    </div>
+                    <div style={{ padding: 8, borderRadius: 7, background: "#0b1220" }}>
+                      <div style={{ color: "#94a3b8", fontSize: 10 }}>Brecha del favorito</div>
+                      <strong style={{ color: "#e2e8f0", fontSize: 13 }}>{percent(item.favorite_probability_gap)}</strong>
+                    </div>
+                  </div>
+                  <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 7 }}>Log Loss del resultado: {item.surprise_score ?? "—"} · Valor mayor indica mayor penalización probabilística.</div>
+                </article>)}
+              </div>
+            ) : <p style={{ color: "#94a3b8", fontSize: 11, margin: "10px 0 0" }}>No hay fallos de favorito en esta muestra; por tanto, no hay sorpresas clasificadas.</p>}
+            <p style={{ color: "#74869a", fontSize: 10, lineHeight: 1.5, margin: "10px 0 0" }}>
+              Importante: un fallo del favorito no siempre es una sorpresa extrema. Por ejemplo, si el resultado real tenía 38% de probabilidad, se clasifica como plausible aunque el favorito haya perdido. Los umbrales son descriptivos y no modifican el modelo ni sus probabilidades.
+            </p>
+          </>;
+        })()}
+      </section>
       <h3 style={{ marginBottom: 6 }}>Señales detectadas</h3>
       <ul style={{ color: "#cbd5e1", paddingLeft: 20 }}>{(report.signals || []).map((signal: string, index: number) => <li key={index} style={{ marginBottom: 5 }}>{signal}</li>)}</ul>
       <p style={{ color: "#fbbf24", fontSize: 12, marginBottom: 0 }}>Diagnóstico descriptivo, no explicación causal. No modifica ni recalibra el modelo; no escribe snapshots y no realiza llamadas a proveedores. Para atribuir causas harán falta variables prepartido adicionales guardadas de forma consistente.</p>
