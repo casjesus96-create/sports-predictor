@@ -427,8 +427,24 @@ def _build_temporal_error_stability(valid: list[dict[str, Any]]) -> dict[str, An
                 "start_local_date": window_dates[0],
                 "end_local_date": window_dates[-1],
                 "confusion_matrix": diagnostic["confusion_matrix"]["predicted_rows_actual_columns"],
+                "outcome_error_profile": _outcome_error_profile(items),
                 "goal_residuals": diagnostic["goal_residuals"],
             })
+
+        earlier_profile = window_results[0]["outcome_error_profile"]["outcomes"]
+        later_profile = window_results[1]["outcome_error_profile"]["outcomes"]
+        outcome_changes = {}
+        for outcome in OUTCOMES:
+            earlier = earlier_profile[outcome]
+            later = later_profile[outcome]
+            outcome_changes[outcome] = {
+                "recall_delta": round(later["recall"] - earlier["recall"], 4)
+                    if earlier["recall_eligible"] and later["recall_eligible"] else None,
+                "precision_delta": round(later["precision"] - earlier["precision"], 4)
+                    if earlier["precision_eligible"] and later["precision_eligible"] else None,
+                "recall_comparable": earlier["recall_eligible"] and later["recall_eligible"],
+                "precision_comparable": earlier["precision_eligible"] and later["precision_eligible"],
+            }
         segments.append({
             "competition": competition,
             "sample_size": total,
@@ -436,6 +452,8 @@ def _build_temporal_error_stability(valid: list[dict[str, Any]]) -> dict[str, An
             "minimum_per_window": TEMPORAL_ERROR_WINDOW_MINIMUM_SAMPLE,
             "split_before_local_date": split_date,
             "windows": window_results,
+            "outcome_changes": outcome_changes,
+            "comparison_note": "Deltas = ventana reciente menos ventana anterior. Positivo significa mayor recall/precisión; negativo, menor. Solo se calcula si ambos denominadores de la métrica alcanzan N mínimo.",
         })
 
     return {
