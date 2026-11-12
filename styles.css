@@ -854,3 +854,76 @@ button:disabled{cursor:not-allowed;opacity:.55}
     transition: none;
   }
 }
+
+
+/* MLB: lectura clara de la auditoría de calibración, sin alterar métricas. */
+.mlb-app .mlb-calibration-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+.mlb-app .mlb-calibration-total {
+  color: #b7c8d8;
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mlb-app .mlb-calibration-intro {
+  max-width: 78ch;
+  margin: 0 0 12px;
+  line-height: 1.55;
+}
+.mlb-app .mlb-calibration-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 10px;
+  color: #a9bdcf;
+  font-size: .72rem;
+}
+.mlb-app .mlb-calibration-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.mlb-app .mlb-calibration-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+}
+.mlb-app .mlb-calibration-dot-predicted {
+  background: #14b8a6;
+}
+.mlb-app .mlb-calibration-dot-observed {
+  background: #f59e0b;
+}
+.mlb-app .mlb-calibration-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 285px), 1fr));
+}
+.mlb-app .mlb-calibration-bin {
+  min-width: 0;
+}
+.mlb-app .mlb-calibration-bin .percentage-band-heading span {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mlb-app .mlb-calibration-footnote {
+  margin: 10px 0 0;
+  color: #8fa5b9;
+  font-size: .72rem;
+  line-height: 1.5;
+}
+.mlb-app .mlb-calibration-empty {
+  border: 1px dashed #35516a;
+  border-radius: 10px;
+  line-height: 1.5;
+}
+@media (max-width: 600px) {
+  .mlb-app .mlb-calibration-total {
+    text-align: left;
+  }
+  .mlb-app .mlb-calibration-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
