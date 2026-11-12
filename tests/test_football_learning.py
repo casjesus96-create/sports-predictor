@@ -643,3 +643,61 @@ def test_temporal_outcome_changes_hide_deltas_when_either_window_has_insufficien
     assert segment["outcome_changes"]["DRAW"]["recall_delta"] == 0.0
     assert segment["outcome_changes"]["HOME"]["recall_delta"] is None
     assert segment["outcome_changes"]["HOME"]["recall_comparable"] is False
+
+def test_recurring_confusion_patterns_compare_directional_errors_across_local_seasons():
+    rows = []
+    for index in range(60):
+        row = snapshot(0.60, 0.25, 0.15, 1, 1, 9000 + index)
+        year = 2024 if index < 30 else 2025
+        day = (index % 28) + 1
+        row["kickoff_at"] = f"{year}-08-{day:02d}T15:00:00Z"
+        if index < 30:
+            row["actual_home_score"] = 1
+            row["actual_away_score"] = 1
+        elif index < 36:
+            row["actual_home_score"] = 1
+            row["actual_away_score"] = 1
+        else:
+            row["actual_home_score"] = 2
+            row["actual_away_score"] = 0
+        row["actual_outcome"] = "DRAW" if row["actual_home_score"] == row["actual_away_score"] else "HOME"
+        rows.append(row)
+
+    report = build_postmatch_learning_report(rows, "PL")
+    diagnostic = report["recurring_confusion_patterns"]
+    competition = diagnostic["by_competition"][0]
+    home_to_draw = next(
+        pattern for pattern in competition["patterns"]
+        if pattern["predicted"] == "HOME" and pattern["actual"] == "DRAW"
+    )
+
+    assert diagnostic["minimum_predicted_class_sample_per_season"] == 30
+    assert competition["season_count"] == 2
+    assert home_to_draw["status"] == "COMPARABLE"
+    assert home_to_draw["evaluable_seasons"] == 2
+    assert home_to_draw["recurring_seasons"] == 2
+    assert home_to_draw["recurrence_rate"] == 1.0
+    assert [season["confusion_count"] for season in home_to_draw["seasons"]] == [30, 6]
+    assert all(season["rate_ci_95"] is not None for season in home_to_draw["seasons"])
+    assert diagnostic["read_only"] is True
+    assert diagnostic["model_changed"] is False
+    assert report["snapshots_written"] == 0
+    assert report["provider_calls"] == 0
+
+
+def test_recurring_confusion_patterns_require_two_evaluable_seasons_and_stable_empty_schema():
+    row = snapshot(0.60, 0.25, 0.15, 1, 1, 9100)
+    row["kickoff_at"] = "2026-08-10T15:00:00Z"
+    report = build_postmatch_learning_report([row], "PL")
+    diagnostic = report["recurring_confusion_patterns"]
+    pattern = next(
+        item for item in diagnostic["by_competition"][0]["patterns"]
+        if item["predicted"] == "HOME" and item["actual"] == "DRAW"
+    )
+    assert pattern["status"] == "INSUFFICIENT_SEASONS"
+    assert pattern["evaluable_seasons"] == 0
+    assert pattern["recurrence_rate"] is None
+    empty = build_postmatch_learning_report([], "PL")["recurring_confusion_patterns"]
+    assert empty["by_competition"] == []
+    assert empty["read_only"] is True
+    assert empty["model_changed"] is False
