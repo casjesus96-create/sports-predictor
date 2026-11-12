@@ -603,3 +603,43 @@ def test_segmented_error_profile_has_stable_empty_schema():
     assert segmented["by_season"] == []
     assert segmented["read_only"] is True
     assert segmented["model_changed"] is False
+
+
+def test_temporal_error_stability_compares_outcome_precision_and_recall_across_windows():
+    rows = []
+    for index in range(60):
+        day = index + 1
+        date = f"2026-08-{day:02d}" if day <= 31 else f"2026-09-{day - 31:02d}"
+        if index < 30:
+            row = snapshot(0.60, 0.25, 0.15, 2, 0, 8000 + index)
+        else:
+            row = snapshot(0.15, 0.25, 0.60, 2, 0, 8000 + index)
+        row["kickoff_at"] = f"{date}T15:00:00Z"
+        rows.append(row)
+
+    segment = build_postmatch_learning_report(rows, "PL")["temporal_error_stability"]["by_competition"][0]
+    assert segment["eligible"] is True
+    earlier, later = segment["windows"]
+    assert earlier["outcome_error_profile"]["outcomes"]["HOME"]["recall"] == 1.0
+    assert later["outcome_error_profile"]["outcomes"]["HOME"]["recall"] == 0.0
+    assert later["outcome_error_profile"]["outcomes"]["AWAY"]["precision"] == 0.0
+    assert segment["outcome_changes"]["HOME"]["recall_delta"] == -1.0
+    assert segment["outcome_changes"]["HOME"]["precision_delta"] is None
+    assert segment["outcome_changes"]["HOME"]["recall_comparable"] is True
+    assert segment["outcome_changes"]["HOME"]["precision_comparable"] is False
+
+
+def test_temporal_outcome_changes_hide_deltas_when_either_window_has_insufficient_class_support():
+    rows = []
+    for index in range(60):
+        day = index + 1
+        date = f"2026-08-{day:02d}" if day <= 31 else f"2026-09-{day - 31:02d}"
+        row = snapshot(0.60, 0.25, 0.15, 1, 1, 8100 + index)
+        row["kickoff_at"] = f"{date}T15:00:00Z"
+        rows.append(row)
+
+    segment = build_postmatch_learning_report(rows, "PL")["temporal_error_stability"]["by_competition"][0]
+    assert segment["eligible"] is True
+    assert segment["outcome_changes"]["DRAW"]["recall_delta"] == 0.0
+    assert segment["outcome_changes"]["HOME"]["recall_delta"] is None
+    assert segment["outcome_changes"]["HOME"]["recall_comparable"] is False
