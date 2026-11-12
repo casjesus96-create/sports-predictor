@@ -141,6 +141,13 @@ const PLAYER_MARKETS: Record<string, string[]> = {
   PRA: ["points", "rebounds", "assists"],
 };
 
+const PLAYER_MARKET_DESCRIPTIONS: Record<string, string> = {
+  PTS: "Puntos totales",
+  REB: "Rebotes totales",
+  AST: "Asistencias totales",
+  PRA: "Puntos + rebotes + asistencias (suma total)",
+};
+
 function wilsonInterval(successes: number, total: number, scale: number) {
   if (!total) return [0, 0];
   const z = 1.959963984540054;
@@ -757,8 +764,9 @@ export default function NBAApp() {
                                                     const evaluation = evaluateMarketLine(player.market_history, market, line);
                                                     return (
                                                       <td key={market}>
+                                                        <small className="muted">{PLAYER_MARKET_DESCRIPTIONS[market]}</small>
                                                         <input
-                                                          aria-label={player.name + " línea " + market}
+                                                          aria-label={player.name + " línea " + market + ": " + PLAYER_MARKET_DESCRIPTIONS[market]}
                                                           type="number"
                                                           min="0"
                                                           step="0.5"
