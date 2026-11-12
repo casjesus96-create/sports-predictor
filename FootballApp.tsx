@@ -1556,9 +1556,27 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
   const panel: React.CSSProperties = { padding: 9, borderRadius: 8, background: "#111827", minWidth: 0 };
   const metricGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,115px),1fr))", gap: 6, marginTop: 7 };
   const metric = (label: string, value: string | number) => <div style={{ ...panel, background: "#0b1220" }}><div style={{ color: "#94a3b8", fontSize: 10 }}>{label}</div><strong style={{ display: "block", marginTop: 3, fontSize: 14, overflowWrap: "anywhere" }}>{value}</strong></div>;
+  const renderSampleProgress = (label: string, sampleValue: unknown, minimumValue: unknown) => {
+    const sample = Number.isFinite(Number(sampleValue)) ? Math.max(0, Math.floor(Number(sampleValue))) : 0;
+    const minimum = Number.isFinite(Number(minimumValue)) ? Math.max(1, Math.floor(Number(minimumValue))) : 1;
+    const progress = Math.min(100, (sample / minimum) * 100);
+    const remaining = Math.max(0, minimum - sample);
+    const reached = remaining === 0;
+    return <div style={{ marginTop: 7, padding: 9, borderRadius: 8, background: "#0b1220", border: "1px solid #26384c" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ color: "#cbd5e1", fontSize: 10 }}>{label}</span>
+        <strong style={{ color: reached ? "#86efac" : "#7dd3fc", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{sample}/{minimum} · {progress.toFixed(0)}%</strong>
+      </div>
+      <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={minimum} aria-valuenow={Math.min(sample, minimum)} style={{ height: 7, marginTop: 7, borderRadius: 8, background: "#334155", overflow: "hidden" }}>
+        <div style={{ width: progress + "%", height: "100%", borderRadius: 8, background: reached ? "#22c55e" : "#0ea5e9", transition: "width .2s ease" }} />
+      </div>
+      <div style={{ color: reached ? "#86efac" : "#94a3b8", fontSize: 10, marginTop: 5 }}>{reached ? "Mínimo descriptivo alcanzado." : `Faltan ${remaining} ${remaining === 1 ? "partido" : "partidos"} para alcanzar el mínimo.`}</div>
+    </div>;
+  };
   const renderTeam = (team: any) => <div style={{ ...panel, border: "1px solid #334155" }}>
     <strong>{team.team}</strong>
     <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 3 }}>{team.sample_size} partidos previos · mínimo descriptivo: {team.minimum_sample} · {team.eligible ? "muestra disponible" : "muestra insuficiente"}</div>
+    {renderSampleProgress("Progreso de muestra del equipo", team.sample_size, team.minimum_sample)}
     {team.eligible ? <>
       <div style={metricGrid}>
         {metric("Victorias · Empates · Derrotas", `${team.results.wins} · ${team.results.draws} · ${team.results.losses}`)}
@@ -1607,6 +1625,7 @@ function FootballMatchLessonsPanel({ competition, match }: { competition: string
         <strong style={{ fontSize: 12 }}>Contexto de {competition}</strong>
         <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{data.competition_context.sample_size} partidos liquidados anteriores a este encuentro · {data.competition_context.favorite_sample} con favorito de al menos 50%.</div>
         <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>Periodo consultado: {data.window_start ? new Date(data.window_start).toLocaleDateString() : "—"} hasta antes del kickoff · ventana de {data.window_days || 90} días · registros recibidos: {data.records_returned ?? data.competition_context.sample_size}.</div>
+        {renderSampleProgress("Progreso de muestra de la competición", data.competition_context.sample_size, data.competition_context.minimum_sample)}
         {data.competition_context.eligible ? <>
           <div style={metricGrid}>
             {metric("Victorias locales", `${data.competition_context.outcomes.home_wins} · ${percent(data.competition_context.outcomes.home_win_rate)}`)}
