@@ -939,6 +939,8 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                     "points_per_match": round((period_wins * 3 + period_draws) / period_size, 2),
                     "btts_rate": round(sum(game["btts"] for game in period) / period_size, 4),
                     "over_2_5_rate": round(sum(game["over25"] for game in period) / period_size, 4),
+                    "clean_sheet_rate": round(sum(game["clean_sheet"] for game in period) / period_size, 4),
+                    "failed_to_score_rate": round(sum(game["failed_to_score"] for game in period) / period_size, 4),
                 }
 
             recent_metrics = period_metrics(recent)
@@ -963,6 +965,8 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
             points_delta = round(recent_metrics["points_per_match"] - previous_metrics["points_per_match"], 2)
             btts_delta = round(recent_metrics["btts_rate"] - previous_metrics["btts_rate"], 4)
             over_2_5_delta = round(recent_metrics["over_2_5_rate"] - previous_metrics["over_2_5_rate"], 4)
+            clean_sheet_delta = round(recent_metrics["clean_sheet_rate"] - previous_metrics["clean_sheet_rate"], 4)
+            failed_to_score_delta = round(recent_metrics["failed_to_score_rate"] - previous_metrics["failed_to_score_rate"], 4)
             goals_for_volatility_delta = round(recent_metrics["goals_for_std_dev"] - previous_metrics["goals_for_std_dev"], 2)
             goals_against_volatility_delta = round(recent_metrics["goals_against_std_dev"] - previous_metrics["goals_against_std_dev"], 2)
             result["recent_trend"] = {
@@ -977,6 +981,8 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                     "points_per_match": points_delta,
                     "btts_rate": btts_delta,
                     "over_2_5_rate": over_2_5_delta,
+                    "clean_sheet_rate": clean_sheet_delta,
+                    "failed_to_score_rate": failed_to_score_delta,
                     "goals_for_volatility": goals_for_volatility_delta,
                     "goals_against_volatility": goals_against_volatility_delta,
                 },
@@ -985,6 +991,8 @@ def build_match_learning_context(rows, competition, home_team, away_team, kickof
                 "attack": trend_direction(goals_for_delta),
                 "btts": trend_direction(btts_delta, 0.2),
                 "over_2_5": trend_direction(over_2_5_delta, 0.2),
+                "clean_sheets": trend_direction(clean_sheet_delta, 0.2),
+                "failed_to_score": trend_direction(failed_to_score_delta, 0.2),
                 "defense": trend_direction(-goals_against_delta),
                 "results": trend_direction(points_delta, 0.5),
                 "interpretation": "Comparación descriptiva entre los cinco partidos más recientes y los cinco inmediatamente anteriores; no es una predicción.",
