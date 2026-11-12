@@ -975,3 +975,163 @@ button:disabled{cursor:not-allowed;opacity:.55}
     flex-wrap: wrap;
   }
 }
+
+
+/* NBA: auditoría temporal con comparación visual clara y adaptación móvil. */
+.nba-temporal-audit,
+.nba-temporal-audit * {
+  min-width: 0;
+  box-sizing: border-box;
+}
+.nba-temporal-audit {
+  overflow: hidden;
+}
+.nba-temporal-intro {
+  max-width: 86ch;
+  line-height: 1.6;
+}
+.nba-temporal-total {
+  color: #b7c8d8;
+  font-size: .76rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.nba-temporal-cut {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #35516a;
+  border-radius: 10px;
+  color: #c4d4e2;
+  font-size: .76rem;
+  line-height: 1.45;
+}
+.nba-temporal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.nba-temporal-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #29465f;
+  border-radius: 12px;
+  background: #0d1d2d;
+  overflow: hidden;
+}
+.nba-temporal-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.nba-temporal-card-head h3 {
+  margin: 0;
+  color: #edf5fc;
+  font-size: .96rem;
+}
+.nba-temporal-card-head span {
+  color: #c4d4e2;
+  font-size: .74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.nba-temporal-dates {
+  margin: 6px 0 14px;
+  color: #8fa5b9;
+  font-size: .74rem;
+  overflow-wrap: anywhere;
+}
+.nba-temporal-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.nba-temporal-measure {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 9px;
+  background: #0f172a;
+}
+.nba-temporal-measure > div:first-child,
+.nba-temporal-detail > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.nba-temporal-measure span,
+.nba-temporal-detail span {
+  color: #a9bdcf;
+  font-size: .72rem;
+  overflow-wrap: anywhere;
+}
+.nba-temporal-measure b,
+.nba-temporal-detail b {
+  color: #f8fafc;
+  font-size: .86rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.nba-temporal-track {
+  height: 7px;
+  margin-top: 9px;
+  border-radius: 8px;
+  background: #334155;
+  overflow: hidden;
+}
+.nba-temporal-track i {
+  display: block;
+  height: 100%;
+  max-width: 100%;
+  border-radius: inherit;
+}
+.nba-temporal-confidence { background: #38bdf8; }
+.nba-temporal-observed { background: #34d399; }
+.nba-temporal-detail {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid #294056;
+}
+.nba-temporal-legend,
+.nba-temporal-footnote {
+  color: #8fa5b9;
+  font-size: .74rem;
+  line-height: 1.55;
+}
+.nba-temporal-legend { margin: 12px 0 0; }
+.nba-temporal-legend b { color: #cbd8e5; }
+.nba-temporal-footnote { margin: 12px 0 0; }
+.nba-temporal-empty {
+  padding: 13px;
+  border: 1px dashed #35516a;
+  border-radius: 10px;
+  color: #c4d4e2;
+  line-height: 1.5;
+}
+.nba-temporal-empty > p {
+  margin: 6px 0 10px;
+  color: #a9bdcf;
+}
+.nba-temporal-exclusions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: #8fa5b9;
+  font-size: .74rem;
+}
+.nba-temporal-exclusions b { color: #e2eaf2; font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) {
+  .nba-temporal-grid { grid-template-columns: minmax(0, 1fr); }
+  .nba-temporal-total { text-align: left; }
+}
+@media (max-width: 420px) {
+  .nba-temporal-comparison { grid-template-columns: minmax(0, 1fr); }
+  .nba-temporal-card { padding: 12px; }
+  .nba-temporal-cut { display: grid; gap: 6px; }
+}
