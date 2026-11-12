@@ -1013,39 +1013,49 @@ export default function MLBApp() {
           performance?.models?.[MODEL_VERSION]?.probability_metrics?.sample_size || 0;
 
         return (
-          <section className="panel" aria-labelledby="calibration-heading" style={{ marginTop: "20px" }}>
+          <section className="panel mlb-calibration-panel" aria-labelledby="calibration-heading" style={{ marginTop: "20px" }}>
             <div className="section-heading">
               <div>
                 <span className="section-kicker">VALIDACIÓN DEL MODELO</span>
                 <h2 id="calibration-heading">Calibración de probabilidades</h2>
               </div>
-              <span className="muted">{calibrationSample} resultados liquidados</span>
+              <span className="mlb-calibration-total">{calibrationSample} resultados liquidados</span>
             </div>
 
-            <p className="muted" style={{ marginTop: 0 }}>
-              Compara la probabilidad media pronosticada con la frecuencia real de victorias locales en cada rango.
-              Es un diagnóstico descriptivo; con pocas predicciones liquidadas no se deben ajustar los pesos del modelo.
+            <p className="muted mlb-calibration-intro">
+              Cada rango agrupa pronósticos con probabilidades similares. Comparamos la probabilidad media asignada
+              con la frecuencia real de victorias locales en esos mismos partidos. Una diferencia amplia puede indicar
+              descalibración; esta lectura es descriptiva y no ajusta el modelo ni sus pesos.
             </p>
 
             {bins.length === 0 ? (
-              <div className="empty">
-                Todavía no hay datos de calibración disponibles.
+              <div className="empty mlb-calibration-empty">
+                Todavía no hay datos de calibración disponibles. Se mostrarán bandas cuando existan resultados liquidados válidos.
               </div>
             ) : (
-              <div className="percentage-signal-grid">
-                {bins.map((bin: any) => (
-                  <article className="percentage-band-card" key={bin.range}>
-                    <div className="percentage-band-heading">
-                      <strong>{bin.range}</strong>
-                      <span>N = {bin.sample_size}</span>
-                    </div>
-                    <div className="percentage-band-signals">
-                      <PercentageSignal label="Probabilidad media" value={bin.mean_predicted_probability} />
-                      <PercentageSignal label="Victorias observadas" value={bin.observed_home_win_rate} />
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <>
+                <div className="mlb-calibration-legend" aria-label="Cómo leer las bandas de calibración">
+                  <span><i className="mlb-calibration-dot mlb-calibration-dot-predicted" /> Probabilidad pronosticada</span>
+                  <span><i className="mlb-calibration-dot mlb-calibration-dot-observed" /> Frecuencia observada</span>
+                </div>
+                <div className="percentage-signal-grid mlb-calibration-grid">
+                  {bins.map((bin: any) => (
+                    <article className="percentage-band-card mlb-calibration-bin" key={bin.range}>
+                      <div className="percentage-band-heading">
+                        <strong>{bin.range}</strong>
+                        <span>N = {bin.sample_size} partidos</span>
+                      </div>
+                      <div className="percentage-band-signals">
+                        <PercentageSignal label="Probabilidad media" value={bin.mean_predicted_probability} />
+                        <PercentageSignal label="Victorias locales reales" value={bin.observed_home_win_rate} />
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <p className="mlb-calibration-footnote">
+                  N representa los partidos liquidados incluidos en cada rango. Las bandas con muestras pequeñas pueden variar mucho y no deben interpretarse como evidencia concluyente.
+                </p>
+              </>
             )}
           </section>
         );
