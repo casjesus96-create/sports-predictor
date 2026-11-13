@@ -98,6 +98,59 @@ type PerformanceResponse = {
   message?: string;
 };
 
+type HistoricalBacktestResponse = {
+  success: boolean;
+  model_status?: string;
+  model?: string;
+  league?: string;
+  evaluation?: {
+    start_date?: string;
+    end_date?: string;
+    matches_evaluated?: number;
+    dates_evaluated?: number;
+    accuracy?: number | null;
+    brier_score?: number | null;
+    log_loss?: number | null;
+    months_with_matches?: number;
+    months_without_matches?: number;
+    monthly_breakdown?: Array<{
+      month: string;
+      matches_evaluated: number;
+      dates_evaluated: number;
+      accuracy: number | null;
+      brier_score: number | null;
+      log_loss: number | null;
+    }>;
+    benchmark?: {
+      accuracy?: number | null;
+      brier_score?: number | null;
+      log_loss?: number | null;
+      elo_brier_improvement?: number | null;
+      elo_log_loss_improvement?: number | null;
+    };
+  };
+  data_quality?: {
+    historical_rows_loaded?: number;
+    evaluation_matches?: number;
+    matches_excluded_walkover?: number;
+    matches_excluded_invalid?: number;
+    rows_without_valid_date?: number;
+    source_coverage_start_date?: string | null;
+    source_coverage_end_date?: string | null;
+    source_latest_valid_match_on_or_before_end_date?: string | null;
+    annual_files_available?: number[];
+    source?: string;
+    source_url?: string;
+  };
+  configuration?: {
+    k_factor?: number;
+    warmup_years_requested?: number;
+    same_date_batching?: boolean;
+    source_date_precision?: string;
+  };
+  limitations?: string[];
+};
+
 const API = "/api/v1/tennis";
 
 function localDate() {
@@ -105,6 +158,10 @@ function localDate() {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 10);
+}
+
+function utcDate() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function shiftDate(value: string, days: number) {
@@ -216,6 +273,11 @@ export default function TennisApp() {
   const [settlementLoading, setSettlementLoading] = useState(false);
   const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
   const [performanceError, setPerformanceError] = useState("");
+  const [backtestStartDate, setBacktestStartDate] = useState(() => shiftDate(utcDate(), -365));
+  const [backtestEndDate, setBacktestEndDate] = useState(() => shiftDate(utcDate(), -1));
+  const [backtest, setBacktest] = useState<HistoricalBacktestResponse | null>(null);
+  const [backtestLoading, setBacktestLoading] = useState(false);
+  const [backtestError, setBacktestError] = useState("");
 
   const loadPerformance = useCallback(async () => {
     try {
@@ -226,6 +288,39 @@ export default function TennisApp() {
       setPerformanceError(err instanceof Error ? err.message : "No se pudo consultar el rendimiento.");
     }
   }, [league]);
+
+  const runHistoricalBacktest = useCallback(async () => {
+    if (!backtestStartDate || !backtestEndDate || backtestEndDate < backtestStartDate) {
+      setBacktestError("Selecciona un periodo válido: la fecha final debe ser igual o posterior a la inicial.");
+      return;
+    }
+    if ((new Date(backtestEndDate + "T12:00:00").getTime() - new Date(backtestStartDate + "T12:00:00").getTime()) / 86400000 > 365) {
+      setBacktestError("El periodo no puede superar 366 días.");
+      return;
+    }
+    if (backtestEndDate >= utcDate()) {
+      setBacktestError("La fecha final debe ser anterior al día actual.");
+      return;
+    }
+    setBacktestLoading(true);
+    setBacktestError("");
+    setBacktest(null);
+    try {
+      const params = new URLSearchParams({
+        league,
+        start_date: backtestStartDate,
+        end_date: backtestEndDate,
+        warmup_years: "3",
+        k_factor: "32",
+      });
+      const result = await request<HistoricalBacktestResponse>(`/api/v1/tennis/history/backtest?${params.toString()}`);
+      setBacktest(result);
+    } catch (err) {
+      setBacktestError(err instanceof Error ? err.message : "No se pudo ejecutar la validación histórica.");
+    } finally {
+      setBacktestLoading(false);
+    }
+  }, [backtestEndDate, backtestStartDate, league]);
 
   const saveProjection = useCallback(async (match: Match) => {
     if (!match.match_id) return;
@@ -447,6 +542,77 @@ export default function TennisApp() {
             </p>
           </>
         ) : <p style={{ color: "#b7c8d8" }}>Consultando métricas de rendimiento…</p>}
+      </section>
+
+      <section className="tennis-analysis" style={{ ...panelStyle, marginBottom: 16 }} aria-label="Validación histórica cronológica del tenis">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <h2 style={{ margin: "0 0 6px", fontSize: 17 }}>Laboratorio de validación cronológica · Elo general</h2>
+            <p style={{ margin: 0, color: "#b7c8d8", fontSize: 13, lineHeight: 1.5 }}>
+              Prueba retrospectiva independiente para {league}. Los resultados no activan ni modifican el modelo candidato en vivo.
+            </p>
+          </div>
+          <span style={{ border: "1px solid #ca8a04", borderRadius: 20, padding: "5px 9px", color: "#f8e6b0", fontSize: 11, fontWeight: 800 }}>
+            SOLO INVESTIGACIÓN
+          </span>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: 10, marginTop: 14 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 145, flex: "1 1 145px", fontSize: 12, fontWeight: 700 }}>
+            Desde
+            <input type="date" value={backtestStartDate} max={shiftDate(utcDate(), -1)} onChange={(event) => setBacktestStartDate(event.target.value)} style={{ minHeight: 42, padding: "8px", borderRadius: 8, border: "1px solid #34516b", background: "#10253a", color: "#f3f7fb", font: "inherit" }} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 145, flex: "1 1 145px", fontSize: 12, fontWeight: 700 }}>
+            Hasta
+            <input type="date" value={backtestEndDate} min={backtestStartDate} max={shiftDate(utcDate(), -1)} onChange={(event) => setBacktestEndDate(event.target.value)} style={{ minHeight: 42, padding: "8px", borderRadius: 8, border: "1px solid #34516b", background: "#10253a", color: "#f3f7fb", font: "inherit" }} />
+          </label>
+          <button type="button" onClick={() => void runHistoricalBacktest()} disabled={backtestLoading} style={{ ...secondaryButtonStyle, opacity: backtestLoading ? 0.65 : 1 }}>
+            {backtestLoading ? "Evaluando histórico…" : "Ejecutar backtest"}
+          </button>
+        </div>
+        {backtestError ? <p role="alert" style={{ color: "#ffd9de", marginBottom: 0, overflowWrap: "anywhere" }}>{backtestError}</p> : null}
+        {backtestLoading ? <p role="status" style={{ color: "#b7c8d8" }}>Cargando temporadas previas y evaluando los partidos en orden cronológico…</p> : null}
+        {backtest?.evaluation ? (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 135px), 1fr))", gap: 9 }}>
+              {[
+                { label: "Partidos evaluados", value: backtest.evaluation.matches_evaluated ?? 0 },
+                { label: "Días evaluados", value: backtest.evaluation.dates_evaluated ?? 0 },
+                { label: "Acierto", value: formatPercent(backtest.evaluation.accuracy) },
+                { label: "Brier Score", value: typeof backtest.evaluation.brier_score === "number" ? backtest.evaluation.brier_score.toFixed(4) : "—" },
+                { label: "Log Loss", value: typeof backtest.evaluation.log_loss === "number" ? backtest.evaluation.log_loss.toFixed(4) : "—" },
+              ].map((metric) => (
+                <div key={metric.label} style={{ border: "1px solid #29445b", borderRadius: 9, padding: 11, background: "#10253a", minWidth: 0 }}>
+                  <div style={{ color: "#b7c8d8", fontSize: 11 }}>{metric.label}</div>
+                  <strong style={{ display: "block", fontSize: 19, marginTop: 4, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{metric.value}</strong>
+                </div>
+              ))}
+            </div>
+            <p style={{ color: "#b7c8d8", fontSize: 12, lineHeight: 1.5, margin: "10px 0" }}>
+              Periodo: {backtest.evaluation.start_date} a {backtest.evaluation.end_date}. Benchmark aleatorio 50/50: Brier {typeof backtest.evaluation.benchmark?.brier_score === "number" ? backtest.evaluation.benchmark.brier_score.toFixed(4) : "—"} · Log Loss {typeof backtest.evaluation.benchmark?.log_loss === "number" ? backtest.evaluation.benchmark.log_loss.toFixed(4) : "—"}.
+            </p>
+            {Array.isArray(backtest.evaluation.monthly_breakdown) && backtest.evaluation.monthly_breakdown.length > 0 ? (
+              <div style={{ marginTop: 12 }}>
+                <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>Consistencia mensual</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 185px), 1fr))", gap: 8 }}>
+                  {backtest.evaluation.monthly_breakdown.map((month) => (
+                    <div key={month.month} style={{ border: "1px solid #29445b", borderRadius: 8, padding: 10, background: "#0d2032", minWidth: 0 }}>
+                      <strong style={{ fontSize: 13 }}>{month.month}</strong>
+                      <div style={{ color: "#b7c8d8", fontSize: 11, marginTop: 4 }}>N={month.matches_evaluated} · {month.dates_evaluated} días</div>
+                      <div style={{ fontSize: 12, marginTop: 5 }}>Acierto: <b>{formatPercent(month.accuracy)}</b></div>
+                      <div style={{ fontSize: 12 }}>Brier: <b>{typeof month.brier_score === "number" ? month.brier_score.toFixed(4) : "—"}</b></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div style={{ marginTop: 12, padding: 11, border: "1px solid #35516a", borderRadius: 9, background: "#0d2032", color: "#b7c8d8", fontSize: 11, lineHeight: 1.55 }}>
+              <strong style={{ color: "#eaf1f8" }}>Control de datos:</strong> {backtest.data_quality?.historical_rows_loaded ?? 0} filas históricas cargadas · {backtest.data_quality?.matches_excluded_walkover ?? 0} walkovers excluidos · {backtest.data_quality?.matches_excluded_invalid ?? 0} registros inválidos excluidos.
+              <br />
+              Las calificaciones se congelan por fecha: ningún resultado del mismo día puede influir en otra evaluación de ese día. La fuente usa fecha de torneo, no hora exacta del partido.
+              {backtest.data_quality?.annual_files_available?.length ? <span> Archivos anuales disponibles: {backtest.data_quality.annual_files_available.join(", ")}.</span> : null}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="tennis-summary" style={{ ...panelStyle, marginBottom: 16 }} aria-label="Resumen del calendario">
