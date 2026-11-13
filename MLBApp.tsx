@@ -1076,11 +1076,13 @@ export default function MLBApp() {
                               IC95% Wilson de victorias reales: {interval ? `${pct(interval[0])}–${pct(interval[1])}` : "No disponible"}.
                             </small>
                             <small style={{ display: "block", marginTop: 3 }}>
-                              {sampleSize < 10
-                                ? "Muestra muy pequeña: el intervalo puede ser amplio."
-                                : sampleSize < 30
-                                  ? "Muestra limitada: interpretar el intervalo con cautela."
-                                  : "Muestra más informativa, sin garantía de estabilidad."}
+                              {!Number.isFinite(sampleSize) || sampleSize <= 0
+                                ? "Tamaño de muestra no disponible."
+                                : sampleSize < 10
+                                  ? "Muestra muy pequeña: el intervalo puede ser amplio."
+                                  : sampleSize < 30
+                                    ? "Muestra limitada: interpretar el intervalo con cautela."
+                                    : "Muestra más informativa, sin garantía de estabilidad."}
                             </small>
                           </div>
                         );
