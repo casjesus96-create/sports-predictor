@@ -162,6 +162,24 @@ function probabilityWidth(value: any) {
     : 0;
 }
 
+/** Wilson 95% interval for the observed home-win rate in one calibration bin. */
+function calibrationWilsonInterval(rate: any, sampleSize: any): [number, number] | null {
+  if (rate === null || rate === undefined || sampleSize === null || sampleSize === undefined) {
+    return null;
+  }
+  const observed = Number(rate);
+  const n = Number(sampleSize);
+  if (!Number.isFinite(observed) || !Number.isFinite(n) || n <= 0) return null;
+
+  const p = Math.max(0, Math.min(1, observed));
+  const z = 1.959963984540054;
+  const z2 = z * z;
+  const denominator = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / denominator;
+  const margin = z * Math.sqrt((p * (1 - p) / n) + (z2 / (4 * n * n))) / denominator;
+  return [Math.max(0, center - margin), Math.min(1, center + margin)];
+}
+
 function effectiveResult(p: Prediction) {
   const stored =
     p?.result?.prediction_result;
@@ -1049,6 +1067,24 @@ export default function MLBApp() {
                         <PercentageSignal label="Probabilidad media" value={bin.mean_predicted_probability} />
                         <PercentageSignal label="Victorias locales reales" value={bin.observed_home_win_rate} />
                       </div>
+                      {(() => {
+                        const interval = calibrationWilsonInterval(bin.observed_home_win_rate, bin.sample_size);
+                        const sampleSize = Number(bin.sample_size);
+                        return (
+                          <div className="mlb-calibration-footnote" style={{ marginTop: 8 }}>
+                            <small>
+                              IC95% Wilson de victorias reales: {interval ? `${pct(interval[0])}–${pct(interval[1])}` : "No disponible"}.
+                            </small>
+                            <small style={{ display: "block", marginTop: 3 }}>
+                              {sampleSize < 10
+                                ? "Muestra muy pequeña: el intervalo puede ser amplio."
+                                : sampleSize < 30
+                                  ? "Muestra limitada: interpretar el intervalo con cautela."
+                                  : "Muestra más informativa, sin garantía de estabilidad."}
+                            </small>
+                          </div>
+                        );
+                      })()}
                     </article>
                   ))}
                 </div>
