@@ -609,7 +609,7 @@ export default function TennisApp() {
               <strong style={{ color: "#eaf1f8" }}>Control de datos:</strong> {backtest.data_quality?.historical_rows_loaded ?? 0} filas históricas cargadas · {backtest.data_quality?.matches_excluded_walkover ?? 0} walkovers excluidos · {backtest.data_quality?.matches_excluded_invalid ?? 0} registros inválidos excluidos.
               <br />
               Las calificaciones se congelan por fecha: ningún resultado del mismo día puede influir en otra evaluación de ese día. La fuente usa fecha de torneo, no hora exacta del partido.
-              {backtest.configuration?.annual_files_available?.length ? <span> Archivos anuales disponibles: {backtest.configuration.annual_files_available.join(", ")}.</span> : null}
+              {backtest.data_quality?.annual_files_available?.length ? <span> Archivos anuales disponibles: {backtest.data_quality.annual_files_available.join(", ")}.</span> : null}
             </div>
           </div>
         ) : null}
