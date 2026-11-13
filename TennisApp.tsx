@@ -151,6 +151,37 @@ type HistoricalBacktestResponse = {
   limitations?: string[];
 };
 
+type SurfaceValidationResponse = {
+  success: boolean;
+  model_status?: string;
+  league?: string;
+  protocol?: {
+    validation_years?: number[];
+    reference_year?: number;
+    holdout_year?: number;
+    as_of_date_utc?: string;
+    holdout_status?: string;
+    official_model_changed?: boolean;
+  };
+  windows?: Array<{
+    year: number;
+    role?: string;
+    evaluation_end_date?: string;
+    matches_evaluated?: number;
+    metrics?: Record<string, {
+      matches_evaluated?: number;
+      accuracy?: number | null;
+      brier_score?: number | null;
+      log_loss?: number | null;
+    }>;
+    surface_coverage?: Record<string, {
+      with_surface_ratings?: number;
+      fallback_to_general?: number;
+    }>;
+  }>;
+  limitations?: string[];
+};
+
 const API = "/api/v1/tennis";
 
 function localDate() {
@@ -278,6 +309,9 @@ export default function TennisApp() {
   const [backtest, setBacktest] = useState<HistoricalBacktestResponse | null>(null);
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [backtestError, setBacktestError] = useState("");
+  const [surfaceValidation, setSurfaceValidation] = useState<SurfaceValidationResponse | null>(null);
+  const [surfaceValidationLoading, setSurfaceValidationLoading] = useState(false);
+  const [surfaceValidationError, setSurfaceValidationError] = useState("");
 
   const loadPerformance = useCallback(async () => {
     try {
@@ -321,6 +355,31 @@ export default function TennisApp() {
       setBacktestLoading(false);
     }
   }, [backtestEndDate, backtestStartDate, league]);
+
+  const runSurfaceValidation = useCallback(async () => {
+    setSurfaceValidationLoading(true);
+    setSurfaceValidationError("");
+    setSurfaceValidation(null);
+    try {
+      const holdoutYear = new Date().getUTCFullYear();
+      const params = new URLSearchParams({
+        league,
+        validation_year_1: String(holdoutYear - 3),
+        validation_year_2: String(holdoutYear - 2),
+        reference_year: String(holdoutYear - 1),
+        holdout_year: String(holdoutYear),
+        warmup_years: "3",
+        k_factor: "32",
+        min_surface_matches: "10",
+      });
+      const result = await request<SurfaceValidationResponse>(`/api/v1/tennis/history/surface-validation?${params.toString()}`);
+      setSurfaceValidation(result);
+    } catch (err) {
+      setSurfaceValidationError(err instanceof Error ? err.message : "No se pudo ejecutar la validación por superficie.");
+    } finally {
+      setSurfaceValidationLoading(false);
+    }
+  }, [league]);
 
   const saveProjection = useCallback(async (match: Match) => {
     if (!match.match_id) return;
@@ -610,6 +669,79 @@ export default function TennisApp() {
               <br />
               Las calificaciones se congelan por fecha: ningún resultado del mismo día puede influir en otra evaluación de ese día. La fuente usa fecha de torneo, no hora exacta del partido.
               {backtest.data_quality?.annual_files_available?.length ? <span> Archivos anuales disponibles: {backtest.data_quality.annual_files_available.join(", ")}.</span> : null}
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="tennis-analysis" style={{ ...panelStyle, marginBottom: 16 }} aria-label="Validación multianual Elo por superficie">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <h2 style={{ margin: "0 0 6px", fontSize: 17 }}>Validación multianual · Elo general vs. superficie</h2>
+            <p style={{ margin: 0, color: "#b7c8d8", fontSize: 13, lineHeight: 1.5 }}>
+              Compara cuatro variantes de investigación en temporadas cronológicas separadas. Los pesos de superficie son fijos (25%, 50% y 75%); no se optimizan con el holdout.
+            </p>
+          </div>
+          <span style={{ border: "1px solid #ca8a04", borderRadius: 20, padding: "5px 9px", color: "#f8e6b0", fontSize: 11, fontWeight: 800 }}>SOLO INVESTIGACIÓN</span>
+        </div>
+        <button type="button" onClick={() => void runSurfaceValidation()} disabled={surfaceValidationLoading} style={{ ...secondaryButtonStyle, marginTop: 13, opacity: surfaceValidationLoading ? 0.65 : 1 }}>
+          {surfaceValidationLoading ? "Validando temporadas…" : "Ejecutar validación multianual"}
+        </button>
+        {surfaceValidationError ? <p role="alert" style={{ color: "#ffd9de", marginBottom: 0, overflowWrap: "anywhere" }}>{surfaceValidationError}</p> : null}
+        {surfaceValidationLoading ? <p role="status" style={{ color: "#b7c8d8" }}>Cargando temporadas de calentamiento y evaluando cada año en orden cronológico…</p> : null}
+        {surfaceValidation?.windows?.length ? (
+          <div style={{ marginTop: 14 }}>
+            <p style={{ color: "#b7c8d8", fontSize: 12, lineHeight: 1.5 }}>
+              {surfaceValidation.league} · Validación: {surfaceValidation.protocol?.validation_years?.join(" y ") || "—"} · Referencia: {surfaceValidation.protocol?.reference_year ?? "—"} · Holdout: {surfaceValidation.protocol?.holdout_year ?? "—"}.
+              {surfaceValidation.protocol?.as_of_date_utc ? ` Corte UTC: ${surfaceValidation.protocol.as_of_date_utc}.` : ""}
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 285px), 1fr))", gap: 10 }}>
+              {surfaceValidation.windows.map((window) => {
+                const methods = [
+                  { key: "general_elo", label: "Elo general" },
+                  { key: "blend_25", label: "Mezcla 25% superficie" },
+                  { key: "blend_50", label: "Mezcla 50% superficie" },
+                  { key: "blend_75", label: "Mezcla 75% superficie" },
+                ];
+                const roleLabel = window.role === "validation" ? "Validación" : window.role === "reference_seen_before" ? "Referencia ya examinada" : window.role === "holdout_partial_year" ? "Holdout parcial" : window.role === "holdout_full_year" ? "Holdout anual" : window.role || "Periodo";
+                return (
+                  <article key={window.year} style={{ border: "1px solid #29445b", borderRadius: 9, padding: 11, background: "#0d2032", minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <strong style={{ fontSize: 16 }}>{window.year}</strong>
+                      <span style={{ color: "#b7c8d8", fontSize: 10, border: "1px solid #34516b", borderRadius: 16, padding: "3px 7px" }}>{roleLabel}</span>
+                    </div>
+                    <div style={{ color: "#b7c8d8", fontSize: 11, margin: "5px 0 9px" }}>
+                      N={window.matches_evaluated ?? 0} partidos · hasta {window.evaluation_end_date || "fin de periodo"}
+                    </div>
+                    <div style={{ display: "grid", gap: 7 }}>
+                      {methods.map((method) => {
+                        const metric = window.metrics?.[method.key];
+                        return (
+                          <div key={method.key} style={{ borderTop: "1px solid #29445b", paddingTop: 7, minWidth: 0 }}>
+                            <strong style={{ fontSize: 12 }}>{method.label}</strong>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 5, marginTop: 5 }}>
+                              <div><div style={{ color: "#b7c8d8", fontSize: 10 }}>Acierto</div><b style={{ fontSize: 12 }}>{formatPercent(metric?.accuracy)}</b></div>
+                              <div><div style={{ color: "#b7c8d8", fontSize: 10 }}>Brier</div><b style={{ fontSize: 12 }}>{typeof metric?.brier_score === "number" ? metric.brier_score.toFixed(4) : "—"}</b></div>
+                              <div><div style={{ color: "#b7c8d8", fontSize: 10 }}>Log Loss</div><b style={{ fontSize: 12 }}>{typeof metric?.log_loss === "number" ? metric.log_loss.toFixed(4) : "—"}</b></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p style={{ color: "#b7c8d8", fontSize: 10, lineHeight: 1.45, margin: "9px 0 0" }}>
+                      Cobertura de superficie: {(["Hard", "Clay", "Grass"] as const).map((surface) => {
+                        const coverage = window.surface_coverage?.[surface];
+                        return `${surface} ${coverage?.with_surface_ratings ?? 0} con Elo / ${coverage?.fallback_to_general ?? 0} fallback`;
+                      }).join(" · ")}.
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 11, padding: 11, border: "1px solid #35516a", borderRadius: 9, background: "#0d2032", color: "#b7c8d8", fontSize: 11, lineHeight: 1.55 }}>
+              <strong style={{ color: "#eaf1f8" }}>Cómo leerlo:</strong> Brier y Log Loss más bajos indican mejor puntuación probabilística en esa muestra; el acierto por sí solo no mide calibración. El año de referencia ya fue examinado y no es un holdout virgen. El año actual es parcial y debe leerse con cautela por estacionalidad. No se declara ganador ni se cambia el modelo por una sola temporada.
+              <br />
+              Los resultados del mismo día no actualizan ratings hasta terminar ese día. Las métricas por superficie usan solo la superficie reconocida y recurren al Elo general cuando falta historial mínimo.
             </div>
           </div>
         ) : null}
