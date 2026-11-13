@@ -160,6 +160,10 @@ function localDate() {
     .slice(0, 10);
 }
 
+function utcDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function shiftDate(value: string, days: number) {
   const date = new Date(`${value}T12:00:00`);
   date.setDate(date.getDate() + days);
@@ -269,8 +273,8 @@ export default function TennisApp() {
   const [settlementLoading, setSettlementLoading] = useState(false);
   const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
   const [performanceError, setPerformanceError] = useState("");
-  const [backtestStartDate, setBacktestStartDate] = useState(() => shiftDate(localDate(), -365));
-  const [backtestEndDate, setBacktestEndDate] = useState(() => shiftDate(localDate(), -1));
+  const [backtestStartDate, setBacktestStartDate] = useState(() => shiftDate(utcDate(), -365));
+  const [backtestEndDate, setBacktestEndDate] = useState(() => shiftDate(utcDate(), -1));
   const [backtest, setBacktest] = useState<HistoricalBacktestResponse | null>(null);
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [backtestError, setBacktestError] = useState("");
@@ -294,7 +298,7 @@ export default function TennisApp() {
       setBacktestError("El periodo no puede superar 366 días.");
       return;
     }
-    if (backtestEndDate >= localDate()) {
+    if (backtestEndDate >= utcDate()) {
       setBacktestError("La fecha final debe ser anterior al día actual.");
       return;
     }
@@ -555,11 +559,11 @@ export default function TennisApp() {
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: 10, marginTop: 14 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 145, flex: "1 1 145px", fontSize: 12, fontWeight: 700 }}>
             Desde
-            <input type="date" value={backtestStartDate} max={shiftDate(localDate(), -1)} onChange={(event) => setBacktestStartDate(event.target.value)} style={{ minHeight: 42, padding: "8px", borderRadius: 8, border: "1px solid #34516b", background: "#10253a", color: "#f3f7fb", font: "inherit" }} />
+            <input type="date" value={backtestStartDate} max={shiftDate(utcDate(), -1)} onChange={(event) => setBacktestStartDate(event.target.value)} style={{ minHeight: 42, padding: "8px", borderRadius: 8, border: "1px solid #34516b", background: "#10253a", color: "#f3f7fb", font: "inherit" }} />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 145, flex: "1 1 145px", fontSize: 12, fontWeight: 700 }}>
             Hasta
-            <input type="date" value={backtestEndDate} min={backtestStartDate} max={shiftDate(localDate(), -1)} onChange={(event) => setBacktestEndDate(event.target.value)} style={{ minHeight: 42, padding: "8px", borderRadius: 8, border: "1px solid #34516b", background: "#10253a", color: "#f3f7fb", font: "inherit" }} />
+            <input type="date" value={backtestEndDate} min={backtestStartDate} max={shiftDate(utcDate(), -1)} onChange={(event) => setBacktestEndDate(event.target.value)} style={{ minHeight: 42, padding: "8px", borderRadius: 8, border: "1px solid #34516b", background: "#10253a", color: "#f3f7fb", font: "inherit" }} />
           </label>
           <button type="button" onClick={() => void runHistoricalBacktest()} disabled={backtestLoading} style={{ ...secondaryButtonStyle, opacity: backtestLoading ? 0.65 : 1 }}>
             {backtestLoading ? "Evaluando histórico…" : "Ejecutar backtest"}
