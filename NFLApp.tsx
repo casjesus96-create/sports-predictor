@@ -20,6 +20,20 @@ function pct(value: any) {
   return Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : "—";
 }
 
+function wilsonInterval(rate: any, sampleSize: any): [number, number] | null {
+  if (rate === null || rate === undefined || sampleSize === null || sampleSize === undefined) return null;
+  const observed = Number(rate);
+  const n = Number(sampleSize);
+  if (!Number.isFinite(observed) || !Number.isFinite(n) || n <= 0) return null;
+  const p = Math.max(0, Math.min(1, observed));
+  const z = 1.959963984540054;
+  const z2 = z * z;
+  const denominator = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / denominator;
+  const margin = z * Math.sqrt((p * (1 - p) / n) + (z2 / (4 * n * n))) / denominator;
+  return [Math.max(0, center - margin), Math.min(1, center + margin)];
+}
+
 function number(value: any, digits = 1) {
   if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
@@ -864,10 +878,34 @@ export default function NFLApp() {
           {((evaluation?.winner?.official?.calibration || []) as AnyRecord[]).map((bin: AnyRecord) => {
             const candidateBin = ((evaluation?.winner?.experimental?.calibration || []) as AnyRecord[])
               .find((item: AnyRecord) => item?.confidence_bin === bin?.confidence_bin);
+            const officialInterval = wilsonInterval(bin?.observed_accuracy, bin?.count);
+            const candidateInterval = candidateBin
+              ? wilsonInterval(candidateBin?.observed_accuracy, candidateBin?.count)
+              : null;
             return (
-              <div className="factor-grid" key={bin?.confidence_bin}>
-                <TeamFactor label={`Rango ${bin?.confidence_bin} · n=${bin?.count}`} value={`Conf. ${pct(bin?.mean_confidence)} · acierto ${pct(bin?.observed_accuracy)}`} />
-                <TeamFactor label={`Experimental ${bin?.confidence_bin}`} value={candidateBin ? `Conf. ${pct(candidateBin?.mean_confidence)} · acierto ${pct(candidateBin?.observed_accuracy)} · n=${candidateBin?.count}` : "Sin muestra"} />
+              <div className="panel" key={bin?.confidence_bin}>
+                <b>Rango de confianza {bin?.confidence_bin}</b>
+                <div className="factor-grid">
+                  <TeamFactor
+                    label={`Oficial · n=${bin?.count ?? 0}`}
+                    value={`Conf. ${pct(bin?.mean_confidence)} · acierto ${pct(bin?.observed_accuracy)}`}
+                  />
+                  <TeamFactor
+                    label="IC95% Wilson · oficial"
+                    value={officialInterval ? `${pct(officialInterval[0])} – ${pct(officialInterval[1])}` : "No disponible"}
+                  />
+                  <TeamFactor
+                    label={`Experimental · n=${candidateBin?.count ?? 0}`}
+                    value={candidateBin ? `Conf. ${pct(candidateBin?.mean_confidence)} · acierto ${pct(candidateBin?.observed_accuracy)}` : "Sin muestra"}
+                  />
+                  <TeamFactor
+                    label="IC95% Wilson · experimental"
+                    value={candidateInterval ? `${pct(candidateInterval[0])} – ${pct(candidateInterval[1])}` : "No disponible"}
+                  />
+                </div>
+                <p className="model-note">
+                  Los intervalos describen la incertidumbre del acierto observado en cada grupo; con muestras pequeñas serán amplios y no demuestran superioridad entre modelos.
+                </p>
               </div>
             );
           })}
