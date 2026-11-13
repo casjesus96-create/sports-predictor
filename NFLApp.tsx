@@ -20,6 +20,14 @@ function pct(value: any) {
   return Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : "—";
 }
 
+function calibrationSampleLabel(sampleSize: any) {
+  const n = Number(sampleSize);
+  if (!Number.isFinite(n) || n <= 0) return "Muestra no disponible";
+  if (n < 10) return "Muestra muy pequeña";
+  if (n < 30) return "Muestra limitada";
+  return "Muestra más informativa";
+}
+
 function wilsonInterval(rate: any, sampleSize: any): [number, number] | null {
   if (rate === null || rate === undefined || sampleSize === null || sampleSize === undefined) return null;
   const observed = Number(rate);
@@ -891,12 +899,20 @@ export default function NFLApp() {
                     value={`Conf. ${pct(bin?.mean_confidence)} · acierto ${pct(bin?.observed_accuracy)}`}
                   />
                   <TeamFactor
+                    label="Calidad de muestra · oficial"
+                    value={calibrationSampleLabel(bin?.count)}
+                  />
+                  <TeamFactor
                     label="IC95% Wilson · oficial"
                     value={officialInterval ? `${pct(officialInterval[0])} – ${pct(officialInterval[1])}` : "No disponible"}
                   />
                   <TeamFactor
                     label={`Experimental · n=${candidateBin?.count ?? 0}`}
                     value={candidateBin ? `Conf. ${pct(candidateBin?.mean_confidence)} · acierto ${pct(candidateBin?.observed_accuracy)}` : "Sin muestra"}
+                  />
+                  <TeamFactor
+                    label="Calidad de muestra · experimental"
+                    value={calibrationSampleLabel(candidateBin?.count)}
                   />
                   <TeamFactor
                     label="IC95% Wilson · experimental"
