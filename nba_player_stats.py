@@ -123,18 +123,33 @@ def parse_player_boxscore(payload: dict, game_id: str) -> dict:
                 })
         # One team can have multiple stat groups; collapse duplicate athlete rows.
         unique = {}
+        conflicted_stats = {}
         for player in players:
             key = player["player_id"] or player["name"]
             existing = unique.setdefault(key, dict(player))
+            player_conflicts = conflicted_stats.setdefault(key, set())
             for stat in PLAYER_STAT_ALIASES:
-                if existing.get(stat) is None and player.get(stat) is not None:
-                    existing[stat] = player[stat]
+                if stat in player_conflicts:
+                    continue
+                existing_value = existing.get(stat)
+                incoming_value = player.get(stat)
+                if existing_value is None and incoming_value is not None:
+                    existing[stat] = incoming_value
+                elif incoming_value is not None and existing_value is not None and incoming_value != existing_value:
+                    # Multiple ESPN stat groups disagree: keep the player, but do not
+                    # select an arbitrary value for this statistic.
+                    existing[stat] = None
+                    player_conflicts.add(stat)
         if unique:
+            normalized_players = []
+            for player_key, player in unique.items():
+                player["stat_conflicts"] = sorted(conflicted_stats.get(player_key, set()))
+                normalized_players.append(player)
             teams.append({
                 "team_id": str(team.get("id") or ""),
                 "team": team_name,
                 "abbreviation": team.get("abbreviation"),
-                "players": sorted(unique.values(), key=lambda player: (not player["starter"], player["name"].casefold())),
+                "players": sorted(normalized_players, key=lambda player: (not player["starter"], player["name"].casefold())),
             })
     return {
         "success": True,
