@@ -835,12 +835,40 @@ export default function TennisApp() {
                         ))}
                       </div>
                     </details>
-                    <p style={{ color: "#b7c8d8", fontSize: 10, lineHeight: 1.45, margin: "9px 0 0" }}>
-                      Cobertura de superficie: {(["Hard", "Clay", "Grass"] as const).map((surface) => {
-                        const coverage = window.surface_coverage?.[surface];
-                        return `${surface} ${coverage?.with_surface_ratings ?? 0} con Elo / ${coverage?.fallback_to_general ?? 0} fallback`;
-                      }).join(" · ")}.
-                    </p>
+                    <div style={{ marginTop: 10, border: "1px solid #34516b", borderRadius: 8, padding: 9, background: "#10253a" }}>
+                      <strong style={{ display: "block", fontSize: 11 }}>Uso efectivo del Elo por superficie</strong>
+                      <p style={{ color: "#b7c8d8", fontSize: 10, lineHeight: 1.45, margin: "4px 0 8px" }}>
+                        Indica en cuántos partidos ambos jugadores tenían el historial mínimo para usar ratings específicos. En los demás se utilizó Elo general.
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 135px), 1fr))", gap: 7 }}>
+                        {(["Hard", "Clay", "Grass"] as const).map((surface) => {
+                          const coverage = window.surface_coverage?.[surface];
+                          const total = window.metrics_by_surface?.[surface]?.general_elo?.matches_evaluated ?? 0;
+                          const used = coverage?.with_surface_ratings ?? 0;
+                          const fallback = coverage?.fallback_to_general ?? 0;
+                          const usageRate = total > 0 ? Math.max(0, Math.min(100, (used / total) * 100)) : 0;
+                          return (
+                            <div key={surface} style={{ border: "1px solid #29445b", borderRadius: 7, padding: 8, minWidth: 0 }}>
+                              <strong style={{ fontSize: 11 }}>{surface === "Hard" ? "Pista dura" : surface === "Clay" ? "Arcilla" : "Césped"}</strong>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 5, marginTop: 5, fontSize: 10 }}>
+                                <span style={{ color: "#b7c8d8" }}>Uso específico</span>
+                                <b>{total > 0 ? usageRate.toFixed(1) + "%" : "Sin muestra"}</b>
+                              </div>
+                              <div role="progressbar" aria-label={`Uso del Elo específico en ${surface}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={usageRate} style={{ height: 6, borderRadius: 5, background: "#29445b", overflow: "hidden", marginTop: 5 }}>
+                                <div style={{ width: `${usageRate}%`, height: "100%", background: "#2dd4bf", borderRadius: 5 }} />
+                              </div>
+                              <div style={{ color: "#b7c8d8", fontSize: 9, lineHeight: 1.5, marginTop: 5 }}>
+                                {used} con Elo específico · {fallback} fallback · N={total}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p style={{ color: "#8fa8bd", fontSize: 9, lineHeight: 1.45, margin: "7px 0 0" }}>
+                        El porcentaje usa como denominador los partidos evaluados en esa superficie. Un fallback no es un error: significa que al menos uno de los jugadores aún no alcanzaba el mínimo histórico configurado.
+                        {" "}Desconocida/sin clasificar: {window.surface_coverage?.unknown?.fallback_to_general ?? 0} partidos.
+                      </p>
+                    </div>
                     <details style={{ marginTop: 9, border: "1px solid #34516b", borderRadius: 8, padding: 8, background: "#10253a" }}>
                       <summary style={{ cursor: "pointer", fontSize: 11, fontWeight: 800 }}>
                         Calidad y etiquetas del histórico
