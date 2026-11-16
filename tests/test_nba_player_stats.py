@@ -73,3 +73,67 @@ def test_parse_player_boxscore_quarter_scores_are_unavailable_when_missing():
     assert report["quarter_scores"]["periods"] == []
     assert report["quarter_scores"]["away_total"] is None
     assert report["quarter_scores"]["home_total"] is None
+
+
+
+def test_parse_player_boxscore_excludes_conflicting_stats_across_stat_groups():
+    payload = {
+        "boxscore": {
+            "players": [{
+                "team": {"id": "1", "displayName": "Home Team"},
+                "statistics": [
+                    {"names": ["PTS", "AST"], "athletes": [
+                        {"athlete": {"id": "10", "displayName": "Player One"},
+                         "stats": ["24", "7"]},
+                    ]},
+                    {"names": ["PTS", "REB"], "athletes": [
+                        {"athlete": {"id": "10", "displayName": "Player One"},
+                         "stats": ["26", "8"]},
+                    ]},
+                    {"names": ["AST", "STL"], "athletes": [
+                        {"athlete": {"id": "10", "displayName": "Player One"},
+                         "stats": ["7", "2"]},
+                    ]},
+                ],
+            }],
+        }
+    }
+
+    report = parse_player_boxscore(payload, "123")
+    player = report["teams"][0]["players"][0]
+
+    assert player["points"] is None
+    assert player["rebounds"] == 8
+    assert player["assists"] == 7
+    assert player["steals"] == 2
+    assert player["stat_conflicts"] == ["points"]
+
+
+def test_parse_player_boxscore_merges_non_conflicting_partial_stat_groups():
+    payload = {
+        "boxscore": {
+            "players": [{
+                "team": {"id": "1", "displayName": "Home Team"},
+                "statistics": [
+                    {"names": ["PTS", "AST"], "athletes": [
+                        {"athlete": {"id": "10", "displayName": "Player One"},
+                         "stats": ["24", "7"]},
+                    ]},
+                    {"names": ["REB", "BLK", "STL"], "athletes": [
+                        {"athlete": {"id": "10", "displayName": "Player One"},
+                         "stats": ["8", "1", "2"]},
+                    ]},
+                ],
+            }],
+        }
+    }
+
+    report = parse_player_boxscore(payload, "123")
+    player = report["teams"][0]["players"][0]
+
+    assert player["points"] == 24
+    assert player["assists"] == 7
+    assert player["rebounds"] == 8
+    assert player["blocks"] == 1
+    assert player["steals"] == 2
+    assert player["stat_conflicts"] == []
