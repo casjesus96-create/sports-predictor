@@ -838,6 +838,55 @@ export default function TennisApp() {
                 );
               })}
             </div>
+            <details style={{ marginTop: 11, border: "1px solid #35516a", borderRadius: 9, padding: 10, background: "#0d2032" }}>
+              <summary style={{ cursor: "pointer", color: "#eaf1f8", fontSize: 12, fontWeight: 800 }}>
+                Estabilidad entre años de validación
+              </summary>
+              <p style={{ color: "#b7c8d8", fontSize: 10, lineHeight: 1.5, margin: "7px 0" }}>
+                Rango de resultados anuales en los años predefinidos de validación, sin incluir el año de referencia ni el holdout. Un rango amplio indica variación entre temporadas; no demuestra por sí solo una causa ni superioridad.
+              </p>
+              {(() => {
+                const validationWindows = surfaceValidation.windows.filter((item) => item.role === "validation");
+                return (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 205px), 1fr))", gap: 8 }}>
+                    {(["Hard", "Clay", "Grass"] as const).map((surface) => (
+                      <div key={surface} style={{ border: "1px solid #29445b", borderRadius: 7, padding: 8, minWidth: 0 }}>
+                        <strong style={{ fontSize: 12 }}>{surface === "Hard" ? "Pista dura" : surface === "Clay" ? "Arcilla" : "Césped"}</strong>
+                        {methods.map((method) => {
+                          const samples = validationWindows.map((item) => ({
+                            year: item.year,
+                            metric: item.metrics_by_surface?.[surface]?.[method.key],
+                          })).filter((item) => (item.metric?.matches_evaluated ?? 0) > 0);
+                          const ranges = (key: "accuracy" | "brier_score" | "log_loss") => {
+                            const values = samples.map((item) => item.metric?.[key]).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+                            return values.length ? { min: Math.min(...values), max: Math.max(...values) } : null;
+                          };
+                          const accuracyRange = ranges("accuracy");
+                          const brierRange = ranges("brier_score");
+                          const lossRange = ranges("log_loss");
+                          const totalN = samples.reduce((sum, item) => sum + (item.metric?.matches_evaluated ?? 0), 0);
+                          const rangeText = (range: { min: number; max: number } | null) => range ? range.min.toFixed(4) + "–" + range.max.toFixed(4) : "—";
+                          return (
+                            <div key={method.key} style={{ borderTop: "1px solid #29445b", marginTop: 6, paddingTop: 6 }}>
+                              <div style={{ fontSize: 10, color: "#c5d7e7" }}>{method.label}</div>
+                              <div style={{ fontSize: 10, color: "#b7c8d8", marginTop: 3 }}>
+                                {samples.length} temporadas · N={totalN}
+                              </div>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 3, marginTop: 4 }}>
+                                <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Acierto</div><b style={{ fontSize: 10 }}>{accuracyRange ? formatPercent(accuracyRange.min) + "–" + formatPercent(accuracyRange.max) : "—"}</b></div>
+                                <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Brier</div><b style={{ fontSize: 10 }}>{rangeText(brierRange)}</b></div>
+                                <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Log Loss</div><b style={{ fontSize: 10 }}>{rangeText(lossRange)}</b></div>
+                              </div>
+                              {samples.length ? <div style={{ fontSize: 9, color: "#8fa8bd", marginTop: 3 }}>Años: {samples.map((item) => item.year).join(", ")}</div> : <div style={{ fontSize: 9, color: "#f8d89a", marginTop: 3 }}>Sin muestra evaluable</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </details>
             <div style={{ marginTop: 11, padding: 11, border: "1px solid #35516a", borderRadius: 9, background: "#0d2032", color: "#b7c8d8", fontSize: 11, lineHeight: 1.55 }}>
               <strong style={{ color: "#eaf1f8" }}>Cómo leerlo:</strong> Brier y Log Loss más bajos indican mejor puntuación probabilística en esa muestra; el acierto por sí solo no mide calibración. El año de referencia ya fue examinado y no es un holdout virgen. El año actual es parcial y debe leerse con cautela por estacionalidad. No se declara ganador ni se cambia el modelo por una sola temporada.
               <br />
