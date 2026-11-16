@@ -811,7 +811,7 @@ export default function TennisApp() {
                         Desglose de rendimiento por superficie
                       </summary>
                       <p style={{ color: "#b7c8d8", fontSize: 10, lineHeight: 1.45, margin: "7px 0" }}>
-                        Métricas calculadas solo con partidos disputados en cada superficie reconocida. Los tamaños de muestra pueden ser distintos.
+                        Métricas calculadas solo con partidos disputados en cada superficie reconocida. Los tamaños de muestra pueden ser distintos. Δ compara cada mezcla con Elo general sobre los mismos partidos: valores negativos favorecen la mezcla en Brier/Log Loss; positivos favorecen la referencia. Es una diferencia descriptiva, no una prueba de superioridad.
                       </p>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: 8, marginTop: 8 }}>
                         {(["Hard", "Clay", "Grass"] as const).map((surface) => (
@@ -819,6 +819,14 @@ export default function TennisApp() {
                             <strong style={{ fontSize: 12 }}>{surface === "Hard" ? "Pista dura" : surface === "Clay" ? "Arcilla" : "Césped"}</strong>
                             {methods.map((method) => {
                               const metric = window.metrics_by_surface?.[surface]?.[method.key];
+                              const baseline = window.metrics_by_surface?.[surface]?.general_elo;
+                              const brierDelta = method.key !== "general_elo" && typeof metric?.brier_score === "number" && typeof baseline?.brier_score === "number"
+                                ? metric.brier_score - baseline.brier_score
+                                : null;
+                              const logLossDelta = method.key !== "general_elo" && typeof metric?.log_loss === "number" && typeof baseline?.log_loss === "number"
+                                ? metric.log_loss - baseline.log_loss
+                                : null;
+                              const formatDelta = (value: number | null) => value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(4)}`;
                               return (
                                 <div key={method.key} style={{ borderTop: "1px solid #29445b", marginTop: 6, paddingTop: 6 }}>
                                   <div style={{ fontSize: 10, color: "#c5d7e7" }}>{method.label}</div>
@@ -828,6 +836,12 @@ export default function TennisApp() {
                                     <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Brier</div><b style={{ fontSize: 10 }}>{typeof metric?.brier_score === "number" ? metric.brier_score.toFixed(4) : "—"}</b></div>
                                     <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Log Loss</div><b style={{ fontSize: 10 }}>{typeof metric?.log_loss === "number" ? metric.log_loss.toFixed(4) : "—"}</b></div>
                                   </div>
+                                  {method.key !== "general_elo" ? (
+                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 5, marginTop: 5, padding: 5, borderRadius: 6, background: "#10253a" }}>
+                                      <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Δ Brier vs general</div><b style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{formatDelta(brierDelta)}</b></div>
+                                      <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Δ Log Loss vs general</div><b style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{formatDelta(logLossDelta)}</b></div>
+                                    </div>
+                                  ) : null}
                                 </div>
                               );
                             })}
