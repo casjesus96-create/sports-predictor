@@ -88,7 +88,6 @@ def extract_pregame_market_observations(
         if game_id in seen_game_ids:
             excluded["duplicate_game"] += 1
             continue
-        seen_game_ids.add(game_id)
 
         if record.get("completed") is not True:
             excluded["not_completed"] += 1
@@ -106,6 +105,9 @@ def extract_pregame_market_observations(
             excluded["missing_or_invalid_stats"] += 1
             continue
 
+        # A game becomes a duplicate only after its first valid observation is
+        # accepted. An incomplete earlier row must not suppress a valid row.
+        seen_game_ids.add(game_id)
         observations.append({
             "game_id": game_id,
             "kickoff": kickoff.isoformat(),
