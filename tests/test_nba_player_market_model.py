@@ -114,7 +114,7 @@ def test_missing_combo_component_is_not_treated_as_zero():
     assert result["excluded"]["missing_or_invalid_stats"] == 1
 
 
-def test_duplicate_game_ids_are_counted_once():
+def test_conflicting_duplicate_game_ids_are_excluded():
     records = [
         _game("g1", 1, points=10),
         _game("g1", 1, points=50),
@@ -122,9 +122,10 @@ def test_duplicate_game_ids_are_counted_once():
     result = extract_pregame_market_observations(
         records, "PTS", "2026-11-02T00:00:00Z"
     )
-    assert result["sample_size"] == 1
-    assert result["observations"][0]["value"] == 10
+    assert result["sample_size"] == 0
+    assert result["observations"] == []
     assert result["excluded"]["duplicate_game"] == 1
+    assert result["excluded"]["conflicting_duplicate_game"] == 1
 
 
 def test_invalid_duplicate_does_not_suppress_later_valid_observation():
