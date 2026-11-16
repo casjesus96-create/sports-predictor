@@ -191,3 +191,62 @@ def test_invalid_boxscore_stats_are_excluded_from_projection_and_market_history(
         "game_id": "g1", "kickoff": "2026-10-01T00:00:00+00:00",
         "completed": True, "points": 18.0,
     }]
+
+
+
+def test_projection_ignores_unrequested_boxscores_and_deduplicates_player_game_stats():
+    histories = {
+        "1": [{"game_id": "requested", "home_team_id": "1", "home": "Home", "kickoff": "2026-10-01T00:00:00Z"}],
+    }
+    reports = {
+        "requested": {
+            "available": True,
+            "teams": [{"team_id": "1", "players": [
+                {"player_id": "p1", "name": "Player", "points": 20, "assists": 4},
+                {"player_id": "p1", "name": "Player", "points": 20, "assists": 4},
+            ]}],
+        },
+        "unrequested": {
+            "available": True,
+            "teams": [{"team_id": "1", "players": [
+                {"player_id": "p1", "name": "Player", "points": 100, "assists": 20},
+            ]}],
+        },
+    }
+
+    result = aggregate_player_projections(reports, histories)
+    player = result["teams"][0]["players"][0]
+
+    assert player["projected_points"] == 20
+    assert player["projected_assists"] == 4
+    assert player["games_sampled"] == 1
+    assert player["games_sampled_by_stat"]["points"] == 1
+    assert player["duplicate_stat_records_excluded"] == 2
+    assert [row["game_id"] for row in player["market_history"]] == ["requested"]
+
+
+def test_conflicting_duplicate_player_stat_for_same_game_is_excluded():
+    histories = {
+        "1": [{"game_id": "g1", "home_team_id": "1", "home": "Home", "kickoff": "2026-10-01T00:00:00Z"}],
+    }
+    reports = {
+        "g1": {
+            "available": True,
+            "teams": [{"team_id": "1", "players": [
+                {"player_id": "p1", "name": "Player", "points": 20, "assists": 4},
+                {"player_id": "p1", "name": "Player", "points": 22, "assists": 4},
+            ]}],
+        }
+    }
+
+    result = aggregate_player_projections(reports, histories)
+    player = result["teams"][0]["players"][0]
+
+    assert player["projected_points"] is None
+    assert player["games_sampled_by_stat"]["points"] == 0
+    assert player["projected_assists"] == 4
+    assert player["market_history"] == [{
+        "game_id": "g1", "kickoff": "2026-10-01T00:00:00+00:00",
+        "completed": True, "assists": 4.0,
+    }]
+    assert player["duplicate_stat_records_excluded"] == 2
