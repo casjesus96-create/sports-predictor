@@ -179,6 +179,27 @@ function wilsonInterval(successes: number, total: number, scale: number): [numbe
   return [Math.max(0, center - margin) * scale, Math.min(1, center + margin) * scale];
 }
 
+function recommendedMarketLine(records: MarketHistoryRecord[] | undefined, market: string): { line: number; average: number; sample: number } | null {
+  const components = PLAYER_MARKETS[market];
+  if (!components) return null;
+  const seenGameIds = new Set<string>();
+  const values = (records || [])
+    .filter((record) => {
+      const gameId = String(record.game_id || "").trim();
+      const kickoffTime = record.kickoff ? Date.parse(record.kickoff) : NaN;
+      const validStats = components.every((key) => typeof (record as any)[key] === "number" && Number.isFinite((record as any)[key]));
+      if (record.completed !== true || !gameId || !Number.isFinite(kickoffTime) || !validStats || seenGameIds.has(gameId)) return false;
+      seenGameIds.add(gameId);
+      return true;
+    })
+    .sort((a, b) => Date.parse(b.kickoff as string) - Date.parse(a.kickoff as string))
+    .slice(0, 5)
+    .map((record) => components.reduce((sum, key) => sum + (record as any)[key], 0));
+  if (values.length < 5) return null;
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return { line: Math.max(0, Math.round(average * 2) / 2), average, sample: values.length };
+}
+
 function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: string, rawLine: string) {
   if (!rawLine.trim()) return null;
   const line = Number(rawLine);
@@ -831,7 +852,7 @@ export default function NBAApp() {
                                         <b>{playerTeam.team} · promedios recientes por jugador</b>
                                         <small className="muted">Boxscores consultados: {playerTeam.games_available ?? 0} · Jugadores: {playerTeam.players?.length ?? 0}</small>
                                         <small className="muted">Cobertura por estadística: PTS {playerTeam.statistical_coverage?.points ?? 0}, AST {playerTeam.statistical_coverage?.assists ?? 0}, REB {playerTeam.statistical_coverage?.rebounds ?? 0}, BLK {playerTeam.statistical_coverage?.blocks ?? 0}, STL {playerTeam.statistical_coverage?.steals ?? 0}</small>
-                                        <small className="muted">Laboratorio experimental O/U: introduce una línea manual para cualquiera de los 9 mercados disponibles (PTS, REB, AST, PRA, PR, PA, RA, BLK y STL). Se muestran conteos reales, promedios de las ventanas 5/10/15 y comparación descriptiva con el promedio de 15. Las líneas alejadas se señalan usando 1.5 desviaciones estándar históricas. Probabilidades Beta suavizadas e IC95%; mínimo 5 partidos pregame válidos. No son cuotas ni recomendaciones.</small>
+                                        <small className="muted">Laboratorio experimental O/U: consulta los 9 mercados disponibles. La línea de referencia sugerida se calcula redondeando a 0.5 el promedio de los últimos cinco partidos válidos del jugador; no es una cuota de casa ni una recomendación de apuesta. También puedes introducir una línea personalizada. Probabilidades históricas descriptivas, IC95% y mínimo 5 partidos pregame válidos.</small>
 
                                         <div className="player-lab-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: 14 }}>
                                           {playerTeam.players.map((player: any) => (
@@ -865,15 +886,21 @@ export default function NBAApp() {
                                                   {["PTS", "REB", "AST", "PRA", "PR", "PA", "RA", "BLK", "STL"].map((market) => {
                                                     const lineKey = String(player.player_id || player.name) + ":" + market;
                                                     const line = marketLines[lineKey] || "";
+                                                    const recommendation = recommendedMarketLine(player.market_history, market);
                                                     const evaluation = evaluateMarketLine(player.market_history, market, line);
                                                     return (
                                                       <section key={market} className="panel nba-market-card" style={{ padding: 10, minWidth: 0, width: "100%", boxSizing: "border-box", overflow: "hidden" }}>
                                                         <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0 }}><b style={{ flex: "0 0 auto" }}>{market}</b><small className="muted" style={{ minWidth: 0, flex: "1 1 130px", overflowWrap: "anywhere", textAlign: "right" }}>{PLAYER_MARKET_DESCRIPTIONS[market]}</small></div>
+                                                        <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
+                                                          <div className="score-row"><span>Línea de referencia sugerida</span><b>{recommendation ? numberLabel(recommendation.line) : "No disponible"}</b></div>
+                                                          <small className="muted">{recommendation ? "Promedio últimos 5: " + numberLabel(recommendation.average) + " · N=" + recommendation.sample + ". Redondeo al medio punto más cercano." : "Se requieren 5 partidos válidos con todas las estadísticas de este mercado."}</small>
+                                                          {recommendation && <button className="secondary" type="button" style={{ width: "100%", marginTop: 7 }} onClick={() => setMarketLines((current) => ({ ...current, [lineKey]: String(recommendation.line) }))}>Usar línea sugerida</button>}
+                                                        </div>
                                                         <label style={{ display: "block", marginTop: 8 }}>
-                                                          <span className="muted">Línea</span>
+                                                          <span className="muted">Línea personalizada</span>
                                                           <input
-                                                            aria-label={player.name + " línea " + market + ": " + PLAYER_MARKET_DESCRIPTIONS[market]}
-                                                            type="number" min="0" step="0.5" inputMode="decimal" placeholder="Ej. 24.5"
+                                                            aria-label={player.name + " línea personalizada " + market + ": " + PLAYER_MARKET_DESCRIPTIONS[market]}
+                                                            type="number" min="0" step="0.5" inputMode="decimal" placeholder={recommendation ? String(recommendation.line) : "Ej. 24.5"}
                                                             value={line}
                                                             onChange={(event) => setMarketLines((current) => ({ ...current, [lineKey]: event.target.value }))}
                                                             style={{ width: "100%", boxSizing: "border-box", marginTop: 3 }}
