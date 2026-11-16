@@ -98,6 +98,15 @@ const matchScore = (match: Match) => {
 };
 const todayInput = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const percent = (value?: number) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
+const calibrationSampleLabel = (sampleSize?: number) => {
+  if (typeof sampleSize !== "number" || !Number.isFinite(sampleSize) || sampleSize <= 0) return "Sin muestra";
+  if (sampleSize < 10) return "Muy pequeña";
+  if (sampleSize < 30) return "Limitada";
+  return "Más informativa";
+};
+const calibrationInterval = (bucket: any) => bucket?.observed_rate_ci_95
+  ? `${percent(bucket.observed_rate_ci_95.lower)}–${percent(bucket.observed_rate_ci_95.upper)}`
+  : "—";
 const cellStyle: React.CSSProperties = { padding: "10px 8px", borderBottom: "1px solid #374151", textAlign: "left", verticalAlign: "top" };
 const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", background: "#111827", fontSize: 13 };
 const buttonStyle: React.CSSProperties = { minHeight: 42, padding: "9px 14px", borderRadius: 8, border: "1px solid #64748b", background: "#1d4ed8", color: "#fff", fontWeight: 700, cursor: "pointer" };
@@ -1830,8 +1839,8 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
             <strong>{label}</strong>
             <div style={{ color: "#cbd5e1", fontSize: 11 }}>N: {market?.sample_size ?? 0} · Brier: {market?.brier_score ?? "—"} · Log Loss: {market?.log_loss ?? "—"}</div>
             <div style={{ overflowX: "auto" }}><table style={tableStyle}>
-              <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Real</th><th style={cellStyle}>IC 95%</th></tr></thead>
-              <tbody>{(market?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{bucket.observed_rate_ci_95 ? `${percent(bucket.observed_rate_ci_95.lower)}–${percent(bucket.observed_rate_ci_95.upper)}` : "—"}</td></tr>)}</tbody>
+              <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Real</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Calidad de muestra</th></tr></thead>
+              <tbody>{(market?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{calibrationInterval(bucket)}</td><td style={cellStyle}>{calibrationSampleLabel(bucket.sample_size)}</td></tr>)}</tbody>
             </table></div>
           </div>;
         })}
@@ -1855,8 +1864,8 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
                 <strong>{label}</strong>
                 <div style={{ color: "#cbd5e1", fontSize: 11 }}>N: {item?.sample_size ?? 0} · Brier (uno contra resto): {typeof item?.brier_score === "number" ? item.brier_score.toFixed(5) : "—"} · Log Loss: {typeof item?.log_loss === "number" ? item.log_loss.toFixed(5) : "—"}</div>
                 <div style={{ overflowX: "auto" }}><table style={tableStyle}>
-                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Frecuencia real</th></tr></thead>
-                  <tbody>{(item?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td></tr>)}</tbody>
+                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Frecuencia real</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Calidad de muestra</th></tr></thead>
+                  <tbody>{(item?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{calibrationInterval(bucket)}</td><td style={cellStyle}>{calibrationSampleLabel(bucket.sample_size)}</td></tr>)}</tbody>
                 </table></div>
               </div>;
             })}
@@ -1903,8 +1912,8 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
               {rows.map((row) => <div key={row.name} style={{ marginTop: 6 }}>
                 <strong style={{ fontSize: 11 }}>{row.name}</strong>
                 <div style={{ overflowX: "auto" }}><table style={tableStyle}>
-                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Prob. media</th><th style={cellStyle}>Frecuencia real</th></tr></thead>
-                  <tbody>{row.bins.map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td></tr>)}</tbody>
+                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Prob. media</th><th style={cellStyle}>Frecuencia real</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Calidad de muestra</th></tr></thead>
+                  <tbody>{row.bins.map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{calibrationInterval(bucket)}</td><td style={cellStyle}>{calibrationSampleLabel(bucket.sample_size)}</td></tr>)}</tbody>
                 </table></div>
               </div>)}
             </details>
