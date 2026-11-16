@@ -141,10 +141,10 @@ def test_invalid_duplicate_does_not_suppress_later_valid_observation():
     assert result["excluded"]["duplicate_game"] == 0
 
 
-def test_first_valid_duplicate_is_kept_and_later_valid_copy_is_excluded():
+def test_identical_valid_duplicate_is_counted_once():
     records = [
         _game("g1", 1, points=18),
-        _game("g1", 1, points=24),
+        _game("g1", 1, points=18),
     ]
     result = extract_pregame_market_observations(
         records, "PTS", "2026-11-02T00:00:00Z"
@@ -152,6 +152,36 @@ def test_first_valid_duplicate_is_kept_and_later_valid_copy_is_excluded():
     assert result["sample_size"] == 1
     assert result["observations"][0]["value"] == 18
     assert result["excluded"]["duplicate_game"] == 1
+    assert result["excluded"]["conflicting_duplicate_game"] == 0
+
+
+def test_conflicting_valid_duplicate_quarantines_the_entire_game():
+    records = [
+        _game("g1", 1, points=18),
+        _game("g1", 1, points=24),
+        _game("g1", 1, points=18),
+        _game("g2", 2, points=20),
+    ]
+    result = extract_pregame_market_observations(
+        records, "PTS", "2026-11-03T00:00:00Z"
+    )
+    assert result["sample_size"] == 1
+    assert [row["game_id"] for row in result["observations"]] == ["g2"]
+    assert result["excluded"]["duplicate_game"] == 2
+    assert result["excluded"]["conflicting_duplicate_game"] == 1
+
+
+def test_conflicting_duplicate_component_quarantines_combo_market_game():
+    records = [
+        _game("g1", 1, points=18, rebounds=5, assists=4),
+        _game("g1", 1, points=18, rebounds=6, assists=4),
+    ]
+    result = extract_pregame_market_observations(
+        records, "PRA", "2026-11-02T00:00:00Z"
+    )
+    assert result["sample_size"] == 0
+    assert result["available"] is False
+    assert result["excluded"]["conflicting_duplicate_game"] == 1
 
 
 def test_invalid_cutoff_and_market_are_rejected():
