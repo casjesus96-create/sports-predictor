@@ -48,6 +48,18 @@ function number(value: any, digits = 1) {
   return Number.isFinite(n) ? n.toFixed(digits) : "—";
 }
 
+function metricDifference(candidate: any, official: any) {
+  if (
+    candidate === null || candidate === undefined || candidate === "" ||
+    official === null || official === undefined || official === ""
+  ) return null;
+  const candidateValue = Number(candidate);
+  const officialValue = Number(official);
+  return Number.isFinite(candidateValue) && Number.isFinite(officialValue)
+    ? candidateValue - officialValue
+    : null;
+}
+
 function formatKickoff(value: any) {
   if (!value) return "Horario por confirmar";
   const date = new Date(value);
@@ -926,29 +938,43 @@ export default function NFLApp() {
             );
           })}
           <h3 className="detail-heading">Ganador · métricas por temporada</h3>
-          {Object.entries(evaluation?.winner?.by_season || {}).map(([season, result]: [string, any]) => (
-            <div className="panel" key={season}>
-              <b>Temporada {season} · n={result?.sample_size ?? 0}</b>
-              <div className="factor-grid">
-                <TeamFactor label="Brier oficial" value={number(result?.official?.brier_score, 4)} />
-                <TeamFactor label="Brier experimental" value={number(result?.experimental?.brier_score, 4)} />
-                <TeamFactor label="Log loss oficial" value={number(result?.official?.log_loss, 4)} />
-                <TeamFactor label="Log loss experimental" value={number(result?.experimental?.log_loss, 4)} />
+          {Object.entries(evaluation?.winner?.by_season || {}).map(([season, result]: [string, any]) => {
+            const brierDelta = metricDifference(result?.experimental?.brier_score, result?.official?.brier_score);
+            const logLossDelta = metricDifference(result?.experimental?.log_loss, result?.official?.log_loss);
+            return (
+              <div className="panel" key={season}>
+                <b>Temporada {season} · n={result?.sample_size ?? 0}</b>
+                <p className="model-note">{calibrationSampleLabel(result?.sample_size)}</p>
+                <div className="factor-grid">
+                  <TeamFactor label="Brier oficial" value={number(result?.official?.brier_score, 4)} />
+                  <TeamFactor label="Brier experimental" value={number(result?.experimental?.brier_score, 4)} />
+                  <TeamFactor label="Δ Brier · experimental − oficial" value={number(brierDelta, 4)} />
+                  <TeamFactor label="Log loss oficial" value={number(result?.official?.log_loss, 4)} />
+                  <TeamFactor label="Log loss experimental" value={number(result?.experimental?.log_loss, 4)} />
+                  <TeamFactor label="Δ Log loss · experimental − oficial" value={number(logLossDelta, 4)} />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <h3 className="detail-heading">Ganador · niveles de confianza</h3>
-          {Object.entries(evaluation?.winner?.by_confidence || {}).map(([bucket, result]: [string, any]) => (
-            <div className="panel" key={bucket}>
-              <b>{bucket} · n={result?.sample_size ?? 0}</b>
-              <div className="factor-grid">
-                <TeamFactor label="Brier oficial" value={number(result?.official?.brier_score, 4)} />
-                <TeamFactor label="Brier experimental" value={number(result?.experimental?.brier_score, 4)} />
-                <TeamFactor label="Log loss oficial" value={number(result?.official?.log_loss, 4)} />
-                <TeamFactor label="Log loss experimental" value={number(result?.experimental?.log_loss, 4)} />
+          {Object.entries(evaluation?.winner?.by_confidence || {}).map(([bucket, result]: [string, any]) => {
+            const brierDelta = metricDifference(result?.experimental?.brier_score, result?.official?.brier_score);
+            const logLossDelta = metricDifference(result?.experimental?.log_loss, result?.official?.log_loss);
+            return (
+              <div className="panel" key={bucket}>
+                <b>{bucket} · n={result?.sample_size ?? 0}</b>
+                <p className="model-note">{calibrationSampleLabel(result?.sample_size)}</p>
+                <div className="factor-grid">
+                  <TeamFactor label="Brier oficial" value={number(result?.official?.brier_score, 4)} />
+                  <TeamFactor label="Brier experimental" value={number(result?.experimental?.brier_score, 4)} />
+                  <TeamFactor label="Δ Brier · experimental − oficial" value={number(brierDelta, 4)} />
+                  <TeamFactor label="Log loss oficial" value={number(result?.official?.log_loss, 4)} />
+                  <TeamFactor label="Log loss experimental" value={number(result?.experimental?.log_loss, 4)} />
+                  <TeamFactor label="Δ Log loss · experimental − oficial" value={number(logLossDelta, 4)} />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <h3 className="detail-heading">Margen y total · resultados por temporada</h3>
           {Object.entries(evaluation?.score?.by_season || {}).map(([season, result]: [string, any]) => (
             <div className="panel" key={season}>
