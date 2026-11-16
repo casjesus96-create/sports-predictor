@@ -156,3 +156,38 @@ def test_player_market_history_preserves_raw_pregame_boxscore_records():
     assert player["market_history"][0]["points"] == 20
     assert player["market_history"][0]["rebounds"] == 5
     assert player["market_history"][0]["assists"] == 6
+
+
+def test_invalid_boxscore_stats_are_excluded_from_projection_and_market_history():
+    histories = {
+        "1": [{"game_id": "g1", "home_team_id": "1", "home": "Home", "kickoff": "2026-10-01T00:00:00Z"}],
+    }
+    reports = {
+        "g1": {
+            "available": True,
+            "teams": [{"team_id": "1", "players": [{
+                "player_id": "p1", "name": "Player",
+                "points": 18,
+                "assists": float("nan"),
+                "rebounds": -2,
+                "blocks": float("inf"),
+                "steals": True,
+            }]}],
+        }
+    }
+
+    result = aggregate_player_projections(reports, histories)
+
+    player = result["teams"][0]["players"][0]
+    assert player["projected_points"] == 18
+    assert player["projected_assists"] is None
+    assert player["projected_rebounds"] is None
+    assert player["projected_blocks"] is None
+    assert player["projected_steals"] is None
+    assert player["games_sampled_by_stat"] == {
+        "points": 1, "assists": 0, "rebounds": 0, "blocks": 0, "steals": 0,
+    }
+    assert player["market_history"] == [{
+        "game_id": "g1", "kickoff": "2026-10-01T00:00:00+00:00",
+        "completed": True, "points": 18.0,
+    }]
