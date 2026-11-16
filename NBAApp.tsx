@@ -178,7 +178,8 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
     .filter((record) => {
       const gameId = String(record.game_id || "").trim();
       const kickoffTime = record.kickoff ? Date.parse(record.kickoff) : NaN;
-      if (record.completed !== true || !gameId || !Number.isFinite(kickoffTime) || seenGameIds.has(gameId)) return false;
+      const validStats = components.every((key) => typeof (record as any)[key] === "number" && Number.isFinite((record as any)[key]));
+      if (record.completed !== true || !gameId || !Number.isFinite(kickoffTime) || !validStats || seenGameIds.has(gameId)) return false;
       seenGameIds.add(gameId);
       return true;
     })
