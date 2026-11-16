@@ -1161,6 +1161,47 @@ export default function TennisApp() {
                 <p style={{ color: "#b7c8d8", fontSize: 12, lineHeight: 1.5 }}>
                   Corte exclusivo: {historicalProfiles[0].cutoff_date_exclusive}. Se excluyen partidos del mismo día para reducir riesgo de fuga de información. “Sin datos” significa que la fuente no reportó una muestra suficiente. La superficie todavía no está vinculada de forma fiable al calendario, por lo que esta muestra no debe interpretarse como rendimiento específico por superficie.
                 </p>
+                {historicalProfiles.length === 2 ? (() => {
+                  const [first, second] = historicalProfiles;
+                  const workloadRows = [
+                    { label: "Últimos 7 días", key: "workload_matches_last_7_days" as const },
+                    { label: "Últimos 14 días", key: "workload_matches_last_14_days" as const },
+                  ];
+                  return (
+                    <div style={{ border: "1px solid #29445b", borderRadius: 10, padding: 12, marginBottom: 12, background: "#10253a" }}>
+                      <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Comparación de calendario reciente</h4>
+                      <p style={{ color: "#b7c8d8", fontSize: 11, lineHeight: 1.45, margin: "0 0 10px" }}>
+                        Compara únicamente partidos registrados antes del corte. La diferencia de calendario es contexto descriptivo; no mide cansancio, condición física ni modifica la proyección.
+                      </p>
+                      {workloadRows.map((row) => {
+                        const a = first[row.key];
+                        const b = second[row.key];
+                        const valid = Number.isFinite(a) && Number.isFinite(b);
+                        const difference = valid ? Math.abs(Number(a) - Number(b)) : null;
+                        const leader = valid && difference !== 0
+                          ? (Number(a) > Number(b) ? first.player_name : second.player_name)
+                          : null;
+                        return (
+                          <div key={row.key} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)", gap: 8, alignItems: "center", padding: "7px 0", borderTop: "1px solid #29445b" }}>
+                            <div>
+                              <div style={{ color: "#b7c8d8", fontSize: 10 }}>{first.player_name}</div>
+                              <strong>{formatMetric(a)}</strong>
+                            </div>
+                            <div style={{ textAlign: "center" }}>
+                              <div style={{ color: "#b7c8d8", fontSize: 10 }}>{row.label}</div>
+                              <strong style={{ fontSize: 12 }}>{difference === null ? "—" : difference === 0 ? "Igual" : `Δ ${difference}`}</strong>
+                              {leader ? <div style={{ color: "#b7c8d8", fontSize: 9 }}>Más partidos: {leader}</div> : null}
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ color: "#b7c8d8", fontSize: 10 }}>{second.player_name}</div>
+                              <strong>{formatMetric(b)}</strong>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })() : null}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 12 }}>
                   {historicalProfiles.map((profile) => {
                     const service = profile.service_return_stats_last_10_matches;
