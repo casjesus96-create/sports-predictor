@@ -127,6 +127,33 @@ def test_duplicate_game_ids_are_counted_once():
     assert result["excluded"]["duplicate_game"] == 1
 
 
+def test_invalid_duplicate_does_not_suppress_later_valid_observation():
+    records = [
+        _game("g1", 1, points=None),
+        _game("g1", 1, points=24),
+    ]
+    result = extract_pregame_market_observations(
+        records, "PTS", "2026-11-02T00:00:00Z"
+    )
+    assert result["sample_size"] == 1
+    assert result["observations"][0]["value"] == 24
+    assert result["excluded"]["missing_or_invalid_stats"] == 1
+    assert result["excluded"]["duplicate_game"] == 0
+
+
+def test_first_valid_duplicate_is_kept_and_later_valid_copy_is_excluded():
+    records = [
+        _game("g1", 1, points=18),
+        _game("g1", 1, points=24),
+    ]
+    result = extract_pregame_market_observations(
+        records, "PTS", "2026-11-02T00:00:00Z"
+    )
+    assert result["sample_size"] == 1
+    assert result["observations"][0]["value"] == 18
+    assert result["excluded"]["duplicate_game"] == 1
+
+
 def test_invalid_cutoff_and_market_are_rejected():
     assert extract_pregame_market_observations([], "PTS", "invalid")["reason"] == "INVALID_CUTOFF"
     assert extract_pregame_market_observations([], "XYZ", "2026-11-02T00:00:00Z")["reason"] == "UNSUPPORTED_MARKET"
