@@ -132,6 +132,8 @@ type MarketHistoryRecord = {
   points?: number;
   rebounds?: number;
   assists?: number;
+  blocks?: number;
+  steals?: number;
 };
 
 const PLAYER_MARKETS: Record<string, string[]> = {
@@ -139,13 +141,23 @@ const PLAYER_MARKETS: Record<string, string[]> = {
   REB: ["rebounds"],
   AST: ["assists"],
   PRA: ["points", "rebounds", "assists"],
+  PR: ["points", "rebounds"],
+  PA: ["points", "assists"],
+  RA: ["rebounds", "assists"],
+  BLK: ["blocks"],
+  STL: ["steals"],
 };
 
 const PLAYER_MARKET_DESCRIPTIONS: Record<string, string> = {
   PTS: "Puntos totales",
   REB: "Rebotes totales",
   AST: "Asistencias totales",
-  PRA: "Puntos + rebotes + asistencias (suma total)",
+  PRA: "Puntos + rebotes + asistencias",
+  PR: "Puntos + rebotes",
+  PA: "Puntos + asistencias",
+  RA: "Rebotes + asistencias",
+  BLK: "Bloqueos totales",
+  STL: "Robos totales",
 };
 
 function wilsonInterval(successes: number, total: number, scale: number): [number, number] | null {
@@ -819,7 +831,7 @@ export default function NBAApp() {
                                         <b>{playerTeam.team} · promedios recientes por jugador</b>
                                         <small className="muted">Boxscores consultados: {playerTeam.games_available ?? 0} · Jugadores: {playerTeam.players?.length ?? 0}</small>
                                         <small className="muted">Cobertura por estadística: PTS {playerTeam.statistical_coverage?.points ?? 0}, AST {playerTeam.statistical_coverage?.assists ?? 0}, REB {playerTeam.statistical_coverage?.rebounds ?? 0}, BLK {playerTeam.statistical_coverage?.blocks ?? 0}, STL {playerTeam.statistical_coverage?.steals ?? 0}</small>
-                                        <small className="muted">Laboratorio experimental O/U: introduce una línea manual para PTS, REB, AST o PRA. Se muestran conteos reales, promedios de las ventanas 5/10/15 y comparación descriptiva con el promedio de 15. Las líneas alejadas se señalan usando 1.5 desviaciones estándar históricas. Probabilidades Beta suavizadas e IC95%; mínimo 5 partidos pregame válidos. No son cuotas ni recomendaciones.</small>
+                                        <small className="muted">Laboratorio experimental O/U: introduce una línea manual para cualquiera de los 9 mercados disponibles (PTS, REB, AST, PRA, PR, PA, RA, BLK y STL). Se muestran conteos reales, promedios de las ventanas 5/10/15 y comparación descriptiva con el promedio de 15. Las líneas alejadas se señalan usando 1.5 desviaciones estándar históricas. Probabilidades Beta suavizadas e IC95%; mínimo 5 partidos pregame válidos. No son cuotas ni recomendaciones.</small>
 
                                         <div className="player-lab-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: 14 }}>
                                           {playerTeam.players.map((player: any) => (
@@ -850,7 +862,7 @@ export default function NBAApp() {
                                                 <b>Laboratorio Over / Under</b>
                                                 <p className="muted" style={{ margin: "4px 0 10px" }}>Introduce una línea manual. La evaluación usa los mismos partidos que puedes auditar debajo.</p>
                                                 <div className="nba-market-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))", gap: 9, minWidth: 0, width: "100%" }}>
-                                                  {["PTS", "REB", "AST", "PRA"].map((market) => {
+                                                  {["PTS", "REB", "AST", "PRA", "PR", "PA", "RA", "BLK", "STL"].map((market) => {
                                                     const lineKey = String(player.player_id || player.name) + ":" + market;
                                                     const line = marketLines[lineKey] || "";
                                                     const evaluation = evaluateMarketLine(player.market_history, market, line);
