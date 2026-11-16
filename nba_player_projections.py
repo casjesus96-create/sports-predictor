@@ -21,6 +21,8 @@ def _is_valid_stat(value):
         and math.isfinite(value)
         and value >= 0
     )
+
+
 STAT_KEYS = ("points", "assists", "rebounds", "blocks", "steals")
 PROJECTION_KEYS = {
     "points": "projected_points",
