@@ -846,7 +846,13 @@ export default function TennisApp() {
                 Rango de resultados anuales en los años predefinidos de validación, sin incluir el año de referencia ni el holdout. Un rango amplio indica variación entre temporadas; no demuestra por sí solo una causa ni superioridad.
               </p>
               {(() => {
-                const validationWindows = surfaceValidation.windows.filter((item) => item.role === "validation");
+                const methods = [
+                  { key: "general_elo", label: "Elo general" },
+                  { key: "blend_25", label: "Mezcla 25% superficie" },
+                  { key: "blend_50", label: "Mezcla 50% superficie" },
+                  { key: "blend_75", label: "Mezcla 75% superficie" },
+                ] as const;
+                const validationWindows = (surfaceValidation.windows || []).filter((item) => item.role === "validation");
                 return (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 205px), 1fr))", gap: 8 }}>
                     {(["Hard", "Clay", "Grass"] as const).map((surface) => (
