@@ -95,6 +95,13 @@ function stat(value: any, digits = 0) {
     : String(value);
 }
 
+function batterPitcherSampleLabel(sampleSize: number) {
+  if (!Number.isFinite(sampleSize) || sampleSize <= 0) return "Sin muestra";
+  if (sampleSize < 10) return "Muy pequeña";
+  if (sampleSize < 30) return "Limitada";
+  return "Más contexto; aún no concluyente";
+}
+
 function teamName(value: any, fallback: string) {
   if (typeof value === "string" && value.trim()) {
     return value.trim();
@@ -2307,8 +2314,8 @@ function GameDetail({
 
           <p className="muted" style={{ marginTop: 0 }}>
             AVG, SLG, OPS y HR corresponden al historial directo de cada bateador contra el abridor rival.
-            PA indica apariciones al plato; una muestra pequeña no debe interpretarse como una ventaja fiable.
-            Este bloque es informativo y no modifica la probabilidad oficial del modelo.
+            PA indica apariciones al plato. La etiqueta de muestra clasifica solo el tamaño del historial directo: menos de 10 (muy pequeña), 10–29 (limitada) y 30 o más (más contexto, aún no concluyente).
+            Estas categorías no representan probabilidades ni garantizan estabilidad. Este bloque es informativo y no modifica la probabilidad oficial del modelo.
           </p>
 
           {[
@@ -2352,6 +2359,7 @@ function GameDetail({
                           <tr>
                             <th scope="col" style={{ textAlign: "left", padding: "8px 6px" }}>Bateador</th>
                             <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>PA</th>
+                            <th scope="col" style={{ textAlign: "left", padding: "8px 6px" }}>Muestra</th>
                             <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>AB</th>
                             <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>AVG</th>
                             <th scope="col" style={{ textAlign: "right", padding: "8px 6px" }}>SLG</th>
@@ -2374,6 +2382,9 @@ function GameDetail({
                                   </div>
                                 </td>
                                 <td style={{ textAlign: "right", padding: "8px 6px" }}>{sample || "—"}</td>
+                                <td style={{ textAlign: "left", padding: "8px 6px", minWidth: 150 }}>
+                                  <span title="Clasificación descriptiva por apariciones al plato; no es una medida de probabilidad ni garantiza estabilidad.">{batterPitcherSampleLabel(sample)}</span>
+                                </td>
                                 <td style={{ textAlign: "right", padding: "8px 6px" }}>{stats?.at_bats ?? "—"}</td>
                                 <td style={{ textAlign: "right", padding: "8px 6px" }}>{stats?.avg == null ? "—" : stat(stats.avg, 3)}</td>
                                 <td style={{ textAlign: "right", padding: "8px 6px" }}>{stats?.slg == null ? "—" : stat(stats.slg, 3)}</td>
