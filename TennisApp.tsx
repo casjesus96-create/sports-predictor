@@ -811,7 +811,7 @@ export default function TennisApp() {
                         Desglose de rendimiento por superficie
                       </summary>
                       <p style={{ color: "#b7c8d8", fontSize: 10, lineHeight: 1.45, margin: "7px 0" }}>
-                        Métricas calculadas solo con partidos disputados en cada superficie reconocida. Los tamaños de muestra pueden ser distintos.
+                        Métricas calculadas solo con partidos disputados en cada superficie reconocida. Los tamaños de muestra pueden ser distintos. Δ compara cada mezcla con Elo general sobre los mismos partidos: valores negativos favorecen la mezcla en Brier/Log Loss; positivos favorecen la referencia. Es una diferencia descriptiva, no una prueba de superioridad.
                       </p>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: 8, marginTop: 8 }}>
                         {(["Hard", "Clay", "Grass"] as const).map((surface) => (
