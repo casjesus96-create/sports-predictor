@@ -283,6 +283,19 @@ function formatMetric(value: number | null | undefined) {
   return typeof value === "number" ? value.toLocaleString("es-ES") : "Sin datos";
 }
 
+function formatCoverage(numerator: number | null | undefined, denominator: number | null | undefined) {
+  if (numerator === null || numerator === undefined || denominator === null || denominator === undefined) {
+    return "Sin muestra";
+  }
+  const available = Number(numerator);
+  const total = Number(denominator);
+  if (!Number.isFinite(available) || !Number.isFinite(total) || available < 0 || total <= 0) {
+    return "Sin muestra";
+  }
+  if (available > total) return "Dato inconsistente";
+  return `${available}/${total} (${((available / total) * 100).toFixed(1)}%)`;
+}
+
 function wilsonInterval(rate: number | null | undefined, sampleSize: number) {
   if (typeof rate !== "number" || !Number.isFinite(rate) || sampleSize <= 0) return null;
   const n = sampleSize;
@@ -1157,6 +1170,7 @@ export default function TennisApp() {
                       { label: "Porcentaje de victorias", value: formatPercent(profile.win_rate) },
                       { label: "Últimos 5", value: `${profile.last_5.wins}V – ${profile.last_5.losses}D` },
                       { label: "Últimos 10", value: `${profile.last_10.wins}V – ${profile.last_10.losses}D` },
+                      { label: "Cobertura de estadísticas de saque (últimos 10)", value: formatCoverage(service.matches_with_service_stats, profile.last_10.matches) },
                       { label: "Victorias en muestra filtrada", value: `${profile.surface_window.wins} / ${profile.surface_window.matches}` },
                       { label: "Último ranking observado", value: formatMetric(profile.ranking_latest_in_window) },
                       { label: "Días desde último partido", value: formatMetric(profile.days_since_last_match) },
@@ -1172,7 +1186,7 @@ export default function TennisApp() {
                     return (
                       <article className="tennis-profile-card" key={profile.player_name} style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, background: "#10253a" }}>
                         <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{profile.player_name}</h4>
-                        <p style={{ margin: "0 0 12px", color: "#b7c8d8", fontSize: 12 }}>Histórico {profile.league} · 365 días · {profile.data_quality.matches_with_service_stats} partidos con estadísticas de saque</p>
+                        <p style={{ margin: "0 0 12px", color: "#b7c8d8", fontSize: 12 }}>Histórico {profile.league} · 365 días · {profile.data_quality.matches_with_service_stats} partidos con estadísticas de saque en la ventana histórica</p>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
                           {metrics.map((metric) => (
                             <div key={metric.label} style={{ border: "1px solid #29445b", borderRadius: 8, padding: 9 }}>
