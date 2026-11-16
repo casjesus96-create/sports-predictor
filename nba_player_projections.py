@@ -55,19 +55,25 @@ def aggregate_player_projections(game_reports, team_histories, max_games=15):
                 team_meta[str(team_id)] = game.get("away") or game.get("away_abbreviation") or "Equipo"
                 break
 
-    aggregates = defaultdict(lambda: defaultdict(lambda: {"name": "", "position": None, "games": set(), "values": defaultdict(list), "stat_games": defaultdict(set)}))
+    aggregates = defaultdict(lambda: defaultdict(lambda: {"name": "", "position": None, "games": set(), "values": defaultdict(list), "stat_games": defaultdict(set), "stat_records": defaultdict(dict), "conflicted_stat_games": defaultdict(set), "duplicate_stat_records_excluded": 0}))
     # Only project players belonging to the two teams whose histories were requested.
     # Historical boxscores also contain opponents; including them pollutes coverage.
     target_team_ids = {str(team_id) for team_id in (team_histories or {})}
     team_game_ids = defaultdict(set)
+    known_game_ids = set()
     kickoff_by_game = {}
     for games in (team_histories or {}).values():
         for game in games or []:
             game_id = str(game.get("game_id") or "")
             if game_id:
+                known_game_ids.add(game_id)
                 kickoff_by_game[game_id] = _parse_datetime(game.get("kickoff"))
 
     for game_id, report in (game_reports or {}).items():
+        game_id = str(game_id)
+        # Never let an unrelated/stale boxscore enter a projection for the requested teams.
+        if known_game_ids and game_id not in known_game_ids:
+            continue
         if not report or not report.get("available"):
             continue
         for team in report.get("teams") or []:
@@ -87,17 +93,32 @@ def aggregate_player_projections(game_reports, team_histories, max_games=15):
                 item["position"] = player.get("position") or item["position"]
                 item["games"].add(str(game_id))
                 for key in present_stats:
-                    item["values"][key].append({
-                        "game_id": str(game_id),
-                        "kickoff": kickoff_by_game.get(str(game_id)),
-                        "value": float(player[key]),
-                    })
-                    item["stat_games"][key].add(str(game_id))
+                    stat_game_id = str(game_id)
+                    if stat_game_id in item["conflicted_stat_games"][key]:
+                        item["duplicate_stat_records_excluded"] += 1
+                        continue
+                    numeric_value = float(player[key])
+                    existing_value = item["stat_records"][key].get(stat_game_id)
+                    if existing_value is not None:
+                        item["duplicate_stat_records_excluded"] += 1
+                        if existing_value != numeric_value:
+                            # Conflicting duplicate rows are ambiguous: exclude this player/stat/game.
+                            item["stat_records"][key].pop(stat_game_id, None)
+                            item["conflicted_stat_games"][key].add(stat_game_id)
+                            item["stat_games"][key].discard(stat_game_id)
+                        continue
+                    item["stat_records"][key][stat_game_id] = numeric_value
+                    item["stat_games"][key].add(stat_game_id)
 
     teams = []
     for team_id in sorted(set(team_meta) | set(aggregates)):
         players = []
         for player_id, item in aggregates.get(team_id, {}).items():
+            for stat_key, records_by_game in item["stat_records"].items():
+                item["values"][stat_key] = [
+                    {"game_id": game_id, "kickoff": kickoff_by_game.get(game_id), "value": value}
+                    for game_id, value in records_by_game.items()
+                ]
             ordered_stats = {}
             recent_windows = {}
             for key in STAT_KEYS:
@@ -139,6 +160,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=15):
                 "position": item["position"],
                 "games_sampled": len(item["games"]),
                 "games_sampled_by_stat": {key: len(item["stat_games"].get(key, set())) for key in STAT_KEYS},
+                "duplicate_stat_records_excluded": item["duplicate_stat_records_excluded"],
                 "recent_windows": recent_windows,
                 "market_history": market_history[:max_games],
             }
