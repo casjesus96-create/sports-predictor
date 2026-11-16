@@ -107,6 +107,15 @@ const calibrationSampleLabel = (sampleSize?: number) => {
 const calibrationInterval = (bucket: any) => bucket?.observed_rate_ci_95
   ? `${percent(bucket.observed_rate_ci_95.lower)}–${percent(bucket.observed_rate_ci_95.upper)}`
   : "—";
+const calibrationGap = (bucket: any) => {
+  const predicted = bucket?.mean_probability;
+  const observed = bucket?.observed_rate;
+  if (typeof predicted !== "number" || !Number.isFinite(predicted)
+    || typeof observed !== "number" || !Number.isFinite(observed)) return "—";
+  const delta = (observed - predicted) * 100;
+  if (Math.abs(delta) < 0.05) return "0.0 pp · Alineado";
+  return `${delta > 0 ? "+" : ""}${delta.toFixed(1)} pp · ${delta > 0 ? "Subestimación" : "Sobreestimación"}`;
+};
 const cellStyle: React.CSSProperties = { padding: "10px 8px", borderBottom: "1px solid #374151", textAlign: "left", verticalAlign: "top" };
 const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", background: "#111827", fontSize: 13 };
 const buttonStyle: React.CSSProperties = { minHeight: 42, padding: "9px 14px", borderRadius: 8, border: "1px solid #64748b", background: "#1d4ed8", color: "#fff", fontWeight: 700, cursor: "pointer" };
@@ -1830,7 +1839,7 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
         {metricCard("Error medio goles totales", typeof metrics.expected_total_goals_mae === "number" ? metrics.expected_total_goals_mae.toFixed(2) : "—")}
       </div>
       <h3 style={{ marginBottom: 6 }}>Calibración de mercados principales</h3>
-      <p style={{ color: "#9ca3af", fontSize: 11 }}>Compara la probabilidad estimada con la frecuencia observada. Cada mercado usa su propia muestra.</p>
+      <p style={{ color: "#9ca3af", fontSize: 11 }}>Compara la probabilidad estimada con la frecuencia observada. Δ = frecuencia real − probabilidad media: positivo indica subestimación; negativo, sobreestimación. La diferencia es descriptiva y debe leerse junto con N y el IC95%. Cada mercado usa su propia muestra.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 8, marginBottom: 12 }}>
         {(["btts_yes", "over_2_5"] as const).map((key) => {
           const market = report.market_calibration?.[key];
@@ -1839,8 +1848,8 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
             <strong>{label}</strong>
             <div style={{ color: "#cbd5e1", fontSize: 11 }}>N: {market?.sample_size ?? 0} · Brier: {market?.brier_score ?? "—"} · Log Loss: {market?.log_loss ?? "—"}</div>
             <div style={{ overflowX: "auto" }}><table style={tableStyle}>
-              <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Real</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Calidad de muestra</th></tr></thead>
-              <tbody>{(market?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{calibrationInterval(bucket)}</td><td style={cellStyle}>{calibrationSampleLabel(bucket.sample_size)}</td></tr>)}</tbody>
+              <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Real</th><th style={cellStyle}>Δ real − media</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Calidad de muestra</th></tr></thead>
+              <tbody>{(market?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{calibrationGap(bucket)}</td><td style={cellStyle}>{calibrationInterval(bucket)}</td><td style={cellStyle}>{calibrationSampleLabel(bucket.sample_size)}</td></tr>)}</tbody>
             </table></div>
           </div>;
         })}
@@ -1864,8 +1873,8 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
                 <strong>{label}</strong>
                 <div style={{ color: "#cbd5e1", fontSize: 11 }}>N: {item?.sample_size ?? 0} · Brier (uno contra resto): {typeof item?.brier_score === "number" ? item.brier_score.toFixed(5) : "—"} · Log Loss: {typeof item?.log_loss === "number" ? item.log_loss.toFixed(5) : "—"}</div>
                 <div style={{ overflowX: "auto" }}><table style={tableStyle}>
-                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Frecuencia real</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Calidad de muestra</th></tr></thead>
-                  <tbody>{(item?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{calibrationInterval(bucket)}</td><td style={cellStyle}>{calibrationSampleLabel(bucket.sample_size)}</td></tr>)}</tbody>
+                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Media</th><th style={cellStyle}>Frecuencia real</th><th style={cellStyle}>Δ real − media</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Calidad de muestra</th></tr></thead>
+                  <tbody>{(item?.calibration_bins || []).map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{calibrationGap(bucket)}</td><td style={cellStyle}>{calibrationInterval(bucket)}</td><td style={cellStyle}>{calibrationSampleLabel(bucket.sample_size)}</td></tr>)}</tbody>
                 </table></div>
               </div>;
             })}
@@ -1912,8 +1921,8 @@ function FootballPostmatchLearningPanel({ competition }: { competition: string }
               {rows.map((row) => <div key={row.name} style={{ marginTop: 6 }}>
                 <strong style={{ fontSize: 11 }}>{row.name}</strong>
                 <div style={{ overflowX: "auto" }}><table style={tableStyle}>
-                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Prob. media</th><th style={cellStyle}>Frecuencia real</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Calidad de muestra</th></tr></thead>
-                  <tbody>{row.bins.map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{calibrationInterval(bucket)}</td><td style={cellStyle}>{calibrationSampleLabel(bucket.sample_size)}</td></tr>)}</tbody>
+                  <thead><tr><th style={cellStyle}>Banda</th><th style={cellStyle}>N</th><th style={cellStyle}>Prob. media</th><th style={cellStyle}>Frecuencia real</th><th style={cellStyle}>Δ real − media</th><th style={cellStyle}>IC 95%</th><th style={cellStyle}>Calidad de muestra</th></tr></thead>
+                  <tbody>{row.bins.map((bucket: any) => <tr key={bucket.range}><td style={cellStyle}>{bucket.range}</td><td style={cellStyle}>{bucket.sample_size}</td><td style={cellStyle}>{percent(bucket.mean_probability)}</td><td style={cellStyle}>{percent(bucket.observed_rate)}</td><td style={cellStyle}>{calibrationGap(bucket)}</td><td style={cellStyle}>{calibrationInterval(bucket)}</td><td style={cellStyle}>{calibrationSampleLabel(bucket.sample_size)}</td></tr>)}</tbody>
                 </table></div>
               </div>)}
             </details>
