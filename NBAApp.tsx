@@ -148,8 +148,17 @@ const PLAYER_MARKET_DESCRIPTIONS: Record<string, string> = {
   PRA: "Puntos + rebotes + asistencias (suma total)",
 };
 
-function wilsonInterval(successes: number, total: number, scale: number) {
-  if (!total) return [0, 0];
+function wilsonInterval(successes: number, total: number, scale: number): [number, number] | null {
+  if (
+    !Number.isFinite(successes) ||
+    !Number.isFinite(total) ||
+    !Number.isFinite(scale) ||
+    total <= 0 ||
+    successes < 0 ||
+    successes > total ||
+    scale <= 0 ||
+    scale > 1
+  ) return null;
   const z = 1.959963984540054;
   const rate = successes / total;
   const denominator = 1 + (z * z) / total;
@@ -878,9 +887,9 @@ export default function NBAApp() {
                                                                 <div style={{ height: 7, width: "100%", boxSizing: "border-box", background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, evaluation.underProbability * 100))}%`, maxWidth: "100%", background: "#64748b", borderRadius: 99 }} /></div>
                                                               </div>
                                                             </div>
-                                                            <small className="muted" style={{ display: "block", marginTop: 8 }}>Conteos: O {evaluation.over} · U {evaluation.under} · Push {evaluation.push} · N={evaluation.sample}</small>
-                                                            <small className="muted" style={{ display: "block" }}>IC95% O {(evaluation.overInterval[0] * 100).toFixed(1)}–{(evaluation.overInterval[1] * 100).toFixed(1)}%</small>
-                                                            <small className="muted" style={{ display: "block" }}>IC95% U {(evaluation.underInterval[0] * 100).toFixed(1)}–{(evaluation.underInterval[1] * 100).toFixed(1)}%</small>
+                                                            <small className="muted" style={{ display: "block", marginTop: 8 }}>Conteos: O {evaluation.over} · U {evaluation.under} · Push {evaluation.push} · N={evaluation.sample} · N decisivos={evaluation.over + evaluation.under}</small>
+                                                            <small className="muted" style={{ display: "block" }}>IC95% O {evaluation.overInterval ? `${(evaluation.overInterval[0] * 100).toFixed(1)}–${(evaluation.overInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
+                                                            <small className="muted" style={{ display: "block" }}>IC95% U {evaluation.underInterval ? `${(evaluation.underInterval[0] * 100).toFixed(1)}–${(evaluation.underInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
                                                             <small className="muted" style={{ display: "block", marginTop: 5 }}>Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}</small>
                                                             <small className="muted" style={{ display: "block" }}>Línea {evaluation.lineRelation} al promedio 15 ({numberLabel(evaluation.average15)}).</small>
                                                             <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
