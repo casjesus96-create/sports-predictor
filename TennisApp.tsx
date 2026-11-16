@@ -292,6 +292,7 @@ function formatCoverage(numerator: number | null | undefined, denominator: numbe
   if (!Number.isFinite(available) || !Number.isFinite(total) || available < 0 || total <= 0) {
     return "Sin muestra";
   }
+  if (available > total) return "Dato inconsistente";
   return `${available}/${total} (${((available / total) * 100).toFixed(1)}%)`;
 }
 
