@@ -174,6 +174,12 @@ type SurfaceValidationResponse = {
       brier_score?: number | null;
       log_loss?: number | null;
     }>;
+    metrics_by_surface?: Record<string, Record<string, {
+      matches_evaluated?: number;
+      accuracy?: number | null;
+      brier_score?: number | null;
+      log_loss?: number | null;
+    }>>;
     calibration?: Record<string, Array<{
       bin: string;
       matches: number;
@@ -793,6 +799,35 @@ export default function TennisApp() {
                         );
                       })}
                     </div>
+                    <details style={{ marginTop: 10, border: "1px solid #34516b", borderRadius: 8, padding: 9, background: "#10253a" }}>
+                      <summary style={{ cursor: "pointer", fontSize: 11, fontWeight: 800 }}>
+                        Desglose de rendimiento por superficie
+                      </summary>
+                      <p style={{ color: "#b7c8d8", fontSize: 10, lineHeight: 1.45, margin: "7px 0" }}>
+                        Métricas calculadas solo con partidos disputados en cada superficie reconocida. Los tamaños de muestra pueden ser distintos.
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))", gap: 8, marginTop: 8 }}>
+                        {(["Hard", "Clay", "Grass"] as const).map((surface) => (
+                          <div key={surface} style={{ border: "1px solid #29445b", borderRadius: 7, padding: 8, minWidth: 0 }}>
+                            <strong style={{ fontSize: 12 }}>{surface === "Hard" ? "Pista dura" : surface === "Clay" ? "Arcilla" : "Césped"}</strong>
+                            {methods.map((method) => {
+                              const metric = window.metrics_by_surface?.[surface]?.[method.key];
+                              return (
+                                <div key={method.key} style={{ borderTop: "1px solid #29445b", marginTop: 6, paddingTop: 6 }}>
+                                  <div style={{ fontSize: 10, color: "#c5d7e7" }}>{method.label}</div>
+                                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 3, marginTop: 4 }}>
+                                    <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>N</div><b style={{ fontSize: 11 }}>{metric?.matches_evaluated ?? 0}</b></div>
+                                    <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Acierto</div><b style={{ fontSize: 10 }}>{formatPercent(metric?.accuracy)}</b></div>
+                                    <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Brier</div><b style={{ fontSize: 10 }}>{typeof metric?.brier_score === "number" ? metric.brier_score.toFixed(4) : "—"}</b></div>
+                                    <div><div style={{ color: "#b7c8d8", fontSize: 9 }}>Log Loss</div><b style={{ fontSize: 10 }}>{typeof metric?.log_loss === "number" ? metric.log_loss.toFixed(4) : "—"}</b></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
                     <p style={{ color: "#b7c8d8", fontSize: 10, lineHeight: 1.45, margin: "9px 0 0" }}>
                       Cobertura de superficie: {(["Hard", "Clay", "Grass"] as const).map((surface) => {
                         const coverage = window.surface_coverage?.[surface];
