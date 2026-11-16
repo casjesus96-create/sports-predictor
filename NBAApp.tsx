@@ -200,6 +200,53 @@ function recommendedMarketLine(records: MarketHistoryRecord[] | undefined, marke
   return { line: Math.max(0, Math.round(average * 2) / 2), average, sample: values.length };
 }
 
+function evaluateRecommendedLineBacktest(records: MarketHistoryRecord[] | undefined, market: string) {
+  const components = PLAYER_MARKETS[market];
+  if (!components) return null;
+  const seenGameIds = new Set<string>();
+  const orderedGames = (records || [])
+    .filter((record) => {
+      const gameId = String(record.game_id || "").trim();
+      const kickoffTime = record.kickoff ? Date.parse(record.kickoff) : NaN;
+      const validStats = components.every((key) => typeof (record as any)[key] === "number" && Number.isFinite((record as any)[key]));
+      if (record.completed !== true || !gameId || !Number.isFinite(kickoffTime) || !validStats || seenGameIds.has(gameId)) return false;
+      seenGameIds.add(gameId);
+      return true;
+    })
+    .map((record) => ({
+      game_id: String(record.game_id).trim(),
+      kickoff: record.kickoff as string,
+      value: components.reduce((sum, key) => sum + (record as any)[key], 0),
+    }))
+    .sort((a, b) => Date.parse(a.kickoff) - Date.parse(b.kickoff));
+
+  const evaluations = [];
+  for (let index = 5; index < orderedGames.length; index += 1) {
+    const priorFive = orderedGames.slice(index - 5, index);
+    const average = priorFive.reduce((sum, game) => sum + game.value, 0) / priorFive.length;
+    const line = Math.max(0, Math.round(average * 2) / 2);
+    const actual = orderedGames[index];
+    evaluations.push({
+      game_id: actual.game_id,
+      kickoff: actual.kickoff,
+      line,
+      actual: actual.value,
+      error: actual.value - line,
+      absoluteError: Math.abs(actual.value - line),
+    });
+  }
+  if (!evaluations.length) return { sample: 0, minimum: 5, mae: null, bias: null, evaluations };
+  const mae = evaluations.reduce((sum, item) => sum + item.absoluteError, 0) / evaluations.length;
+  const bias = evaluations.reduce((sum, item) => sum + item.error, 0) / evaluations.length;
+  return {
+    sample: evaluations.length,
+    minimum: 5,
+    mae: evaluations.length >= 5 ? mae : null,
+    bias: evaluations.length >= 5 ? bias : null,
+    evaluations,
+  };
+}
+
 function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: string, rawLine: string) {
   if (!rawLine.trim()) return null;
   const line = Number(rawLine);
@@ -894,6 +941,32 @@ export default function NBAApp() {
                                                         <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
                                                           <div className="score-row"><span>Línea de referencia sugerida</span><b>{recommendation ? numberLabel(recommendation.line) : "No disponible"}</b></div>
                                                           <small className="muted">{recommendation ? "Promedio últimos 5: " + numberLabel(recommendation.average) + " · N=" + recommendation.sample + ". Redondeo al medio punto más cercano." : "Se requieren 5 partidos válidos con todas las estadísticas de este mercado."}</small>
+                                                          {(() => {
+                                                            const backtest = evaluateRecommendedLineBacktest(player.market_history, market);
+                                                            return (
+                                                              <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
+                                                                <b style={{ fontSize: 11 }}>Validación cronológica de la línea</b>
+                                                                <small className="muted" style={{ display: "block", marginTop: 3 }}>Cada línea histórica se calculó con los cinco partidos anteriores y se comparó con el siguiente. No reutiliza el partido evaluado para calcular su línea.</small>
+                                                                {backtest && backtest.sample >= 5 ? (
+                                                                  <>
+                                                                    <div className="score-row"><span>Predicciones evaluadas</span><b>{backtest.sample}</b></div>
+                                                                    <div className="score-row"><span>Error absoluto medio (MAE)</span><b>{numberLabel(backtest.mae)}</b></div>
+                                                                    <div className="score-row"><span>Sesgo (real − línea)</span><b>{numberLabel(backtest.bias)}</b></div>
+                                                                  </>
+                                                                ) : (
+                                                                  <small className="muted" style={{ display: "block" }}>Muestra exploratoria: {backtest?.sample ?? 0}/5 evaluaciones. Se necesitan al menos cinco pruebas cronológicas para mostrar métricas agregadas.</small>
+                                                                )}
+                                                                {backtest && backtest.evaluations.length > 0 && (
+                                                                  <details style={{ marginTop: 6 }}>
+                                                                    <summary>Ver evaluaciones cronológicas ({backtest.sample})</summary>
+                                                                    <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
+                                                                      {backtest.evaluations.map((item) => <li key={item.game_id}>{new Date(item.kickoff).toLocaleDateString()} · línea {numberLabel(item.line)} · real {numberLabel(item.actual)} · error {item.error > 0 ? "+" : ""}{numberLabel(item.error)}</li>)}
+                                                                    </ul>
+                                                                  </details>
+                                                                )}
+                                                              </div>
+                                                            );
+                                                          })()}
                                                           {recommendation && <button className="secondary" type="button" style={{ width: "100%", marginTop: 7 }} onClick={() => setMarketLines((current) => ({ ...current, [lineKey]: String(recommendation.line) }))}>Usar línea sugerida</button>}
                                                         </div>
                                                         <label style={{ display: "block", marginTop: 8 }}>
