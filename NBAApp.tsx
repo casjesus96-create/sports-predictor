@@ -220,7 +220,7 @@ function evaluateRecommendedLineBacktest(records: MarketHistoryRecord[] | undefi
     }))
     .sort((a, b) => Date.parse(a.kickoff) - Date.parse(b.kickoff));
 
-  const evaluations = [];
+  const evaluations: Array<{ game_id: string; kickoff: string; line: number; actual: number; error: number; absoluteError: number }> = [];
   for (let index = 5; index < orderedGames.length; index += 1) {
     const priorFive = orderedGames.slice(index - 5, index);
     const average = priorFive.reduce((sum, game) => sum + game.value, 0) / priorFive.length;
