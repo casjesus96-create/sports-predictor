@@ -5,7 +5,18 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import logging
+import math
 from statistics import median, pstdev
+
+
+def _is_valid_stat(value):
+    """Accept finite, non-negative numeric boxscore stats; reject bool and invalid values."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+    )
 
 from nba_player_stats import fetch_player_boxscore
 
@@ -66,7 +77,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=15):
                 player_id = str(player.get("player_id") or player.get("name") or "").strip()
                 if not player_id:
                     continue
-                present_stats = [key for key in STAT_KEYS if isinstance(player.get(key), (int, float))]
+                present_stats = [key for key in STAT_KEYS if _is_valid_stat(player.get(key))]
                 if not present_stats:
                     continue
                 item = aggregates[team_id][player_id]
