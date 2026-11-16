@@ -48,6 +48,18 @@ function number(value: any, digits = 1) {
   return Number.isFinite(n) ? n.toFixed(digits) : "—";
 }
 
+function metricDifference(candidate: any, official: any) {
+  if (
+    candidate === null || candidate === undefined || candidate === "" ||
+    official === null || official === undefined || official === ""
+  ) return null;
+  const candidateValue = Number(candidate);
+  const officialValue = Number(official);
+  return Number.isFinite(candidateValue) && Number.isFinite(officialValue)
+    ? candidateValue - officialValue
+    : null;
+}
+
 function formatKickoff(value: any) {
   if (!value) return "Horario por confirmar";
   const date = new Date(value);
@@ -927,10 +939,8 @@ export default function NFLApp() {
           })}
           <h3 className="detail-heading">Ganador · métricas por temporada</h3>
           {Object.entries(evaluation?.winner?.by_season || {}).map(([season, result]: [string, any]) => {
-            const brierDelta = Number.isFinite(Number(result?.experimental?.brier_score)) && Number.isFinite(Number(result?.official?.brier_score))
-              ? Number(result.experimental.brier_score) - Number(result.official.brier_score) : null;
-            const logLossDelta = Number.isFinite(Number(result?.experimental?.log_loss)) && Number.isFinite(Number(result?.official?.log_loss))
-              ? Number(result.experimental.log_loss) - Number(result.official.log_loss) : null;
+            const brierDelta = metricDifference(result?.experimental?.brier_score, result?.official?.brier_score);
+            const logLossDelta = metricDifference(result?.experimental?.log_loss, result?.official?.log_loss);
             return (
               <div className="panel" key={season}>
                 <b>Temporada {season} · n={result?.sample_size ?? 0}</b>
@@ -948,10 +958,8 @@ export default function NFLApp() {
           })}
           <h3 className="detail-heading">Ganador · niveles de confianza</h3>
           {Object.entries(evaluation?.winner?.by_confidence || {}).map(([bucket, result]: [string, any]) => {
-            const brierDelta = Number.isFinite(Number(result?.experimental?.brier_score)) && Number.isFinite(Number(result?.official?.brier_score))
-              ? Number(result.experimental.brier_score) - Number(result.official.brier_score) : null;
-            const logLossDelta = Number.isFinite(Number(result?.experimental?.log_loss)) && Number.isFinite(Number(result?.official?.log_loss))
-              ? Number(result.experimental.log_loss) - Number(result.official.log_loss) : null;
+            const brierDelta = metricDifference(result?.experimental?.brier_score, result?.official?.brier_score);
+            const logLossDelta = metricDifference(result?.experimental?.log_loss, result?.official?.log_loss);
             return (
               <div className="panel" key={bucket}>
                 <b>{bucket} · n={result?.sample_size ?? 0}</b>
