@@ -67,10 +67,12 @@ def extract_pregame_market_observations(
         return {"available": False, "reason": "INVALID_CUTOFF", "market": market_key}
 
     observations = []
-    seen_game_ids = set()
+    accepted_by_game = {}
+    conflicted_game_ids = set()
     excluded = {
         "missing_game_id": 0,
         "duplicate_game": 0,
+        "conflicting_duplicate_game": 0,
         "not_completed": 0,
         "missing_or_invalid_kickoff": 0,
         "at_or_after_cutoff": 0,
@@ -84,9 +86,6 @@ def extract_pregame_market_observations(
         game_id = str(record.get("game_id") or "").strip()
         if not game_id:
             excluded["missing_game_id"] += 1
-            continue
-        if game_id in seen_game_ids:
-            excluded["duplicate_game"] += 1
             continue
 
         if record.get("completed") is not True:
@@ -105,14 +104,32 @@ def extract_pregame_market_observations(
             excluded["missing_or_invalid_stats"] += 1
             continue
 
-        # A game becomes a duplicate only after its first valid observation is
-        # accepted. An incomplete earlier row must not suppress a valid row.
-        seen_game_ids.add(game_id)
-        observations.append({
+        # Identical duplicate rows are harmless. If valid rows for the same
+        # game disagree on kickoff or any required stat, quarantine that game
+        # instead of arbitrarily keeping whichever row arrived first.
+        signature = (kickoff.isoformat(), tuple(values))
+        if game_id in conflicted_game_ids:
+            excluded["duplicate_game"] += 1
+            continue
+        if game_id in accepted_by_game:
+            excluded["duplicate_game"] += 1
+            if accepted_by_game[game_id]["signature"] != signature:
+                observations.remove(accepted_by_game[game_id]["observation"])
+                del accepted_by_game[game_id]
+                conflicted_game_ids.add(game_id)
+                excluded["conflicting_duplicate_game"] += 1
+            continue
+
+        observation = {
             "game_id": game_id,
             "kickoff": kickoff.isoformat(),
             "value": round(sum(values), 4),
-        })
+        }
+        accepted_by_game[game_id] = {
+            "signature": signature,
+            "observation": observation,
+        }
+        observations.append(observation)
 
     observations.sort(key=lambda item: item["kickoff"], reverse=True)
     return {
