@@ -190,6 +190,13 @@ type SurfaceValidationResponse = {
       with_surface_ratings?: number;
       fallback_to_general?: number;
     }>;
+    raw_surface_labels_in_evaluation_window?: Record<string, number>;
+    normalized_surface_labels_in_evaluation_window?: Record<string, number>;
+    data_quality?: {
+      excluded_walkover?: number;
+      excluded_invalid?: number;
+      rows_without_valid_date?: number;
+    };
   }>;
   limitations?: string[];
 };
@@ -834,6 +841,52 @@ export default function TennisApp() {
                         return `${surface} ${coverage?.with_surface_ratings ?? 0} con Elo / ${coverage?.fallback_to_general ?? 0} fallback`;
                       }).join(" · ")}.
                     </p>
+                    <details style={{ marginTop: 9, border: "1px solid #34516b", borderRadius: 8, padding: 8, background: "#10253a" }}>
+                      <summary style={{ cursor: "pointer", fontSize: 11, fontWeight: 800 }}>
+                        Calidad y etiquetas del histórico
+                      </summary>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 8 }}>
+                        <div>
+                          <div style={{ color: "#b7c8d8", fontSize: 9 }}>Walkovers excluidos</div>
+                          <b style={{ fontSize: 12 }}>{window.data_quality?.excluded_walkover ?? 0}</b>
+                        </div>
+                        <div>
+                          <div style={{ color: "#b7c8d8", fontSize: 9 }}>Registros inválidos</div>
+                          <b style={{ fontSize: 12 }}>{window.data_quality?.excluded_invalid ?? 0}</b>
+                        </div>
+                        <div>
+                          <div style={{ color: "#b7c8d8", fontSize: 9 }}>Sin fecha (datos cargados)</div>
+                          <b style={{ fontSize: 12 }}>{window.data_quality?.rows_without_valid_date ?? 0}</b>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 9 }}>
+                        <div style={{ color: "#b7c8d8", fontSize: 10, fontWeight: 800 }}>Etiquetas originales · filas con fecha en el periodo</div>
+                        {Object.entries(window.raw_surface_labels_in_evaluation_window || {}).length ? (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                            {Object.entries(window.raw_surface_labels_in_evaluation_window || {}).map(([label, count]) => (
+                              <span key={label} style={{ border: "1px solid #34516b", borderRadius: 12, padding: "3px 7px", fontSize: 10, color: "#d5e2ee" }}>
+                                {label}: {count}
+                              </span>
+                            ))}
+                          </div>
+                        ) : <p style={{ color: "#b7c8d8", fontSize: 10 }}>Sin etiquetas disponibles.</p>}
+                      </div>
+                      <div style={{ marginTop: 9 }}>
+                        <div style={{ color: "#b7c8d8", fontSize: 10, fontWeight: 800 }}>Etiquetas normalizadas</div>
+                        {Object.entries(window.normalized_surface_labels_in_evaluation_window || {}).length ? (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                            {Object.entries(window.normalized_surface_labels_in_evaluation_window || {}).map(([label, count]) => (
+                              <span key={label} style={{ border: "1px solid #34516b", borderRadius: 12, padding: "3px 7px", fontSize: 10, color: "#d5e2ee" }}>
+                                {label}: {count}
+                              </span>
+                            ))}
+                          </div>
+                        ) : <p style={{ color: "#b7c8d8", fontSize: 10 }}>Sin etiquetas normalizadas disponibles.</p>}
+                      </div>
+                      <p style={{ color: "#8fa8bd", fontSize: 9, lineHeight: 1.45, margin: "8px 0 0" }}>
+                        Las etiquetas originales permiten detectar variantes, superficies desconocidas o valores vacíos. Los registros sin fecha se cuentan sobre los datos históricos cargados; no equivalen necesariamente a partidos del año evaluado.
+                      </p>
+                    </details>
                   </article>
                 );
               })}
