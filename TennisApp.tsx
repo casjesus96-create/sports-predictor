@@ -174,6 +174,12 @@ type SurfaceValidationResponse = {
       brier_score?: number | null;
       log_loss?: number | null;
     }>;
+    calibration?: Record<string, Array<{
+      bin: string;
+      matches: number;
+      mean_predicted_probability: number | null;
+      observed_win_rate: number | null;
+    }>>;
     surface_coverage?: Record<string, {
       with_surface_ratings?: number;
       fallback_to_general?: number;
@@ -262,6 +268,23 @@ function formatPercent(value: number | null | undefined) {
 
 function formatMetric(value: number | null | undefined) {
   return typeof value === "number" ? value.toLocaleString("es-ES") : "Sin datos";
+}
+
+function wilsonInterval(rate: number | null | undefined, sampleSize: number) {
+  if (typeof rate !== "number" || !Number.isFinite(rate) || sampleSize <= 0) return null;
+  const n = sampleSize;
+  const z = 1.96;
+  const denominator = 1 + (z * z) / n;
+  const center = (rate + (z * z) / (2 * n)) / denominator;
+  const margin = (z * Math.sqrt((rate * (1 - rate) + (z * z) / (4 * n)) / n)) / denominator;
+  return { lower: Math.max(0, center - margin), upper: Math.min(1, center + margin) };
+}
+
+function calibrationSampleLabel(sampleSize: number) {
+  if (!Number.isFinite(sampleSize) || sampleSize <= 0) return "Sin muestra";
+  if (sampleSize < 10) return "Muy pequeña";
+  if (sampleSize < 30) return "Limitada";
+  return "Más informativa";
 }
 
 function statusLabel(match: Match) {
@@ -724,6 +747,48 @@ export default function TennisApp() {
                               <div><div style={{ color: "#b7c8d8", fontSize: 10 }}>Brier</div><b style={{ fontSize: 12 }}>{typeof metric?.brier_score === "number" ? metric.brier_score.toFixed(4) : "—"}</b></div>
                               <div><div style={{ color: "#b7c8d8", fontSize: 10 }}>Log Loss</div><b style={{ fontSize: 12 }}>{typeof metric?.log_loss === "number" ? metric.log_loss.toFixed(4) : "—"}</b></div>
                             </div>
+                            {(() => {
+                              const bins = (window.calibration?.[method.key] || []).filter((bin) => bin.matches > 0);
+                              return (
+                                <details style={{ marginTop: 7, color: "#c5d7e7" }}>
+                                  <summary style={{ cursor: "pointer", fontSize: 11 }}>
+                                    Calibración por rangos · {bins.length} rangos con datos
+                                  </summary>
+                                  {bins.length ? (
+                                    <div style={{ overflowX: "auto", marginTop: 7 }}>
+                                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, textAlign: "left" }}>
+                                        <thead>
+                                          <tr style={{ color: "#b7c8d8" }}>
+                                            <th style={{ padding: "5px 4px" }}>Rango</th>
+                                            <th style={{ padding: "5px 4px" }}>Media pred.</th>
+                                            <th style={{ padding: "5px 4px" }}>Observado</th>
+                                            <th style={{ padding: "5px 4px" }}>IC95% Wilson</th>
+                                            <th style={{ padding: "5px 4px" }}>N</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {bins.map((bin) => {
+                                            const interval = wilsonInterval(bin.observed_win_rate, bin.matches);
+                                            return (
+                                              <tr key={bin.bin} style={{ borderTop: "1px solid #29445b" }}>
+                                                <td style={{ padding: "5px 4px", whiteSpace: "nowrap" }}>{bin.bin}</td>
+                                                <td style={{ padding: "5px 4px" }}>{formatPercent(bin.mean_predicted_probability)}</td>
+                                                <td style={{ padding: "5px 4px" }}>{formatPercent(bin.observed_win_rate)}</td>
+                                                <td style={{ padding: "5px 4px", whiteSpace: "nowrap" }}>{interval ? formatPercent(interval.lower) + "–" + formatPercent(interval.upper) : "—"}</td>
+                                                <td style={{ padding: "5px 4px" }}>
+                                                  <span>{bin.matches}</span>
+                                                  <span style={{ display: "block", color: "#b7c8d8" }}>{calibrationSampleLabel(bin.matches)}</span>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  ) : <p style={{ fontSize: 10, color: "#b7c8d8" }}>No hay observaciones en los rangos de calibración para este periodo.</p>}
+                                </details>
+                              );
+                            })()}
                           </div>
                         );
                       })}
