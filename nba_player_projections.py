@@ -8,6 +8,10 @@ import logging
 import math
 from statistics import median, pstdev
 
+from nba_player_stats import fetch_player_boxscore
+
+logger = logging.getLogger(__name__)
+
 
 def _is_valid_stat(value):
     """Accept finite, non-negative numeric boxscore stats; reject bool and invalid values."""
@@ -17,10 +21,6 @@ def _is_valid_stat(value):
         and math.isfinite(value)
         and value >= 0
     )
-
-from nba_player_stats import fetch_player_boxscore
-
-logger = logging.getLogger(__name__)
 STAT_KEYS = ("points", "assists", "rebounds", "blocks", "steals")
 PROJECTION_KEYS = {
     "points": "projected_points",
