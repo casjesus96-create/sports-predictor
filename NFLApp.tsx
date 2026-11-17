@@ -165,6 +165,8 @@ export default function NFLApp() {
   const [predictions, setPredictions] = useState<AnyRecord[]>([]);
   const [performance, setPerformance] = useState<AnyRecord | null>(null);
   const [calibration, setCalibration] = useState<AnyRecord | null>(null);
+  const [modelComparison, setModelComparison] = useState<AnyRecord | null>(null);
+  const [modelComparisonError, setModelComparisonError] = useState("");
   const [selectedGameId, setSelectedGameId] = useState("");
   const [detail, setDetail] = useState<AnyRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -200,6 +202,7 @@ export default function NFLApp() {
         request("/nfl/predictions?limit=100"),
         request("/nfl/performance"),
         request("/nfl/calibration?minimum_sample=30"),
+        request("/nfl/model-comparison?limit=500"),
       ]);
       const errors: string[] = [];
 
@@ -241,6 +244,16 @@ export default function NFLApp() {
       } else {
         setCalibration(null);
         errors.push(`Calibración: ${results[3].reason?.message || "no se pudo cargar."}`);
+      }
+
+      if (results[4].status === "fulfilled") {
+        setModelComparison(results[4].value);
+        setModelComparisonError("");
+      } else {
+        setModelComparison(null);
+        setModelComparisonError(
+          results[4].reason?.message || "No se pudo cargar la comparación de versiones NFL."
+        );
       }
 
       setError(errors.join(" "));
@@ -716,6 +729,83 @@ export default function NFLApp() {
         </div>
       </section>
 
+
+
+      {modelComparison?.success ? (
+        <section className="panel detail-panel" aria-label="Comparación histórica de versiones NFL">
+          <div className="section-kicker">REGISTRO COMPARATIVO · VERSIONES DEL MODELO</div>
+          <div className="section-heading">
+            <h2>Comparación histórica de modelos NFL</h2>
+            <span className="muted">
+              {(modelComparison.models || []).length} versiones · {modelComparison.deduplicated_duplicate_snapshots ?? 0} duplicados excluidos
+            </span>
+          </div>
+          <p className="model-note">
+            Compara snapshots guardados por versión. Brier Score y Log Loss: menor es mejor.
+            La precisión es descriptiva y no basta por sí sola para promover un candidato.
+            Solo se comparan predicciones liquidadas y verificables; los empates (PUSH) no cuentan como acierto ni fallo.
+          </p>
+          {(modelComparison.models || []).length > 0 ? (
+            <div className="percentage-signal-grid">
+              {(modelComparison.models || []).map((model: AnyRecord) => (
+                <article className="percentage-band-card" key={model.model_version}>
+                  <div className="percentage-band-heading">
+                    <strong>{model.model_version}</strong>
+                    <span>{model.role === "official" ? "MODELO OFICIAL" : "EXPERIMENTAL"}</span>
+                  </div>
+                  <div className="factor-grid">
+                    <TeamFactor label="Snapshots únicos" value={model.snapshots ?? 0} />
+                    <TeamFactor label="Pendientes" value={model.pending ?? 0} />
+                    <TeamFactor label="Liquidadas" value={model.settled ?? 0} />
+                    <TeamFactor label="Evaluables" value={model.evaluated ?? 0} />
+                    <TeamFactor label="Empates · PUSH" value={model.pushes ?? 0} />
+                    <TeamFactor label="Inválidas / no verificables" value={model.invalid_or_unverifiable ?? 0} />
+                    <TeamFactor label="Precisión observada" value={model.accuracy_pct == null ? "—" : `${number(model.accuracy_pct, 2)}%`} />
+                    <TeamFactor label="Brier Score · menor es mejor" value={number(model.brier_score, 5)} />
+                    <TeamFactor label="Log Loss · menor es mejor" value={number(model.log_loss, 5)} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="model-note">Todavía no hay snapshots NFL registrados para comparar.</p>
+          )}
+          {(modelComparison.paired_comparisons || []).length > 0 && (
+            <>
+              <h3 className="detail-heading">Comparaciones pareadas · mismos partidos</h3>
+              <div className="factor-grid">
+                {(modelComparison.paired_comparisons || []).map((pair: AnyRecord) => (
+                  <article className="percentage-band-card" key={`${pair.model_a}-${pair.model_b}`}>
+                    <div className="percentage-band-heading">
+                      <strong>{pair.model_a} vs {pair.model_b}</strong>
+                      <span>N = {pair.same_sample_size ?? 0}</span>
+                    </div>
+                    <div className="factor-grid">
+                      <TeamFactor label="Δ Brier (A − B)" value={number(pair.brier_improvement_a_minus_b, 5)} />
+                      <TeamFactor label="Δ Log Loss (A − B)" value={number(pair.log_loss_improvement_a_minus_b, 5)} />
+                      <TeamFactor label="Δ precisión (A − B)" value={pair.accuracy_delta_a_minus_b_pp == null ? "—" : `${number(pair.accuracy_delta_a_minus_b_pp, 2)} pp`} />
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <p className="model-note">
+                En las diferencias A − B, un valor positivo de Brier o Log Loss favorece a B (menor error);
+                un valor positivo de precisión favorece a A. Solo se incluyen partidos compartidos con el mismo resultado verificado.
+              </p>
+            </>
+          )}
+          <p className="model-note">
+            Oficial actual: {modelComparison.official_model_version || MODEL_VERSION}. La promoción de una versión experimental
+            requiere validación cronológica, muestra suficiente y aprobación explícita. Este panel es de solo lectura y no altera probabilidades.
+          </p>
+        </section>
+      ) : modelComparisonError ? (
+        <section className="panel detail-panel">
+          <div className="section-kicker">REGISTRO COMPARATIVO</div>
+          <h2>Comparación histórica de modelos NFL</h2>
+          <p className="model-note">No se pudo cargar este panel: {modelComparisonError}</p>
+        </section>
+      ) : null}
 
       {calibration?.success && (
         <section className="panel detail-panel" aria-label="Calibración de confianza NFL">
