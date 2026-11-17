@@ -54,7 +54,7 @@ def test_model_comparison_excludes_pushes_invalid_rows_and_deduplicates_event_ve
     result = nfl_repository.build_nfl_model_comparison(rows)
     summary = result["models"][0]
 
-    assert summary["snapshots"] == 3
+    assert summary["snapshots"] == 4  # Four unique event/version snapshots remain after deduplication.
     assert summary["pending"] == 1
     assert summary["pushes"] == 1
     assert summary["evaluated"] == 1
