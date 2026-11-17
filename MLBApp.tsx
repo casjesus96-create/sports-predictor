@@ -540,6 +540,15 @@ export default function MLBApp() {
   const [performance, setPerformance] =
     useState<any>(null);
 
+  const [pitcherStrikeoutBacktest, setPitcherStrikeoutBacktest] =
+    useState<any>(null);
+
+  const [pitcherStrikeoutBacktestLoading, setPitcherStrikeoutBacktestLoading] =
+    useState(false);
+
+  const [pitcherStrikeoutBacktestError, setPitcherStrikeoutBacktestError] =
+    useState("");
+
   const [selected, setSelected] =
     useState<Game | null>(null);
 
@@ -648,9 +657,29 @@ export default function MLBApp() {
     }
   }
 
+  async function loadPitcherStrikeoutBacktest() {
+    setPitcherStrikeoutBacktestLoading(true);
+    setPitcherStrikeoutBacktestError("");
+    try {
+      const result = await request("/mlb/backtest?limit=200");
+      setPitcherStrikeoutBacktest(result?.pitcher_strikeout_accuracy || null);
+    } catch (e: any) {
+      setPitcherStrikeoutBacktest(null);
+      setPitcherStrikeoutBacktestError(
+        e?.message || "No se pudo cargar la evaluación histórica de ponches."
+      );
+    } finally {
+      setPitcherStrikeoutBacktestLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadAll();
   }, [date]);
+
+  useEffect(() => {
+    loadPitcherStrikeoutBacktest();
+  }, []);
 
   const datePredictions =
     useMemo(() => {
@@ -1105,6 +1134,70 @@ export default function MLBApp() {
           </section>
         );
       })()}
+
+
+      <section className="panel mlb-calibration-panel" aria-labelledby="pitcher-k-accuracy-heading" style={{ marginTop: "20px" }}>
+        <div className="section-heading">
+          <div>
+            <span className="section-kicker">LABORATORIO DE MERCADOS · MLB</span>
+            <h2 id="pitcher-k-accuracy-heading">Precisión histórica · ponches del abridor (K)</h2>
+          </div>
+          <button className="secondary" type="button" onClick={loadPitcherStrikeoutBacktest} disabled={pitcherStrikeoutBacktestLoading}>
+            {pitcherStrikeoutBacktestLoading ? "Actualizando…" : "↻ Actualizar evaluación"}
+          </button>
+        </div>
+        <p className="muted mlb-calibration-intro">
+          Compara las proyecciones de ponches guardadas antes del partido con los ponches finales del abridor verificado.
+          Es una evaluación descriptiva: no modifica las proyecciones ni el modelo oficial.
+        </p>
+        {pitcherStrikeoutBacktestError ? (
+          <div className="message error" role="alert">{pitcherStrikeoutBacktestError}</div>
+        ) : pitcherStrikeoutBacktestLoading && !pitcherStrikeoutBacktest ? (
+          <div className="empty mlb-calibration-empty">Cargando observaciones verificadas…</div>
+        ) : (
+          <>
+            {(() => {
+              const overall = pitcherStrikeoutBacktest?.overall || {};
+              const home = pitcherStrikeoutBacktest?.home_pitcher || {};
+              const away = pitcherStrikeoutBacktest?.away_pitcher || {};
+              const n = Number(overall.sample_size || 0);
+              return (
+                <>
+                  <div className="mlb-calibration-total" style={{ marginBottom: 10 }}>
+                    {n} observaciones verificadas · modelo {pitcherStrikeoutBacktest?.model_version || MODEL_VERSION}
+                  </div>
+                  <div className="factor-grid">
+                    {[
+                      { title: "Global · MAE", value: overall.mae, detail: "Ponches de error medio" },
+                      { title: "Global · RMSE", value: overall.rmse, detail: "Penaliza más errores grandes" },
+                      { title: "Global · sesgo", value: overall.bias, detail: "Predicho − real" },
+                      { title: "Abridor local · MAE", value: home.mae, detail: `N = ${home.sample_size || 0}` },
+                      { title: "Abridor visitante · MAE", value: away.mae, detail: `N = ${away.sample_size || 0}` },
+                      { title: "Media proyectada / real", value: overall.mean_predicted == null || overall.mean_actual == null ? null : `${num(overall.mean_predicted, 2)} / ${num(overall.mean_actual, 2)}`, detail: "Ponches por abridor" },
+                    ].map((metric) => (
+                      <div className="factor" key={metric.title} style={{ minWidth: 0 }}>
+                        <span>{metric.title}</span>
+                        <b>{metric.value == null ? "—" : typeof metric.value === "number" ? num(metric.value, 2) : metric.value}</b>
+                        <small className="muted">{metric.detail}</small>
+                      </div>
+                    ))}
+                  </div>
+                  {n === 0 ? (
+                    <p className="muted" style={{ marginTop: 12 }}>
+                      Aún no hay una muestra válida. Se necesitan partidos liquidados con proyección pregame guardada y ponches del abridor verificados por identidad. No se mostrarán ceros artificiales.
+                    </p>
+                  ) : (
+                    <p className="muted" style={{ marginTop: 12 }}>
+                      {overall.bias > 0 ? "El promedio proyectado está por encima del resultado real." : overall.bias < 0 ? "El promedio proyectado está por debajo del resultado real." : "El sesgo medio está equilibrado en esta muestra."}
+                      {" "}Sesgo positivo = sobreestimación; negativo = subestimación. Una muestra pequeña no permite concluir estabilidad.
+                    </p>
+                  )}
+                </>
+              );
+            })()}
+          </>
+        )}
+      </section>
 
       <section className="content-grid">
 
