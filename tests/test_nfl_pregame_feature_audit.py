@@ -81,6 +81,22 @@ def test_pregame_audit_excludes_same_game_and_future_games(monkeypatch):
     assert features["pbp_defensive_sacks"] == 1
     assert features["pbp_defensive_turnovers"] == 1
 
+    profiles = {item["game_id"]: item for item in result["advanced_team_profiles"]}
+    # For g2, only g1 is prior; g2 itself and future g3 are excluded.
+    buf_before_g2 = profiles["g2"]["teams"]["BUF"]
+    assert buf_before_g2["games_sampled"] == 1
+    assert buf_before_g2["sample_game_ids"] == ["g1"]
+    assert buf_before_g2["passing_yards_per_game"] == 250
+    assert buf_before_g2["rushing_yards_per_game"] == 90
+    assert buf_before_g2["passing_touchdowns_per_game"] == 2
+    assert buf_before_g2["rushing_touchdowns_per_game"] == 1
+    assert buf_before_g2["third_down_attempts"] == 1
+    assert buf_before_g2["third_down_conversion_rate"] == 1
+    assert buf_before_g2["fourth_down_conversion_rate"] is None
+    # Defensive profile uses prior plays only and keeps absent denominators null.
+    assert buf_before_g2["defensive_yards_allowed_per_play"] == 5
+    assert result["advanced_team_profile_method"]["read_only"] is True
+
 
 def test_pregame_audit_handles_no_target_games(monkeypatch):
     monkeypatch.setattr(audit, "load_schedule", lambda season: [])
