@@ -31,6 +31,7 @@ def test_model_comparison_reports_versions_and_paired_same_sample_metrics():
     models = {item["model_version"]: item for item in result["models"]}
     assert models["NFL-1.0.0"]["role"] == "official"
     assert models["NFL-1.0.0"]["evaluated"] == 2
+    assert models["NFL-1.0.0"]["calibration"]
     assert models["NFL-ADVANCED-1"]["role"] == "experimental"
     assert models["NFL-ADVANCED-1"]["evaluated"] == 3
 
