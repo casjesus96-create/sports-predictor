@@ -121,6 +121,10 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             "game_id": game_id,
             "passing_epa": _number(row, "passing_epa"),
             "rushing_epa": _number(row, "rushing_epa"),
+            "passing_yards": _number(row, "passing_yards"),
+            "rushing_yards": _number(row, "rushing_yards"),
+            "passing_tds": _number(row, "passing_tds"),
+            "rushing_tds": _number(row, "rushing_tds"),
             "passing_interceptions": _number(row, "passing_interceptions"),
             "sacks_suffered": _number(row, "sacks_suffered"),
             "rushing_fumbles_lost": _number(row, "rushing_fumbles_lost"),
@@ -142,30 +146,80 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
         epa = _number(row, "epa")
         success = _number(row, "success")
         down = _number(row, "down")
+        yards = _number(row, "yards_gained")
+        pass_td = _number(row, "pass_touchdown")
+        rush_td = _number(row, "rush_touchdown")
+        sack = _number(row, "sack")
+        interception = _number(row, "interception")
+        fumble_lost = _number(row, "fumble_lost")
         third_converted = _truthy(row.get("third_down_converted"))
-        if offense:
-            bucket = pbp_history.setdefault((offense, game_id), {
+        fourth_converted = _truthy(row.get("fourth_down_converted"))
+
+        def new_bucket():
+            return {
                 "kickoff": kickoff, "epa_sum": 0.0, "epa_n": 0,
                 "success_n": 0, "success_yes": 0,
                 "third_n": 0, "third_yes": 0,
-            })
+                "fourth_n": 0, "fourth_yes": 0,
+                "yards_sum": 0.0, "yards_n": 0,
+                "plays_n": 0, "pass_td_n": 0, "rush_td_n": 0, "td_data_n": 0,
+                "sacks_n": 0, "interceptions_n": 0, "fumbles_lost_n": 0,
+                "turnover_data_n": 0,
+            }
+
+        if offense:
+            bucket = pbp_history.setdefault((offense, game_id), new_bucket())
+            bucket["plays_n"] += 1
             if epa is not None:
                 bucket["epa_sum"] += epa
                 bucket["epa_n"] += 1
             if success is not None:
                 bucket["success_n"] += 1
                 bucket["success_yes"] += int(success > 0)
+            if yards is not None:
+                bucket["yards_sum"] += yards
+                bucket["yards_n"] += 1
             if down == 3:
                 bucket["third_n"] += 1
                 bucket["third_yes"] += int(third_converted)
-        if defense and epa is not None:
-            bucket = pbp_history.setdefault(("DEF:" + defense, game_id), {
-                "kickoff": kickoff, "epa_sum": 0.0, "epa_n": 0,
-                "success_n": 0, "success_yes": 0,
-                "third_n": 0, "third_yes": 0,
-            })
-            bucket["epa_sum"] += epa
-            bucket["epa_n"] += 1
+            if down == 4:
+                bucket["fourth_n"] += 1
+                bucket["fourth_yes"] += int(fourth_converted)
+            if pass_td is not None:
+                bucket["pass_td_n"] += 1
+                bucket["td_data_n"] += 1
+            if rush_td is not None:
+                bucket["rush_td_n"] += 1
+                bucket["td_data_n"] += 1
+            if sack is not None:
+                bucket["sacks_n"] += 1
+            if interception is not None:
+                bucket["interceptions_n"] += 1
+            if fumble_lost is not None:
+                bucket["fumbles_lost_n"] += 1
+
+        if defense:
+            bucket = pbp_history.setdefault(("DEF:" + defense, game_id), new_bucket())
+            if epa is not None:
+                bucket["epa_sum"] += epa
+                bucket["epa_n"] += 1
+            if yards is not None:
+                bucket["yards_sum"] += yards
+                bucket["yards_n"] += 1
+            if pass_td is not None:
+                bucket["pass_td_n"] += 1
+                bucket["td_data_n"] += 1
+            if rush_td is not None:
+                bucket["rush_td_n"] += 1
+                bucket["td_data_n"] += 1
+            if sack is not None:
+                bucket["sacks_n"] += 1
+            if interception is not None:
+                bucket["interceptions_n"] += 1
+                bucket["turnover_data_n"] += 1
+            if fumble_lost is not None:
+                bucket["fumbles_lost_n"] += 1
+                bucket["turnover_data_n"] += 1
 
     targets = [
         game for game in games
@@ -179,10 +233,22 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
         "team_passing_epa": 0,
         "team_rushing_epa": 0,
         "team_turnover_data": 0,
+        "team_passing_yards": 0,
+        "team_rushing_yards": 0,
+        "team_passing_touchdowns": 0,
+        "team_rushing_touchdowns": 0,
+        "team_sacks_suffered": 0,
         "pbp_offensive_epa": 0,
         "pbp_success_rate": 0,
+        "pbp_yards_per_play": 0,
+        "pbp_offensive_touchdowns": 0,
         "pbp_third_down_rate": 0,
+        "pbp_fourth_down_rate": 0,
         "pbp_defensive_epa_allowed": 0,
+        "pbp_defensive_yards_allowed": 0,
+        "pbp_defensive_touchdowns_allowed": 0,
+        "pbp_defensive_sacks": 0,
+        "pbp_defensive_turnovers": 0,
     }
     for target in targets:
         cutoff = _parse_time(target["kickoff"])
@@ -209,36 +275,60 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                for items in team_counts.values()):
             metric_counts["team_turnover_data"] += 1
 
-        for key, metric in (
-            ("pbp_offensive_epa", "epa_n"),
-            ("pbp_success_rate", "success_n"),
-            ("pbp_third_down_rate", "third_n"),
-        ):
+        team_feature_map = {
+            "team_passing_yards": "passing_yards",
+            "team_rushing_yards": "rushing_yards",
+            "team_passing_touchdowns": "passing_tds",
+            "team_rushing_touchdowns": "rushing_tds",
+            "team_sacks_suffered": "sacks_suffered",
+        }
+        for output_key, field in team_feature_map.items():
+            if all(any(item.get(field) is not None for item in items)
+                   for items in team_counts.values()):
+                metric_counts[output_key] += 1
+
+        pbp_feature_map = {
+            "pbp_offensive_epa": "epa_n",
+            "pbp_success_rate": "success_n",
+            "pbp_yards_per_play": "yards_n",
+            "pbp_third_down_rate": "third_n",
+            "pbp_fourth_down_rate": "fourth_n",
+            "pbp_offensive_touchdowns": "td_data_n",
+        }
+        for output_key, field in pbp_feature_map.items():
             both = True
             for team in team_counts:
                 entries = [
                     item for (entry_team, _), item in pbp_history.items()
                     if entry_team == team and item["kickoff"] < cutoff
-                    and item[metric] > 0
+                    and item[field] > 0
                 ]
                 if not entries:
                     both = False
                     break
             if both:
-                metric_counts[key] += 1
+                metric_counts[output_key] += 1
 
-        both_def = True
-        for team in team_counts:
-            entries = [
-                item for (entry_team, _), item in pbp_history.items()
-                if entry_team == "DEF:" + team and item["kickoff"] < cutoff
-                and item["epa_n"] > 0
-            ]
-            if not entries:
-                both_def = False
-                break
-        if both_def:
-            metric_counts["pbp_defensive_epa_allowed"] += 1
+        defensive_feature_map = {
+            "pbp_defensive_epa_allowed": "epa_n",
+            "pbp_defensive_yards_allowed": "yards_n",
+            "pbp_defensive_touchdowns_allowed": "td_data_n",
+            "pbp_defensive_sacks": "sacks_n",
+            "pbp_defensive_turnovers": "turnover_data_n",
+        }
+        for output_key, field in defensive_feature_map.items():
+            both = True
+            for team in team_counts:
+                entries = [
+                    item for (entry_team, _), item in pbp_history.items()
+                    if entry_team == "DEF:" + team and item["kickoff"] < cutoff
+                    and item[field] > 0
+                ]
+                if not entries:
+                    both = False
+                    break
+            if both:
+                metric_counts[output_key] += 1
 
     def coverage(count):
         return round(100.0 * count / target_count, 2) if target_count else 0.0
@@ -256,7 +346,7 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             "pregame_cutoff": "Solo estadísticas de partidos completados cuyo kickoff sea estrictamente anterior al del partido objetivo.",
             "same_game_excluded": True,
             "future_games_excluded": True,
-            "interpretation": "Cobertura de datos, no prueba de mejora predictiva ni validación del modelo.",
+            "interpretation": "Cobertura de datos, no prueba de mejora predictiva ni validación del modelo. Los ceros observados son valores válidos; la cobertura exige al menos un registro previo con el campo disponible para ambos equipos.",
         },
         "target_games": target_count,
         "completed_games_available_for_join": len(completed),

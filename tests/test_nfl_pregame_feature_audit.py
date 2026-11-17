@@ -19,21 +19,33 @@ def test_pregame_audit_excludes_same_game_and_future_games(monkeypatch):
     team_rows = [
         {"game_id": "g1", "team": "BUF", "passing_epa": "1.2",
          "rushing_epa": "0.2", "passing_interceptions": "0",
-         "sacks_suffered": "1", "rushing_fumbles_lost": "0"},
+         "sacks_suffered": "1", "rushing_fumbles_lost": "0",
+         "passing_yards": "250", "rushing_yards": "90",
+         "passing_tds": "2", "rushing_tds": "1"},
         {"game_id": "g1", "team": "MIA", "passing_epa": "-0.4",
          "rushing_epa": "0.1", "passing_interceptions": "1",
-         "sacks_suffered": "2", "rushing_fumbles_lost": "0"},
+         "sacks_suffered": "2", "rushing_fumbles_lost": "0",
+         "passing_yards": "180", "rushing_yards": "110",
+         "passing_tds": "1", "rushing_tds": "0"},
         {"game_id": "g2", "team": "BUF", "passing_epa": "0.7",
          "rushing_epa": "0.3", "passing_interceptions": "0",
-         "sacks_suffered": "0", "rushing_fumbles_lost": "0"},
+         "sacks_suffered": "0", "rushing_fumbles_lost": "0",
+         "passing_yards": "275", "rushing_yards": "105",
+         "passing_tds": "2", "rushing_tds": "1"},
     ]
     pbp_rows = [
         {"game_id": "g1", "posteam": "BUF", "defteam": "MIA",
          "epa": "0.3", "success": "1", "down": "3",
-         "third_down_converted": "1", "play_deleted": "0", "aborted_play": "0"},
+         "third_down_converted": "1", "fourth_down_converted": "0",
+         "yards_gained": "12", "pass_touchdown": "0", "rush_touchdown": "0",
+         "sack": "0", "interception": "0", "fumble_lost": "0",
+         "play_deleted": "0", "aborted_play": "0"},
         {"game_id": "g1", "posteam": "MIA", "defteam": "BUF",
          "epa": "-0.2", "success": "0", "down": "3",
-         "third_down_converted": "0", "play_deleted": "0", "aborted_play": "0"},
+         "third_down_converted": "0", "fourth_down_converted": "0",
+         "yards_gained": "5", "pass_touchdown": "0", "rush_touchdown": "0",
+         "sack": "0", "interception": "0", "fumble_lost": "0",
+         "play_deleted": "0", "aborted_play": "0"},
     ]
 
     def fake_download(session, url):
@@ -57,6 +69,17 @@ def test_pregame_audit_excludes_same_game_and_future_games(monkeypatch):
                 for x in result["candidate_feature_coverage"]}
     assert features["team_passing_epa"] == 1
     assert features["pbp_offensive_epa"] == 1
+    assert features["team_passing_yards"] == 1
+    assert features["team_rushing_yards"] == 1
+    assert features["team_passing_touchdowns"] == 1
+    assert features["team_rushing_touchdowns"] == 1
+    assert features["team_sacks_suffered"] == 1
+    assert features["pbp_yards_per_play"] == 1
+    assert features["pbp_offensive_touchdowns"] == 1
+    assert features["pbp_fourth_down_rate"] == 0  # No fourth-down attempts in prior sample
+    assert features["pbp_defensive_yards_allowed"] == 1
+    assert features["pbp_defensive_sacks"] == 1
+    assert features["pbp_defensive_turnovers"] == 1
 
 
 def test_pregame_audit_handles_no_target_games(monkeypatch):
