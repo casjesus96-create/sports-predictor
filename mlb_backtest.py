@@ -154,7 +154,9 @@ def diagnose_pitcher_strikeout_storage(rows):
         "home_pitcher_id_present": 0,
         "away_pitcher_id_present": 0,
         "actual_strikeouts_available_in_snapshot": 0,
-        "evaluation_status": "not_evaluable_actual_pitcher_strikeouts_not_stored",
+        "home_actual_strikeouts_count": 0,
+        "away_actual_strikeouts_count": 0,
+        "evaluation_status": "awaiting_verified_actual_strikeout_observations",
     }
     for row in rows or []:
         if snapshot_pregame_eligible(row):
@@ -163,6 +165,16 @@ def diagnose_pitcher_strikeout_storage(rows):
         factors = features.get("factors") or {}
         projection = factors.get("pitcher_strikeout_projection") or {}
         probable = factors.get("probable_pitchers") or {}
+        actual_observations = features.get("actual_pitcher_strikeout_observations") or {}
+        actual_sides = actual_observations.get("observations") or {}
+        valid_actual_sides = 0
+        for side in ("home", "away"):
+            actual = actual_sides.get(side) or {}
+            actual_ks = _finite_number(actual.get("strikeouts"))
+            if actual.get("status") == "matched" and actual_ks is not None and actual_ks >= 0 and actual_ks.is_integer():
+                valid_actual_sides += 1
+                result[f"{side}_actual_strikeouts_count"] += 1
+        result["actual_strikeouts_available_in_snapshot"] += valid_actual_sides
         valid_sides = 0
         for side in ("home", "away"):
             pitcher_key = f"{side}_pitcher" if side in ("home", "away") else side
@@ -178,9 +190,8 @@ def diagnose_pitcher_strikeout_storage(rows):
             result["snapshots_with_projection"] += 1
         else:
             result["missing_or_invalid_projection_count"] += 1
-        # The current settlement schema stores team scores, not individual
-        # pitcher strikeout totals. Keep this explicit until a verified source
-        # and immutable pitcher/game identity are available.
+    if result["actual_strikeouts_available_in_snapshot"]:
+        result["evaluation_status"] = "actual_strikeout_observations_available"
     return result
 
 
