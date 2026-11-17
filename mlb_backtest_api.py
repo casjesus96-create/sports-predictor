@@ -6,6 +6,7 @@ from mlb_backtest import (
     OFFICIAL_MLB_MODEL,
     actual_tie_after_nine,
     calculate_mlb_backtest_metrics,
+    calculate_pitcher_strikeout_accuracy,
     diagnose_projection_storage,
     diagnose_pitcher_strikeout_storage,
     snapshot_needs_tie_observation,
@@ -83,6 +84,7 @@ def mlb_backtest(limit: int = Query(default=100, ge=1, le=200)):
     result["pending_snapshots_queried"] = len(pending_rows)
     result["pending_storage_diagnostics"] = pending_storage_diagnostics
     result["pitcher_strikeout_storage_diagnostics"] = pitcher_k_storage_diagnostics
+    result["pitcher_strikeout_accuracy"] = calculate_pitcher_strikeout_accuracy(settled_rows)
     result["pending_pitcher_strikeout_storage_diagnostics"] = pending_pitcher_k_storage_diagnostics
     result["tie_feed_candidates"] = len(candidates)
     result["tie_feed_errors"] = len(feed_errors)

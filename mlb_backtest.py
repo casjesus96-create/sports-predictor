@@ -248,6 +248,117 @@ def extract_pitcher_strikeout_observations(feed, features):
     }
 
 
+
+def calculate_pitcher_strikeout_accuracy(rows):
+    """Score saved starter-K projections against verified, identity-matched actuals.
+
+    Errors use predicted minus actual: positive bias means overprediction.
+    This is descriptive historical evaluation only; it never fits or changes a model.
+    """
+    samples = {"home": [], "away": []}
+    exclusions = {
+        "not_official_settled_pregame_snapshot": 0,
+        "missing_or_invalid_projection": 0,
+        "missing_or_unverified_actual": 0,
+        "pitcher_identity_mismatch": 0,
+        "duplicate_event": 0,
+    }
+    seen_events = set()
+
+    # Stable chronological evaluation; no future result is used to construct a projection.
+    ordered_rows = sorted(
+        rows or [],
+        key=lambda row: (
+            _parse_datetime(((row.get("features") or {}).get("game") or {}).get("date"))
+            or datetime.max.replace(tzinfo=timezone.utc),
+            str(row.get("event_id") or ""),
+        ),
+    )
+    for row in ordered_rows:
+        if not snapshot_pregame_eligible(row):
+            exclusions["not_official_settled_pregame_snapshot"] += 1
+            continue
+        event_id = str(row.get("event_id") or "").strip()
+        if event_id and event_id in seen_events:
+            exclusions["duplicate_event"] += 1
+            continue
+        if event_id:
+            seen_events.add(event_id)
+
+        features = row.get("features") or {}
+        factors = features.get("factors") or {}
+        projections = factors.get("pitcher_strikeout_projection") or {}
+        probable = factors.get("probable_pitchers") or {}
+        actual_root = features.get("actual_pitcher_strikeout_observations") or {}
+        actual_sides = actual_root.get("observations") or {}
+
+        for side in ("home", "away"):
+            projection = projections.get(f"{side}_pitcher") or {}
+            expected = _finite_number(projection.get("expected_strikeouts"))
+            if projection.get("available") is not True or expected is None or expected < 0:
+                exclusions["missing_or_invalid_projection"] += 1
+                continue
+
+            actual = actual_sides.get(side) or {}
+            actual_value = _finite_number(actual.get("strikeouts"))
+            if (
+                actual.get("status") != "matched"
+                or actual_value is None
+                or actual_value < 0
+                or not actual_value.is_integer()
+            ):
+                exclusions["missing_or_unverified_actual"] += 1
+                continue
+
+            saved_pitcher = probable.get(side) or {}
+            saved_id = saved_pitcher.get("pitcher_id") or saved_pitcher.get("id")
+            observed_id = actual.get("pitcher_id")
+            if not saved_id or not observed_id or str(saved_id) != str(observed_id):
+                exclusions["pitcher_identity_mismatch"] += 1
+                continue
+
+            samples[side].append({
+                "event_id": event_id or None,
+                "predicted": expected,
+                "actual": actual_value,
+                "error": expected - actual_value,
+            })
+
+    def summarize(items):
+        errors = [item["error"] for item in items]
+        count = len(errors)
+        if not count:
+            return {
+                "sample_size": 0, "mae": None, "rmse": None, "bias": None,
+                "mean_predicted": None, "mean_actual": None,
+            }
+        return {
+            "sample_size": count,
+            "mae": round(sum(abs(error) for error in errors) / count, 6),
+            "rmse": round(math.sqrt(sum(error * error for error in errors) / count), 6),
+            "bias": round(sum(errors) / count, 6),
+            "mean_predicted": round(sum(item["predicted"] for item in items) / count, 6),
+            "mean_actual": round(sum(item["actual"] for item in items) / count, 6),
+        }
+
+    combined = samples["home"] + samples["away"]
+    return {
+        "evaluation_type": "verified_saved_pregame_pitcher_strikeout_projections",
+        "model_version": OFFICIAL_MLB_MODEL,
+        "error_definition": "predicted_minus_actual; positive_bias_means_overprediction",
+        "overall": summarize(combined),
+        "home_pitcher": summarize(samples["home"]),
+        "away_pitcher": summarize(samples["away"]),
+        "exclusions": exclusions,
+        "notes": [
+            "Solo se comparan proyecciones guardadas antes del inicio frente a ponches finales verificados.",
+            "La identidad del pitcher probable debe coincidir con el pitcher y el boxscore capturados.",
+            "Los errores son descriptivos y no recalibran ni modifican el modelo oficial.",
+            "Una muestra pequeña o vacía no permite concluir que la proyección tenga ventaja predictiva.",
+        ],
+    }
+
+
 def calculate_mlb_backtest_metrics(rows, tie_observations=None):
     """Calculate score errors and tie-probability Brier score from saved snapshots.
 
