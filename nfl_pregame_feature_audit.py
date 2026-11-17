@@ -157,7 +157,7 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
 
         def new_bucket():
             return {
-                "game_id": game_id, "kickoff": kickoff, "epa_sum": 0.0, "epa_n": 0,
+                "kickoff": kickoff, "epa_sum": 0.0, "epa_n": 0,
                 "success_n": 0, "success_yes": 0,
                 "third_n": 0, "third_yes": 0,
                 "fourth_n": 0, "fourth_yes": 0,
@@ -213,6 +213,9 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             if epa is not None:
                 bucket["epa_sum"] += epa
                 bucket["epa_n"] += 1
+            if success is not None:
+                bucket["success_n"] += 1
+                bucket["success_yes"] += int(success > 0)
             if yards is not None:
                 bucket["yards_sum"] += yards
                 bucket["yards_n"] += 1
@@ -324,6 +327,10 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                 "fourth_down_conversion_rate": _ratio(fourth_yes, fourth_n),
                 "defensive_epa_allowed_per_play": _ratio(def_epa_sum, def_epa_n),
                 "defensive_yards_allowed_per_play": _ratio(def_yards_sum, def_yards_n),
+                "defensive_success_rate_allowed": _ratio(
+                    sum(item["success_yes"] for item in defense_rows),
+                    sum(item["success_n"] for item in defense_rows),
+                ),
                 "defensive_touchdowns_allowed_per_game": _mean([
                     item.get("pass_td_total", 0) + item.get("rush_td_total", 0)
                     if item.get("td_data_n", 0) else None for item in defense_rows
@@ -332,8 +339,14 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                     item.get("sacks_total") if item.get("sacks_n", 0) else None
                     for item in defense_rows
                 ]),
-                "defensive_interceptions_per_game": _mean([item.get("interceptions_total") for item in defense_rows]),
-                "defensive_fumbles_recovered_per_game": _mean([item.get("fumbles_lost_total") for item in defense_rows]),
+                "defensive_interceptions_per_game": _mean([
+                    item.get("interceptions_total") if item.get("interceptions_n", 0) else None
+                    for item in defense_rows
+                ]),
+                "defensive_fumbles_recovered_per_game": _mean([
+                    item.get("fumbles_lost_total") if item.get("fumbles_lost_n", 0) else None
+                    for item in defense_rows
+                ]),
                 "defensive_turnovers_per_game": _mean([
                     item.get("interceptions_total", 0) + item.get("fumbles_lost_total", 0)
                     if item.get("turnover_data_n", 0) else None for item in defense_rows
