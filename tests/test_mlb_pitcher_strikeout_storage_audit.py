@@ -49,7 +49,7 @@ def test_missing_or_invalid_strikeout_projection_is_not_counted_as_zero():
 def test_actual_pitcher_strikeout_accuracy_is_explicitly_not_evaluable():
     result = diagnose_pitcher_strikeout_storage([_row()])
     assert result["actual_strikeouts_available_in_snapshot"] == 0
-    assert result["evaluation_status"] == "not_evaluable_actual_pitcher_strikeouts_not_stored"
+    assert result["evaluation_status"] == "awaiting_verified_actual_strikeout_observations"
 
 
 def test_non_pregame_snapshot_is_not_counted_as_eligible():
@@ -57,3 +57,19 @@ def test_non_pregame_snapshot_is_not_counted_as_eligible():
     row["data_cutoff"] = "2026-06-01T20:00:00+00:00"
     result = diagnose_pitcher_strikeout_storage([row])
     assert result["official_settled_pregame_snapshots"] == 0
+
+
+def test_counts_only_verified_actual_pitcher_strikeout_observations():
+    row = _row()
+    row["features"]["actual_pitcher_strikeout_observations"] = {
+        "status": "captured",
+        "observations": {
+            "home": {"status": "matched", "pitcher_id": "101", "strikeouts": 7},
+            "away": {"status": "starter_mismatch", "expected_pitcher_id": "202", "observed_starter_id": "999"},
+        },
+    }
+    result = diagnose_pitcher_strikeout_storage([row])
+    assert result["actual_strikeouts_available_in_snapshot"] == 1
+    assert result["home_actual_strikeouts_count"] == 1
+    assert result["away_actual_strikeouts_count"] == 0
+    assert result["evaluation_status"] == "actual_strikeout_observations_available"
