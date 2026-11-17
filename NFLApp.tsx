@@ -861,8 +861,10 @@ export default function NFLApp() {
                       <TeamFactor label="TD de pase / partido" value={number(team.stats.passing_touchdowns_per_game, 2)} />
                       <TeamFactor label="TD de carrera / partido" value={number(team.stats.rushing_touchdowns_per_game, 2)} />
                       <TeamFactor label="Intercepciones lanzadas / partido" value={number(team.stats.interceptions_per_game, 2)} />
-                      <TeamFactor label="Fumbles perdidos / partido" value={number(team.stats.fumbles_lost_per_game, 2)} />
+                      <TeamFactor label="Intercepciones ofensivas / partido" value={number(team.stats.offensive_interceptions_per_game, 2)} />
+                      <TeamFactor label="Fumbles perdidos / partido" value={number(team.stats.offensive_fumbles_lost_per_game, 2)} />
                       <TeamFactor label="Turnovers / partido" value={number(team.stats.turnovers_per_game, 2)} />
+                      <TeamFactor label="Sacks sufridos / partido" value={number(team.stats.sacks_suffered_per_game, 2)} />
                       <TeamFactor label="EPA de pase / partido" value={number(team.stats.passing_epa_per_game, 2)} />
                       <TeamFactor label="EPA terrestre / partido" value={number(team.stats.rushing_epa_per_game, 2)} />
                       <TeamFactor label="EPA ofensivo / jugada" value={number(team.stats.offensive_epa_per_play, 3)} />
