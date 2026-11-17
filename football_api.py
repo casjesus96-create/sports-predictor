@@ -343,7 +343,7 @@ def football_games(
         away = (item.get("awayTeam") or {}).get("name")
         if status in {"SCHEDULED", "TIMED"} and home and away:
             try:
-                item["prediction"] = predict_1x2(home, away, completed, kickoff_at=item.get("utcDate"))
+                item["prediction"] = predict_1x2(home, away, completed, kickoff_at=item.get("utcDate") or "")
                 # Isolate shadow failures: they must never invalidate the official forecast.
                 try:
                     item["advanced_shadow_prediction"] = predict_advanced_shadow(
