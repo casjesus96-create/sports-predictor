@@ -925,6 +925,39 @@ export default function NBAApp() {
                                                     );
                                                   })}
                                                 </div>
+                                                <details style={{ marginTop: 8 }}>
+                                                  <summary>Trazabilidad de promedios · partidos que forman cada muestra</summary>
+                                                  <p className="muted">Cada promedio se calcula con las últimas apariciones disponibles de esa estadística. Una ausencia en un boxscore no se convierte en cero; por eso el número de partidos puede variar entre PTS, AST, REB, BLK y STL.</p>
+                                                  {["points", "assists", "rebounds", "blocks", "steals"].map((stat: string) => {
+                                                    const statNames: Record<string, string> = { points: "PTS", assists: "AST", rebounds: "REB", blocks: "BLK", steals: "STL" };
+                                                    const sourceGames = (player.market_history || [])
+                                                      .filter((record: any) => record.completed === true && record.game_id && record.kickoff && typeof record[stat] === "number" && Number.isFinite(record[stat]))
+                                                      .sort((a: any, b: any) => Date.parse(b.kickoff) - Date.parse(a.kickoff))
+                                                      .slice(0, 5);
+                                                    const average = sourceGames.length
+                                                      ? sourceGames.reduce((sum: number, record: any) => sum + record[stat], 0) / sourceGames.length
+                                                      : null;
+                                                    return (
+                                                      <div key={stat} className="panel" style={{ marginTop: 8, padding: 9, minWidth: 0 }}>
+                                                        <div className="score-row"><b>{statNames[stat]} · promedio últimos 5</b><b>{average === null ? "Sin muestra" : numberLabel(average)} · n={sourceGames.length}</b></div>
+                                                        {sourceGames.length ? (
+                                                          <div style={{ overflowX: "auto" }}>
+                                                            <table>
+                                                              <thead><tr><th>Fecha</th><th>Game ID</th><th>Valor</th></tr></thead>
+                                                              <tbody>{sourceGames.map((record: any) => (
+                                                                <tr key={String(record.game_id) + ":" + stat}>
+                                                                  <td>{new Date(record.kickoff).toLocaleDateString()}</td>
+                                                                  <td><code>{record.game_id}</code></td>
+                                                                  <td><b>{numberLabel(record[stat])}</b></td>
+                                                                </tr>
+                                                              ))}</tbody>
+                                                            </table>
+                                                          </div>
+                                                        ) : <small className="muted">No hay registros válidos para esta estadística.</small>}
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </details>
                                               </div>
                                               <div style={{ marginTop: 14 }}>
                                                 <b>Laboratorio Over / Under</b>
