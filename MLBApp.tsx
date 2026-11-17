@@ -2182,6 +2182,24 @@ function GameDetail({
                   value={pct(runProjection.probability_tied_after_nine)}
                 />
               </div>
+              <div className="panel" style={{ marginTop: 9, padding: 10 }}>
+                <b>Auditoría de entradas · carreras</b>
+                <div className="factor-grid" style={{ marginTop: 7 }}>
+                  {[
+                    { label: `Local · ${game.home?.name || "Equipo"}`, data: runProjection.home },
+                    { label: `Visitante · ${game.away?.name || "Equipo"}`, data: runProjection.away },
+                  ].map((item) => (
+                    <div key={item.label} className="panel" style={{ padding: 8, minWidth: 0 }}>
+                      <b>{item.label}</b>
+                      <Factor label="Estimación temporada" value={num(item.data?.season_estimate, 2)} />
+                      <Factor label="Estimación forma reciente" value={num(item.data?.recent_estimate, 2)} />
+                      <Factor label="Entradas numéricas disponibles" value={item.data?.data_points ?? 0} />
+                      <small className="muted">Método: {item.data?.method || "No disponible"}</small>
+                    </div>
+                  ))}
+                </div>
+                <small className="muted" style={{ display: "block", marginTop: 6 }}>Las entradas numéricas cuentan tasas disponibles, no partidos independientes ni tamaño de muestra estadístico.</small>
+              </div>
               <p className="muted" style={{ marginTop: 8 }}>
                 Método de carreras: {runProjection.home?.method || "—"}. Los valores decimales son medias esperadas,
                 no un marcador final. La probabilidad de empate tras nueve entradas usa una aproximación Poisson
@@ -2209,6 +2227,24 @@ function GameDetail({
                   label={`K esperados · visitante · ${strikeoutProjection.away_pitcher?.pitcher_name || "Abridor no confirmado"}`}
                   value={num(strikeoutProjection.away_pitcher?.expected_strikeouts, 1)}
                 />
+              </div>
+              <div className="panel" style={{ marginTop: 9, padding: 10 }}>
+                <b>Auditoría de entradas · ponches del abridor</b>
+                <div className="factor-grid" style={{ marginTop: 7 }}>
+                  {[
+                    { label: `Local · ${strikeoutProjection.home_pitcher?.pitcher_name || "Abridor"}`, data: strikeoutProjection.home_pitcher },
+                    { label: `Visitante · ${strikeoutProjection.away_pitcher?.pitcher_name || "Abridor"}`, data: strikeoutProjection.away_pitcher },
+                  ].map((item) => (
+                    <div key={item.label} className="panel" style={{ padding: 8, minWidth: 0 }}>
+                      <b>{item.label}</b>
+                      <Factor label="K por 9 entradas (K/9)" value={num(item.data?.strikeouts_per_9, 2)} />
+                      <Factor label="Entradas estimadas" value={num(item.data?.expected_innings, 2)} />
+                      <Factor label="Base de entradas" value={item.data?.innings_basis || "No disponible"} />
+                      <Factor label="K% ofensivo rival (contexto)" value={pct(item.data?.opponent_strikeout_rate)} />
+                    </div>
+                  ))}
+                </div>
+                <small className="muted" style={{ display: "block", marginTop: 6 }}>El K% del rival se informa como contexto descriptivo; no modifica la estimación ni sus probabilidades.</small>
               </div>
               <div className="percentage-signal-grid">
                 <PercentageSignal label="Local · 5+ K" value={strikeoutProjection.home_pitcher?.probability_5_plus} />
