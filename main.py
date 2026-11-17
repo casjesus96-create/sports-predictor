@@ -1381,6 +1381,31 @@ def settle_game(
             }
 
         # -------------------------------------------------
+        # CAPTURAR PONCHES REALES DE LOS ABRIDORES (RESEARCH)
+        # -------------------------------------------------
+        # Si el feed no está disponible, la liquidación normal continúa.
+        # La extracción posterior solo acepta el abridor que coincide con
+        # el pitcher probable guardado en el snapshot pregame.
+        pitcher_boxscore_feed = None
+        try:
+            pitcher_feed_response = requests.get(
+                f"https://statsapi.mlb.com/api/v1.1/game/{event_id}/feed/live",
+                timeout=12,
+                headers=MLB_HEADERS,
+            )
+            pitcher_feed_response.raise_for_status()
+            candidate_feed = pitcher_feed_response.json()
+            candidate_status = (
+                (candidate_feed.get("gameData") or {}).get("status") or {}
+            )
+            if str(candidate_status.get("abstractGameState") or "").lower() == "final":
+                pitcher_boxscore_feed = candidate_feed
+        except (requests.exceptions.RequestException, ValueError, TypeError):
+            # Los ponches son datos de investigación; no deben bloquear
+            # la liquidación oficial del ganador y el marcador.
+            pitcher_boxscore_feed = None
+
+        # -------------------------------------------------
         # LIQUIDAR
         # -------------------------------------------------
 
@@ -1401,6 +1426,9 @@ def settle_game(
 
             model_version=
                 CURRENT_MODEL_VERSION,
+
+            pitcher_boxscore_feed=
+                pitcher_boxscore_feed,
         )
 
         return {

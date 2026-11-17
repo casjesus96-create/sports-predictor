@@ -154,7 +154,9 @@ def diagnose_pitcher_strikeout_storage(rows):
         "home_pitcher_id_present": 0,
         "away_pitcher_id_present": 0,
         "actual_strikeouts_available_in_snapshot": 0,
-        "evaluation_status": "not_evaluable_actual_pitcher_strikeouts_not_stored",
+        "home_actual_strikeouts_count": 0,
+        "away_actual_strikeouts_count": 0,
+        "evaluation_status": "awaiting_verified_actual_strikeout_observations",
     }
     for row in rows or []:
         if snapshot_pregame_eligible(row):
@@ -163,6 +165,16 @@ def diagnose_pitcher_strikeout_storage(rows):
         factors = features.get("factors") or {}
         projection = factors.get("pitcher_strikeout_projection") or {}
         probable = factors.get("probable_pitchers") or {}
+        actual_observations = features.get("actual_pitcher_strikeout_observations") or {}
+        actual_sides = actual_observations.get("observations") or {}
+        valid_actual_sides = 0
+        for side in ("home", "away"):
+            actual = actual_sides.get(side) or {}
+            actual_ks = _finite_number(actual.get("strikeouts"))
+            if actual.get("status") == "matched" and actual_ks is not None and actual_ks >= 0 and actual_ks.is_integer():
+                valid_actual_sides += 1
+                result[f"{side}_actual_strikeouts_count"] += 1
+        result["actual_strikeouts_available_in_snapshot"] += valid_actual_sides
         valid_sides = 0
         for side in ("home", "away"):
             pitcher_key = f"{side}_pitcher" if side in ("home", "away") else side
@@ -178,10 +190,62 @@ def diagnose_pitcher_strikeout_storage(rows):
             result["snapshots_with_projection"] += 1
         else:
             result["missing_or_invalid_projection_count"] += 1
-        # The current settlement schema stores team scores, not individual
-        # pitcher strikeout totals. Keep this explicit until a verified source
-        # and immutable pitcher/game identity are available.
+    if result["actual_strikeouts_available_in_snapshot"]:
+        result["evaluation_status"] = "actual_strikeout_observations_available"
     return result
+
+
+def extract_pitcher_strikeout_observations(feed, features):
+    """Extract final starter strikeouts only when the observed starter matches
+    the pitcher identity saved in the original pregame snapshot.
+    """
+    if not isinstance(feed, dict):
+        return {"status": "feed_unavailable", "source": "MLB StatsAPI boxscore"}
+    game_status = ((feed.get("gameData") or {}).get("status") or {})
+    if str(game_status.get("abstractGameState") or "").lower() != "final":
+        return {"status": "game_not_final", "source": "MLB StatsAPI boxscore"}
+
+    factors = (features or {}).get("factors") or {}
+    probable = factors.get("probable_pitchers") or {}
+    boxscore_teams = ((feed.get("liveData") or {}).get("boxscore") or {}).get("teams") or {}
+    observations = {}
+    for side in ("home", "away"):
+        saved_pitcher = probable.get(side) or {}
+        expected_id = saved_pitcher.get("pitcher_id") or saved_pitcher.get("id")
+        team_box = boxscore_teams.get(side) or {}
+        pitcher_ids = team_box.get("pitchers") or []
+        if not expected_id or not pitcher_ids:
+            observations[side] = {"status": "missing_pitcher_identity"}
+            continue
+        starter_id = pitcher_ids[0]
+        if str(starter_id) != str(expected_id):
+            observations[side] = {
+                "status": "starter_mismatch",
+                "expected_pitcher_id": str(expected_id),
+                "observed_starter_id": str(starter_id),
+            }
+            continue
+        player = (team_box.get("players") or {}).get(f"ID{starter_id}") or {}
+        pitching = ((player.get("stats") or {}).get("pitching") or {})
+        strikeouts = _finite_number(pitching.get("strikeOuts"))
+        if strikeouts is None or strikeouts < 0 or not strikeouts.is_integer():
+            observations[side] = {
+                "status": "missing_or_invalid_boxscore_strikeouts",
+                "pitcher_id": str(starter_id),
+            }
+            continue
+        observations[side] = {
+            "status": "matched",
+            "pitcher_id": str(starter_id),
+            "strikeouts": int(strikeouts),
+        }
+
+    matched = sum(1 for value in observations.values() if value.get("status") == "matched")
+    return {
+        "status": "captured" if matched else "no_verified_starter_observations",
+        "source": "MLB StatsAPI liveData.boxscore.teams",
+        "observations": observations,
+    }
 
 
 def calculate_mlb_backtest_metrics(rows, tie_observations=None):
