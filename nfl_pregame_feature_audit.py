@@ -157,7 +157,7 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
 
         def new_bucket():
             return {
-                "kickoff": kickoff, "epa_sum": 0.0, "epa_n": 0,
+                "game_id": game_id, "kickoff": kickoff, "epa_sum": 0.0, "epa_n": 0,
                 "success_n": 0, "success_yes": 0,
                 "third_n": 0, "third_yes": 0,
                 "fourth_n": 0, "fourth_yes": 0,
