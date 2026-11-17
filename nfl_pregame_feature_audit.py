@@ -164,6 +164,7 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                 "yards_sum": 0.0, "yards_n": 0,
                 "plays_n": 0, "pass_td_n": 0, "rush_td_n": 0, "td_data_n": 0,
                 "sacks_n": 0, "interceptions_n": 0, "fumbles_lost_n": 0,
+                "turnover_data_n": 0,
             }
 
         if offense:
@@ -206,15 +207,19 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                 bucket["yards_sum"] += yards
                 bucket["yards_n"] += 1
             if pass_td is not None:
-                bucket["pass_td_n"] += int(pass_td > 0)
+                bucket["pass_td_n"] += 1
+                bucket["td_data_n"] += 1
             if rush_td is not None:
-                bucket["rush_td_n"] += int(rush_td > 0)
+                bucket["rush_td_n"] += 1
+                bucket["td_data_n"] += 1
             if sack is not None:
-                bucket["sacks_n"] += int(sack > 0)
+                bucket["sacks_n"] += 1
             if interception is not None:
-                bucket["interceptions_n"] += int(interception > 0)
+                bucket["interceptions_n"] += 1
+                bucket["turnover_data_n"] += 1
             if fumble_lost is not None:
-                bucket["fumbles_lost_n"] += int(fumble_lost > 0)
+                bucket["fumbles_lost_n"] += 1
+                bucket["turnover_data_n"] += 1
 
     targets = [
         game for game in games
@@ -282,11 +287,6 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                    for items in team_counts.values()):
                 metric_counts[output_key] += 1
 
-        if all(any(item.get("passing_interceptions") is not None
-                   or item.get("rushing_fumbles_lost") is not None for item in items)
-               for items in team_counts.values()):
-            metric_counts["team_turnover_data"] += 1
-
         pbp_feature_map = {
             "pbp_offensive_epa": "epa_n",
             "pbp_success_rate": "success_n",
@@ -314,7 +314,7 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             "pbp_defensive_yards_allowed": "yards_n",
             "pbp_defensive_touchdowns_allowed": "td_data_n",
             "pbp_defensive_sacks": "sacks_n",
-            "pbp_defensive_turnovers": "interceptions_n",
+            "pbp_defensive_turnovers": "turnover_data_n",
         }
         for output_key, field in defensive_feature_map.items():
             both = True
