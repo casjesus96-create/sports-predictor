@@ -23,6 +23,7 @@ from nfl_repository import (
     get_nfl_performance,
     get_nfl_calibration,
     refresh_nfl_score_projection,
+    get_nfl_model_comparison,
 )
 
 logger = logging.getLogger(__name__)
@@ -321,6 +322,25 @@ def nfl_score_walk_forward(start_season: int = 2023, end_season: int = 2025):
             status_code=502,
             detail={"error": "NFL_SCORE_WALK_FORWARD_ERROR", "message": "No fue posible evaluar las líneas NFL.", "details": str(exc)},
         ) from exc
+
+@router.get("/model-comparison")
+def nfl_model_comparison(limit: int = 500):
+    """Compara versiones NFL guardadas sin modificar modelos ni snapshots."""
+    if limit < 1 or limit > 2000:
+        raise HTTPException(status_code=400, detail="limit debe estar entre 1 y 2000.")
+    try:
+        return get_nfl_model_comparison(limit=limit)
+    except Exception as exc:
+        logger.exception("Error comparando versiones de modelos NFL")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "NFL_MODEL_COMPARISON_ERROR",
+                "message": "No fue posible comparar las versiones de modelos NFL.",
+                "details": str(exc),
+            },
+        ) from exc
+
 
 @router.get("/predictions")
 def nfl_predictions(status: str = None, limit: int = 100):
