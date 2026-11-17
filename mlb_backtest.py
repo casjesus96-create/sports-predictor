@@ -137,6 +137,53 @@ def diagnose_projection_storage(rows):
     return counts
 
 
+def diagnose_pitcher_strikeout_storage(rows):
+    """Report whether saved snapshots contain usable pregame starter-K projections.
+
+    This is a storage-coverage audit only. Final pitcher strikeouts are not
+    stored in prediction_snapshots settlement fields, so this function never
+    fabricates actuals or reports K accuracy.
+    """
+    result = {
+        "queried_snapshots": len(rows or []),
+        "official_settled_pregame_snapshots": 0,
+        "snapshots_with_projection": 0,
+        "home_pitcher_projection_count": 0,
+        "away_pitcher_projection_count": 0,
+        "missing_or_invalid_projection_count": 0,
+        "home_pitcher_id_present": 0,
+        "away_pitcher_id_present": 0,
+        "actual_strikeouts_available_in_snapshot": 0,
+        "evaluation_status": "not_evaluable_actual_pitcher_strikeouts_not_stored",
+    }
+    for row in rows or []:
+        if snapshot_pregame_eligible(row):
+            result["official_settled_pregame_snapshots"] += 1
+        features = row.get("features") or {}
+        factors = features.get("factors") or {}
+        projection = factors.get("pitcher_strikeout_projection") or {}
+        probable = factors.get("probable_pitchers") or {}
+        valid_sides = 0
+        for side in ("home", "away"):
+            pitcher_key = f"{side}_pitcher" if side in ("home", "away") else side
+            pitcher_projection = projection.get(pitcher_key) or {}
+            expected = _finite_number(pitcher_projection.get("expected_strikeouts"))
+            if pitcher_projection.get("available") is True and expected is not None and expected >= 0:
+                valid_sides += 1
+                result[f"{side}_pitcher_projection_count"] += 1
+            pitcher = probable.get(side) or {}
+            if pitcher.get("pitcher_id") or pitcher.get("id"):
+                result[f"{side}_pitcher_id_present"] += 1
+        if valid_sides:
+            result["snapshots_with_projection"] += 1
+        else:
+            result["missing_or_invalid_projection_count"] += 1
+        # The current settlement schema stores team scores, not individual
+        # pitcher strikeout totals. Keep this explicit until a verified source
+        # and immutable pitcher/game identity are available.
+    return result
+
+
 def calculate_mlb_backtest_metrics(rows, tie_observations=None):
     """Calculate score errors and tie-probability Brier score from saved snapshots.
 

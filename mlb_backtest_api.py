@@ -7,6 +7,7 @@ from mlb_backtest import (
     actual_tie_after_nine,
     calculate_mlb_backtest_metrics,
     diagnose_projection_storage,
+    diagnose_pitcher_strikeout_storage,
     snapshot_needs_tie_observation,
 )
 from repository import get_supabase_client
@@ -55,6 +56,8 @@ def mlb_backtest(limit: int = Query(default=100, ge=1, le=200)):
 
     storage_diagnostics = diagnose_projection_storage(settled_rows)
     pending_storage_diagnostics = diagnose_projection_storage(pending_rows)
+    pitcher_k_storage_diagnostics = diagnose_pitcher_strikeout_storage(settled_rows)
+    pending_pitcher_k_storage_diagnostics = diagnose_pitcher_strikeout_storage(pending_rows)
 
     tie_observations = {}
     feed_errors = []
@@ -79,6 +82,8 @@ def mlb_backtest(limit: int = Query(default=100, ge=1, le=200)):
     result["storage_diagnostics"] = storage_diagnostics
     result["pending_snapshots_queried"] = len(pending_rows)
     result["pending_storage_diagnostics"] = pending_storage_diagnostics
+    result["pitcher_strikeout_storage_diagnostics"] = pitcher_k_storage_diagnostics
+    result["pending_pitcher_strikeout_storage_diagnostics"] = pending_pitcher_k_storage_diagnostics
     result["tie_feed_candidates"] = len(candidates)
     result["tie_feed_errors"] = len(feed_errors)
     result["tie_feed_error_details"] = feed_errors[:10]
