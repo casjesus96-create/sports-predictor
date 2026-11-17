@@ -70,3 +70,13 @@ def test_pregame_audit_handles_no_target_games(monkeypatch):
     assert all(item["coverage_pct"] == 0 for item in result["history_depth"])
     assert all(item["coverage_pct"] == 0
                for item in result["candidate_feature_coverage"])
+
+
+def test_number_rejects_non_finite_and_malformed_metrics():
+    assert audit._number({"metric": "1.25"}, "metric") == 1.25
+    assert audit._number({"metric": "-0.75"}, "metric") == -0.75
+    assert audit._number({"metric": "NaN"}, "metric") is None
+    assert audit._number({"metric": "inf"}, "metric") is None
+    assert audit._number({"metric": "-Infinity"}, "metric") is None
+    assert audit._number({"metric": "not-a-number"}, "metric") is None
+    assert audit._number({"metric": ""}, "metric") is None
