@@ -432,6 +432,33 @@ def build_nfl_model_comparison(rows):
                 "log_loss": -(actual_home * math.log(p) + (1 - actual_home) * math.log(1 - p)),
             })
         n = len(evaluated)
+        calibration_bins = (
+            ("50-60%", 0.50, 0.60),
+            ("60-70%", 0.60, 0.70),
+            ("70-80%", 0.70, 0.80),
+            ("80-90%", 0.80, 0.90),
+            ("90-100%", 0.90, 1.000001),
+        )
+        calibration = []
+        for label, low, high in calibration_bins:
+            bucket = [
+                item for item in evaluated
+                if low <= max(item["home_probability"], 1 - item["home_probability"]) < high
+            ]
+            if bucket:
+                count = len(bucket)
+                mean_confidence = sum(
+                    max(item["home_probability"], 1 - item["home_probability"])
+                    for item in bucket
+                ) / count
+                observed_accuracy = sum(item["correct"] for item in bucket) / count
+                calibration.append({
+                    "confidence_bin": label,
+                    "count": count,
+                    "mean_confidence": round(mean_confidence, 4),
+                    "observed_accuracy": round(observed_accuracy, 4),
+                    "calibration_gap": round(observed_accuracy - mean_confidence, 4),
+                })
         return {
             "snapshots": len(items),
             "pending": sum(1 for row in items if row.get("result_status") == "PENDING"),
@@ -442,6 +469,7 @@ def build_nfl_model_comparison(rows):
             "accuracy_pct": round(100 * sum(x["correct"] for x in evaluated) / n, 2) if n else None,
             "brier_score": round(sum(x["brier"] for x in evaluated) / n, 6) if n else None,
             "log_loss": round(sum(x["log_loss"] for x in evaluated) / n, 6) if n else None,
+            "calibration": calibration,
             "_observations": evaluated,
         }
 
