@@ -925,6 +925,27 @@ export default function NBAApp() {
                                                     );
                                                   })}
                                                 </div>
+                                                <div className="panel" style={{ marginTop: 8, padding: 9, minWidth: 0 }}>
+                                                  <b>Cobertura estadística individual · últimos 15 boxscores disponibles</b>
+                                                  <p className="muted">N indica en cuántos partidos se capturó un valor válido para esa estadística. El porcentaje usa como denominador los partidos del jugador con al menos una estadística válida; no representa minutos jugados ni confirma participación en todos los encuentros.</p>
+                                                  {["points", "assists", "rebounds", "blocks", "steals"].map((stat: string) => {
+                                                    const statNames: Record<string, string> = { points: "PTS", assists: "AST", rebounds: "REB", blocks: "BLK", steals: "STL" };
+                                                    const denominator = Number(player.games_sampled) || 0;
+                                                    const numerator = Number(player.games_sampled_by_stat?.[stat]) || 0;
+                                                    const coverage = denominator > 0 && numerator <= denominator ? (numerator / denominator) * 100 : null;
+                                                    return (
+                                                      <div key={stat} className="score-row">
+                                                        <span>{statNames[stat]}</span>
+                                                        <b>{numerator}/{denominator} · {coverage === null ? "No estimable" : coverage.toFixed(0) + "%"}</b>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                  {(Number(player.duplicate_stat_records_excluded) || 0) > 0 ? (
+                                                    <small className="muted">Registros estadísticos duplicados o conflictivos excluidos: {player.duplicate_stat_records_excluded}. No se utilizaron para calcular promedios.</small>
+                                                  ) : (
+                                                    <small className="muted">No se registraron duplicados estadísticos excluidos para este jugador.</small>
+                                                  )}
+                                                </div>
                                                 <details style={{ marginTop: 8 }}>
                                                   <summary>Trazabilidad de promedios · partidos que forman cada muestra</summary>
                                                   <p className="muted">Cada promedio se calcula con las últimas apariciones disponibles de esa estadística. Una ausencia en un boxscore no se convierte en cero; por eso el número de partidos puede variar entre PTS, AST, REB, BLK y STL.</p>
