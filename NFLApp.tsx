@@ -829,81 +829,6 @@ export default function NFLApp() {
 
 
       {pregameFeatureCoverage?.success ? (
-        <section className="panel detail-panel" aria-label="Estadísticas avanzadas pregame por equipo">
-          <div className="section-kicker">NFL · ESTADÍSTICAS AVANZADAS</div>
-          <div className="section-heading">
-            <h2>Rendimiento real de los equipos · últimos 5 partidos</h2>
-            <span className="muted">Solo datos anteriores al kickoff</span>
-          </div>
-          <label className="model-note" htmlFor="nfl-advanced-game-select">Partido objetivo</label>
-          <select id="nfl-advanced-game-select" value={advancedProfileGameId}
-            onChange={(event) => setSelectedGameId(event.target.value)}>
-            {mergedGames.map((game: AnyRecord) => (
-              <option key={String(game.game_id)} value={String(game.game_id)}>
-                {String(game.away || "Visitante")} @ {String(game.home || "Local")} · {gameDate(game.kickoff || game.gameday)}
-              </option>
-            ))}
-          </select>
-          {advancedProfile ? (
-            <>
-              <p className="model-note">
-                Muestra: hasta 5 partidos completados por equipo. Los valores son promedios por partido o tasas calculadas sobre jugadas/intentos disponibles. “—” indica que no hay dato verificable; no equivale a cero.
-              </p>
-              <div className="factor-grid">
-                {[{ name: advancedProfile.away, stats: advancedAway }, { name: advancedProfile.home, stats: advancedHome }].map((team: AnyRecord) => (
-                  <div className="panel" key={team.name}>
-                    <h3>{team.name}</h3>
-                    <div className="muted">Partidos utilizados: {team.stats.games_sampled ?? 0}/5</div>
-                    <h4 className="detail-heading">Ataque</h4>
-                    <div className="factor-grid">
-                      <TeamFactor label="Yardas aéreas / partido" value={number(team.stats.passing_yards_per_game, 1)} />
-                      <TeamFactor label="Yardas terrestres / partido" value={number(team.stats.rushing_yards_per_game, 1)} />
-                      <TeamFactor label="TD de pase / partido" value={number(team.stats.passing_touchdowns_per_game, 2)} />
-                      <TeamFactor label="TD de carrera / partido" value={number(team.stats.rushing_touchdowns_per_game, 2)} />
-                      <TeamFactor label="Intercepciones lanzadas / partido" value={number(team.stats.interceptions_per_game, 2)} />
-                      <TeamFactor label="Intercepciones ofensivas / partido" value={number(team.stats.offensive_interceptions_per_game, 2)} />
-                      <TeamFactor label="Fumbles perdidos / partido" value={number(team.stats.offensive_fumbles_lost_per_game, 2)} />
-                      <TeamFactor label="Turnovers / partido" value={number(team.stats.turnovers_per_game, 2)} />
-                      <TeamFactor label="Sacks sufridos / partido" value={number(team.stats.sacks_suffered_per_game, 2)} />
-                      <TeamFactor label="EPA de pase / partido" value={number(team.stats.passing_epa_per_game, 2)} />
-                      <TeamFactor label="EPA terrestre / partido" value={number(team.stats.rushing_epa_per_game, 2)} />
-                      <TeamFactor label="EPA ofensivo / jugada" value={number(team.stats.offensive_epa_per_play, 3)} />
-                      <TeamFactor label="Eficiencia ofensiva" value={pct(team.stats.offensive_success_rate)} />
-                      <TeamFactor label="Yardas ofensivas / jugada" value={number(team.stats.offensive_yards_per_play, 2)} />
-                      <TeamFactor label="3.ª oportunidad" value={team.stats.third_down_conversion_rate == null ? "—" : pct(team.stats.third_down_conversion_rate) + " · " + team.stats.third_down_attempts + " intentos"} />
-                      <TeamFactor label="4.ª oportunidad" value={team.stats.fourth_down_conversion_rate == null ? "—" : pct(team.stats.fourth_down_conversion_rate) + " · " + team.stats.fourth_down_attempts + " intentos"} />
-                    </div>
-                    <h4 className="detail-heading">Defensa</h4>
-                    <div className="factor-grid">
-                      <TeamFactor label="EPA permitido / jugada" value={number(team.stats.defensive_epa_allowed_per_play, 3)} />
-                      <TeamFactor label="Eficiencia permitida al rival" value={pct(team.stats.defensive_success_rate_allowed)} />
-                      <TeamFactor label="Yardas permitidas / jugada" value={number(team.stats.defensive_yards_allowed_per_play, 2)} />
-                      <TeamFactor label="TD permitidos / partido" value={number(team.stats.defensive_touchdowns_allowed_per_game, 2)} />
-                      <TeamFactor label="Sacks defensivos / partido" value={number(team.stats.defensive_sacks_per_game, 2)} />
-                      <TeamFactor label="Intercepciones defensivas / partido" value={number(team.stats.defensive_interceptions_per_game, 2)} />
-                      <TeamFactor label="Fumbles recuperados / partido" value={number(team.stats.defensive_fumbles_recovered_per_game, 2)} />
-                      <TeamFactor label="Turnovers defensivos / partido" value={number(team.stats.defensive_turnovers_per_game, 2)} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p className="model-note">
-                Fuente: NFLverse (estadísticas semanales y jugada por jugada). Solo lectura; estas métricas todavía no intervienen en NFL-1.0.0 ni alteran probabilidades, snapshots o liquidaciones.
-              </p>
-            </>
-          ) : (
-            <p className="empty">No hay una muestra pregame disponible para este partido. Puede tratarse de un partido sin historial previo o de datos de fuente aún no publicados.</p>
-          )}
-        </section>
-      ) : pregameFeatureCoverageError ? (
-        <section className="panel detail-panel">
-          <div className="section-kicker">NFL · ESTADÍSTICAS AVANZADAS</div>
-          <h2>Rendimiento real de los equipos</h2>
-          <p className="model-note">No se pudo cargar la fuente de estadísticas avanzadas: {pregameFeatureCoverageError}</p>
-        </section>
-      ) : null}
-
-      {pregameFeatureCoverage?.success ? (
         <section className="panel detail-panel" aria-label="Cobertura pregame de estadísticas avanzadas NFL">
           <div className="section-kicker">DATOS AVANZADOS · AUDITORÍA PREGAME</div>
           <div className="section-heading">
@@ -1802,6 +1727,87 @@ export default function NFLApp() {
                     value={market?.total_line ?? detailGame?.total_line}
                   />
                 </div>
+
+      {pregameFeatureCoverage ? (
+        <section className="panel detail-panel" aria-label="Estadísticas avanzadas pregame por equipo">
+          <div className="section-kicker">NFL · ESTADÍSTICAS AVANZADAS</div>
+          <div className="section-heading">
+            <h2>Rendimiento real de los equipos · últimos 5 partidos</h2>
+            <span className="muted">Solo datos anteriores al kickoff</span>
+          </div>
+          <label className="model-note" htmlFor="nfl-advanced-game-select">Partido objetivo</label>
+          <select id="nfl-advanced-game-select" value={advancedProfileGameId}
+            onChange={(event) => setSelectedGameId(event.target.value)}>
+            {mergedGames.map((game: AnyRecord) => (
+              <option key={String(game.game_id)} value={String(game.game_id)}>
+                {String(game.away || "Visitante")} @ {String(game.home || "Local")} · {gameDate(game.kickoff || game.gameday)}
+              </option>
+            ))}
+          </select>
+          {advancedProfile ? (
+            <>
+              <p className="model-note">
+                Muestra: hasta 5 partidos completados por equipo. Los valores son promedios por partido o tasas calculadas sobre jugadas/intentos disponibles. “—” indica que no hay dato verificable; no equivale a cero.
+              </p>
+              <div className="factor-grid">
+                {[{ name: advancedProfile.away, stats: advancedAway }, { name: advancedProfile.home, stats: advancedHome }].map((team: AnyRecord) => (
+                  <div className="panel" key={team.name}>
+                    <h3>{team.name}</h3>
+                    <div className="muted">Partidos utilizados: {team.stats.games_sampled ?? 0}/5</div>
+                    <h4 className="detail-heading">Ataque</h4>
+                    <div className="factor-grid">
+                      <TeamFactor label="Yardas aéreas / partido" value={number(team.stats.passing_yards_per_game, 1)} />
+                      <TeamFactor label="Yardas terrestres / partido" value={number(team.stats.rushing_yards_per_game, 1)} />
+                      <TeamFactor label="TD de pase / partido" value={number(team.stats.passing_touchdowns_per_game, 2)} />
+                      <TeamFactor label="TD de carrera / partido" value={number(team.stats.rushing_touchdowns_per_game, 2)} />
+                      <TeamFactor label="Intercepciones lanzadas / partido" value={number(team.stats.interceptions_per_game, 2)} />
+                      <TeamFactor label="Intercepciones ofensivas / partido" value={number(team.stats.offensive_interceptions_per_game, 2)} />
+                      <TeamFactor label="Fumbles perdidos / partido" value={number(team.stats.offensive_fumbles_lost_per_game, 2)} />
+                      <TeamFactor label="Turnovers / partido" value={number(team.stats.turnovers_per_game, 2)} />
+                      <TeamFactor label="Sacks sufridos / partido" value={number(team.stats.sacks_suffered_per_game, 2)} />
+                      <TeamFactor label="EPA de pase / partido" value={number(team.stats.passing_epa_per_game, 2)} />
+                      <TeamFactor label="EPA terrestre / partido" value={number(team.stats.rushing_epa_per_game, 2)} />
+                      <TeamFactor label="EPA ofensivo / jugada" value={number(team.stats.offensive_epa_per_play, 3)} />
+                      <TeamFactor label="Eficiencia ofensiva" value={pct(team.stats.offensive_success_rate)} />
+                      <TeamFactor label="Yardas ofensivas / jugada" value={number(team.stats.offensive_yards_per_play, 2)} />
+                      <TeamFactor label="3.ª oportunidad" value={team.stats.third_down_conversion_rate == null ? "—" : pct(team.stats.third_down_conversion_rate) + " · " + team.stats.third_down_attempts + " intentos"} />
+                      <TeamFactor label="4.ª oportunidad" value={team.stats.fourth_down_conversion_rate == null ? "—" : pct(team.stats.fourth_down_conversion_rate) + " · " + team.stats.fourth_down_attempts + " intentos"} />
+                    </div>
+                    <h4 className="detail-heading">Defensa</h4>
+                    <div className="factor-grid">
+                      <TeamFactor label="EPA permitido / jugada" value={number(team.stats.defensive_epa_allowed_per_play, 3)} />
+                      <TeamFactor label="Eficiencia permitida al rival" value={pct(team.stats.defensive_success_rate_allowed)} />
+                      <TeamFactor label="Yardas permitidas / jugada" value={number(team.stats.defensive_yards_allowed_per_play, 2)} />
+                      <TeamFactor label="TD permitidos / partido" value={number(team.stats.defensive_touchdowns_allowed_per_game, 2)} />
+                      <TeamFactor label="Sacks defensivos / partido" value={number(team.stats.defensive_sacks_per_game, 2)} />
+                      <TeamFactor label="Intercepciones defensivas / partido" value={number(team.stats.defensive_interceptions_per_game, 2)} />
+                      <TeamFactor label="Fumbles recuperados / partido" value={number(team.stats.defensive_fumbles_recovered_per_game, 2)} />
+                      <TeamFactor label="Turnovers defensivos / partido" value={number(team.stats.defensive_turnovers_per_game, 2)} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="model-note">
+                Fuente: NFLverse (estadísticas semanales y jugada por jugada). Solo lectura; estas métricas todavía no intervienen en NFL-1.0.0 ni alteran probabilidades, snapshots o liquidaciones.
+              </p>
+            </>
+          ) : (
+            <p className="empty">No hay una muestra pregame disponible para este partido. Puede tratarse de un partido sin historial previo o de datos de fuente aún no publicados.</p>
+          )}
+        </section>
+      ) : pregameFeatureCoverageError ? (
+        <section className="panel detail-panel">
+          <div className="section-kicker">NFL · ESTADÍSTICAS AVANZADAS</div>
+          <h2>Rendimiento real de los equipos</h2>
+          <p className="model-note">No se pudo cargar la fuente de estadísticas avanzadas: {pregameFeatureCoverageError}</p>
+        </section>
+      ) : (
+        <section className="panel detail-panel">
+          <div className="section-kicker">NFL · ESTADÍSTICAS AVANZADAS</div>
+          <h3>Rendimiento real de los equipos</h3>
+          <p className="model-note">Cargando estadísticas históricas pregame…</p>
+        </section>
+      )}
 
                 <p className="model-note">
                   Las probabilidades corresponden al snapshot original. La
