@@ -849,7 +849,7 @@ export default function NFLApp() {
               <p className="model-note">
                 Muestra: hasta 5 partidos completados por equipo. Los valores son promedios por partido o tasas calculadas sobre jugadas/intentos disponibles. “—” indica que no hay dato verificable; no equivale a cero.
               </p>
-              <div className="grid-two">
+              <div className="factor-grid">
                 {[{ name: advancedProfile.away, stats: advancedAway }, { name: advancedProfile.home, stats: advancedHome }].map((team: AnyRecord) => (
                   <div className="panel" key={team.name}>
                     <h3>{team.name}</h3>
