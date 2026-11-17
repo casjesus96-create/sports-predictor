@@ -220,30 +220,55 @@ function evaluateRecommendedLineBacktest(records: MarketHistoryRecord[] | undefi
     }))
     .sort((a, b) => Date.parse(a.kickoff) - Date.parse(b.kickoff));
 
-  const evaluations: Array<{ game_id: string; kickoff: string; line: number; actual: number; error: number; absoluteError: number }> = [];
-  for (let index = 5; index < orderedGames.length; index += 1) {
-    const priorFive = orderedGames.slice(index - 5, index);
-    const average = priorFive.reduce((sum, game) => sum + game.value, 0) / priorFive.length;
-    const line = Math.max(0, Math.round(average * 2) / 2);
-    const actual = orderedGames[index];
-    evaluations.push({
-      game_id: actual.game_id,
-      kickoff: actual.kickoff,
-      line,
-      actual: actual.value,
-      error: actual.value - line,
-      absoluteError: Math.abs(actual.value - line),
-    });
+  // Walk-forward comparison: each window uses only games strictly before
+  // the evaluated game. The current feed supplies at most 15 games.
+  const windowComparisons: Record<string, {
+    window: number;
+    sample: number;
+    mae: number | null;
+    bias: number | null;
+    evaluations: Array<{ game_id: string; kickoff: string; line: number; actual: number; error: number; absoluteError: number }>;
+  }> = {};
+  for (const window of [5, 10, 15]) {
+    const evaluations: Array<{ game_id: string; kickoff: string; line: number; actual: number; error: number; absoluteError: number }> = [];
+    for (let index = window; index < orderedGames.length; index += 1) {
+      const priorGames = orderedGames.slice(index - window, index);
+      const average = priorGames.reduce((sum, game) => sum + game.value, 0) / priorGames.length;
+      const line = Math.max(0, Math.round(average * 2) / 2);
+      const actual = orderedGames[index];
+      evaluations.push({
+        game_id: actual.game_id,
+        kickoff: actual.kickoff,
+        line,
+        actual: actual.value,
+        error: actual.value - line,
+        absoluteError: Math.abs(actual.value - line),
+      });
+    }
+    const mae = evaluations.length
+      ? evaluations.reduce((sum, item) => sum + item.absoluteError, 0) / evaluations.length
+      : null;
+    const bias = evaluations.length
+      ? evaluations.reduce((sum, item) => sum + item.error, 0) / evaluations.length
+      : null;
+    windowComparisons[String(window)] = {
+      window,
+      sample: evaluations.length,
+      mae: evaluations.length >= 5 ? mae : null,
+      bias: evaluations.length >= 5 ? bias : null,
+      evaluations,
+    };
   }
-  if (!evaluations.length) return { sample: 0, minimum: 5, mae: null, bias: null, evaluations };
-  const mae = evaluations.reduce((sum, item) => sum + item.absoluteError, 0) / evaluations.length;
-  const bias = evaluations.reduce((sum, item) => sum + item.error, 0) / evaluations.length;
+
+  const primary = windowComparisons["5"];
   return {
-    sample: evaluations.length,
+    sample: primary.sample,
     minimum: 5,
-    mae: evaluations.length >= 5 ? mae : null,
-    bias: evaluations.length >= 5 ? bias : null,
-    evaluations,
+    mae: primary.mae,
+    bias: primary.bias,
+    evaluations: primary.evaluations,
+    windowComparisons,
+    availableHistory: orderedGames.length,
   };
 }
 
@@ -1014,20 +1039,33 @@ export default function NBAApp() {
                                                             const backtest = evaluateRecommendedLineBacktest(player.market_history, market);
                                                             return (
                                                               <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
-                                                                <b style={{ fontSize: 11 }}>Validación cronológica de la línea</b>
-                                                                <small className="muted" style={{ display: "block", marginTop: 3 }}>Cada línea histórica se calculó con los cinco partidos anteriores y se comparó con el siguiente. No reutiliza el partido evaluado para calcular su línea.</small>
-                                                                {backtest && backtest.sample >= 5 ? (
+                                                                <b style={{ fontSize: 11 }}>Estabilidad cronológica por ventana</b>
+                                                                <small className="muted" style={{ display: "block", marginTop: 3 }}>Compara líneas calculadas con los 5, 10 y 15 partidos previos. Cada evaluación usa solo partidos anteriores al que se mide; no hay fuga de información.</small>
+                                                                {backtest && (
                                                                   <>
-                                                                    <div className="score-row"><span>Predicciones evaluadas</span><b>{backtest.sample}</b></div>
-                                                                    <div className="score-row"><span>Error absoluto medio (MAE)</span><b>{numberLabel(backtest.mae)}</b></div>
-                                                                    <div className="score-row"><span>Sesgo (real − línea)</span><b>{numberLabel(backtest.bias)}</b></div>
+                                                                    <div className="score-row"><span>Historial válido disponible</span><b>{backtest.availableHistory}/15</b></div>
+                                                                    <div style={{ overflowX: "auto", marginTop: 6 }}>
+                                                                      <table>
+                                                                        <thead><tr><th>Ventana</th><th>Evaluaciones</th><th>MAE</th><th>Sesgo</th></tr></thead>
+                                                                        <tbody>
+                                                                          {[5, 10, 15].map((windowSize) => {
+                                                                            const comparison = backtest.windowComparisons[String(windowSize)];
+                                                                            return <tr key={windowSize}>
+                                                                              <td>Últimos {windowSize}</td>
+                                                                              <td>{comparison.sample}</td>
+                                                                              <td>{comparison.mae == null ? "—" : numberLabel(comparison.mae)}</td>
+                                                                              <td>{comparison.bias == null ? "—" : numberLabel(comparison.bias)}</td>
+                                                                            </tr>;
+                                                                          })}
+                                                                        </tbody>
+                                                                      </table>
+                                                                    </div>
+                                                                    <small className="muted" style={{ display: "block", marginTop: 5 }}>MAE y sesgo se muestran solo con al menos 5 evaluaciones. La ventana de 15 requiere 16+ partidos válidos; el historial actual está limitado a 15, por lo que todavía no es evaluable.</small>
                                                                   </>
-                                                                ) : (
-                                                                  <small className="muted" style={{ display: "block" }}>Muestra exploratoria: {backtest?.sample ?? 0}/5 evaluaciones. Se necesitan al menos cinco pruebas cronológicas para mostrar métricas agregadas.</small>
                                                                 )}
                                                                 {backtest && backtest.evaluations.length > 0 && (
                                                                   <details style={{ marginTop: 6 }}>
-                                                                    <summary>Ver evaluaciones cronológicas ({backtest.sample})</summary>
+                                                                    <summary>Ver evaluaciones cronológicas de ventana 5 ({backtest.sample})</summary>
                                                                     <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
                                                                       {backtest.evaluations.map((item) => <li key={item.game_id}>{new Date(item.kickoff).toLocaleDateString()} · línea {numberLabel(item.line)} · real {numberLabel(item.actual)} · error {item.error > 0 ? "+" : ""}{numberLabel(item.error)}</li>)}
                                                                     </ul>
