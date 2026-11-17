@@ -100,6 +100,7 @@ def test_pregame_audit_excludes_same_game_and_future_games(monkeypatch):
     assert buf_before_g2["offensive_success_rate"] == 1
     assert buf_before_g2["offensive_yards_per_play"] == 12
     assert buf_before_g2["defensive_epa_allowed_per_play"] == -0.2
+    assert buf_before_g2["defensive_success_rate_allowed"] == 0
     assert buf_before_g2["offensive_interceptions_per_game"] == 0
     assert buf_before_g2["offensive_fumbles_lost_per_game"] == 0
     assert buf_before_g2["turnovers_per_game"] == 0
