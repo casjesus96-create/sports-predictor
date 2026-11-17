@@ -350,6 +350,187 @@ def settle_nfl_prediction(
     }
 
 
+
+def get_nfl_model_snapshots(limit=500):
+    """Read all NFL model versions from the shared snapshot store."""
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("prediction_snapshots")
+        .select("*")
+        .eq("sport", SPORT)
+        .eq("league", LEAGUE)
+        .order("created_at", desc=True)
+        .limit(max(1, min(int(limit), 2000)))
+        .execute()
+    )
+    return response.data or []
+
+
+def build_nfl_model_comparison(rows):
+    """Compare settled NFL model versions; paired metrics use identical event IDs."""
+    grouped = {}
+    deduplicated = {}
+    duplicate_rows = 0
+
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        version = str(row.get("model_version") or "").strip()
+        event_id = str(row.get("event_id") or "").strip()
+        if not version or not event_id:
+            continue
+        key = (version, event_id)
+        previous = deduplicated.get(key)
+        created = str(row.get("created_at") or "")
+        if previous is None:
+            deduplicated[key] = row
+        else:
+            duplicate_rows += 1
+            if created and created < str(previous.get("created_at") or ""):
+                deduplicated[key] = row
+
+    for (version, _event_id), row in deduplicated.items():
+        grouped.setdefault(version, []).append(row)
+
+    def evaluate(items):
+        settled = [row for row in items if row.get("result_status") == "SETTLED"]
+        evaluated = []
+        pushes = 0
+        invalid = 0
+        for row in settled:
+            if _effective_result(row) == "PUSH":
+                pushes += 1
+                continue
+            try:
+                home_probability = float(row.get("home_probability"))
+                away_probability = float(row.get("away_probability"))
+            except (TypeError, ValueError):
+                invalid += 1
+                continue
+            features = row.get("features") or {}
+            game = features.get("game") or {}
+            home = str(game.get("home") or "").strip().upper()
+            actual = str(row.get("actual_winner") or "").strip().upper()
+            if (
+                not math.isfinite(home_probability)
+                or not math.isfinite(away_probability)
+                or not 0 <= home_probability <= 1
+                or not 0 <= away_probability <= 1
+                or not home
+                or actual not in {home, str(game.get("away") or "").strip().upper()}
+            ):
+                invalid += 1
+                continue
+            actual_home = 1.0 if actual == home else 0.0
+            p = max(0.001, min(0.999, home_probability))
+            evaluated.append({
+                "event_id": str(row.get("event_id")),
+                "actual_home": actual_home,
+                "home_probability": home_probability,
+                "correct": (home_probability >= 0.5) == bool(actual_home),
+                "brier": (p - actual_home) ** 2,
+                "log_loss": -(actual_home * math.log(p) + (1 - actual_home) * math.log(1 - p)),
+            })
+        n = len(evaluated)
+        calibration_bins = (
+            ("50-60%", 0.50, 0.60),
+            ("60-70%", 0.60, 0.70),
+            ("70-80%", 0.70, 0.80),
+            ("80-90%", 0.80, 0.90),
+            ("90-100%", 0.90, 1.000001),
+        )
+        calibration = []
+        for label, low, high in calibration_bins:
+            bucket = [
+                item for item in evaluated
+                if low <= max(item["home_probability"], 1 - item["home_probability"]) < high
+            ]
+            if bucket:
+                count = len(bucket)
+                mean_confidence = sum(
+                    max(item["home_probability"], 1 - item["home_probability"])
+                    for item in bucket
+                ) / count
+                observed_accuracy = sum(item["correct"] for item in bucket) / count
+                calibration.append({
+                    "confidence_bin": label,
+                    "count": count,
+                    "mean_confidence": round(mean_confidence, 4),
+                    "observed_accuracy": round(observed_accuracy, 4),
+                    "calibration_gap": round(observed_accuracy - mean_confidence, 4),
+                })
+        return {
+            "snapshots": len(items),
+            "pending": sum(1 for row in items if row.get("result_status") == "PENDING"),
+            "settled": len(settled),
+            "pushes": pushes,
+            "evaluated": n,
+            "invalid_or_unverifiable": invalid,
+            "accuracy_pct": round(100 * sum(x["correct"] for x in evaluated) / n, 2) if n else None,
+            "brier_score": round(sum(x["brier"] for x in evaluated) / n, 6) if n else None,
+            "log_loss": round(sum(x["log_loss"] for x in evaluated) / n, 6) if n else None,
+            "calibration": calibration,
+            "_observations": evaluated,
+        }
+
+    summaries = {}
+    observations_by_version = {}
+    for version, items in sorted(grouped.items()):
+        summary = evaluate(items)
+        observations_by_version[version] = {
+            item["event_id"]: item for item in summary.pop("_observations")
+        }
+        summaries[version] = {
+            "model_version": version,
+            "role": "official" if version == MODEL_VERSION else "experimental",
+            **summary,
+        }
+
+    paired = []
+    versions = sorted(observations_by_version)
+    for index, left_version in enumerate(versions):
+        for right_version in versions[index + 1:]:
+            left = observations_by_version[left_version]
+            right = observations_by_version[right_version]
+            shared_ids = sorted(set(left) & set(right))
+            # Shared event IDs must also carry the same verified outcome.
+            shared = [
+                event_id for event_id in shared_ids
+                if left[event_id]["actual_home"] == right[event_id]["actual_home"]
+            ]
+            n = len(shared)
+            paired.append({
+                "model_a": left_version,
+                "model_b": right_version,
+                "same_sample_size": n,
+                "brier_improvement_a_minus_b": round(
+                    sum(left[event_id]["brier"] - right[event_id]["brier"] for event_id in shared) / n, 6
+                ) if n else None,
+                "log_loss_improvement_a_minus_b": round(
+                    sum(left[event_id]["log_loss"] - right[event_id]["log_loss"] for event_id in shared) / n, 6
+                ) if n else None,
+                "accuracy_delta_a_minus_b_pp": round(
+                    100 * sum(int(left[event_id]["correct"]) - int(right[event_id]["correct"]) for event_id in shared) / n, 2
+                ) if n else None,
+            })
+
+    return {
+        "success": True,
+        "sport": "NFL",
+        "official_model_version": MODEL_VERSION,
+        "models": list(summaries.values()),
+        "paired_comparisons": paired,
+        "deduplicated_duplicate_snapshots": duplicate_rows,
+        "read_only": True,
+        "model_impact": "none",
+        "promotion": "requires chronological validation and explicit approval",
+        "note": "Las comparaciones pareadas usan únicamente partidos presentes y liquidados en ambas versiones, con el mismo resultado verificado.",
+    }
+
+
+def get_nfl_model_comparison(limit=500):
+    return build_nfl_model_comparison(get_nfl_model_snapshots(limit=limit))
+
 def get_nfl_performance():
     """Calcula métricas; los empates no cuentan como aciertos ni fallos."""
     rows = get_nfl_predictions()
