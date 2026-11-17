@@ -167,6 +167,8 @@ export default function NFLApp() {
   const [calibration, setCalibration] = useState<AnyRecord | null>(null);
   const [modelComparison, setModelComparison] = useState<AnyRecord | null>(null);
   const [modelComparisonError, setModelComparisonError] = useState("");
+  const [pregameFeatureCoverage, setPregameFeatureCoverage] = useState<AnyRecord | null>(null);
+  const [pregameFeatureCoverageError, setPregameFeatureCoverageError] = useState("");
   const [selectedGameId, setSelectedGameId] = useState("");
   const [detail, setDetail] = useState<AnyRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -203,6 +205,7 @@ export default function NFLApp() {
         request("/nfl/performance"),
         request("/nfl/calibration?minimum_sample=30"),
         request("/nfl/model-comparison?limit=500"),
+        request("/nfl/pregame-feature-coverage?season=2026"),
       ]);
       const errors: string[] = [];
 
@@ -253,6 +256,16 @@ export default function NFLApp() {
         setModelComparison(null);
         setModelComparisonError(
           results[4].reason?.message || "No se pudo cargar la comparación de versiones NFL."
+        );
+      }
+
+      if (results[5].status === "fulfilled") {
+        setPregameFeatureCoverage(results[5].value);
+        setPregameFeatureCoverageError("");
+      } else {
+        setPregameFeatureCoverage(null);
+        setPregameFeatureCoverageError(
+          results[5].reason?.message || "No se pudo cargar la cobertura pregame de estadísticas avanzadas."
         );
       }
 
@@ -804,6 +817,95 @@ export default function NFLApp() {
           <div className="section-kicker">REGISTRO COMPARATIVO</div>
           <h2>Comparación histórica de modelos NFL</h2>
           <p className="model-note">No se pudo cargar este panel: {modelComparisonError}</p>
+        </section>
+      ) : null}
+
+
+      {pregameFeatureCoverage?.success ? (
+        <section className="panel detail-panel" aria-label="Cobertura pregame de estadísticas avanzadas NFL">
+          <div className="section-kicker">DATOS AVANZADOS · AUDITORÍA PREGAME</div>
+          <div className="section-heading">
+            <h2>Cobertura de estadísticas avanzadas · {pregameFeatureCoverage.season}</h2>
+            <span className="muted">{pregameFeatureCoverage.target_games ?? 0} partidos objetivo</span>
+          </div>
+          <p className="model-note">
+            Esta auditoría mide si existen datos históricos de ambos equipos antes del kickoff.
+            Cobertura alta no significa que una variable mejore las predicciones; su valor debe demostrarse con backtesting cronológico.
+          </p>
+          <div className="factor-grid">
+            <TeamFactor label="Partidos de temporada regular" value={pregameFeatureCoverage.target_games ?? 0} />
+            <TeamFactor label="Partidos completados disponibles" value={pregameFeatureCoverage.completed_games_available_for_join ?? 0} />
+            <TeamFactor label="Fuentes disponibles" value={(pregameFeatureCoverage.sources || []).filter((source: AnyRecord) => source.available).length + "/" + (pregameFeatureCoverage.sources || []).length} />
+          </div>
+          <h3 className="detail-heading">Cobertura por variable · ambos equipos</h3>
+          <div className="percentage-signal-grid">
+            {(pregameFeatureCoverage.candidate_feature_coverage || []).map((feature: AnyRecord) => {
+              const labels: Record<string, string> = {
+                team_passing_epa: "EPA de pase · equipo",
+                team_rushing_epa: "EPA terrestre · equipo",
+                team_turnover_data: "Turnovers · equipo",
+                team_passing_yards: "Yardas aéreas",
+                team_rushing_yards: "Yardas terrestres",
+                team_passing_touchdowns: "TD de pase",
+                team_rushing_touchdowns: "TD terrestres",
+                team_sacks_suffered: "Sacks sufridos",
+                pbp_offensive_epa: "EPA ofensivo por jugada",
+                pbp_success_rate: "Tasa de éxito ofensivo",
+                pbp_yards_per_play: "Yardas por jugada",
+                pbp_offensive_touchdowns: "TD ofensivos · jugada a jugada",
+                pbp_third_down_rate: "Conversión en 3.ª oportunidad",
+                pbp_fourth_down_rate: "Conversión en 4.ª oportunidad",
+                pbp_defensive_epa_allowed: "EPA permitido · defensa",
+                pbp_defensive_yards_allowed: "Yardas permitidas",
+                pbp_defensive_touchdowns_allowed: "TD permitidos",
+                pbp_defensive_sacks: "Sacks defensivos",
+                pbp_defensive_turnovers: "Turnovers defensivos",
+              };
+              return (
+                <article className="percentage-band-card" key={feature.feature}>
+                  <div className="percentage-band-heading">
+                    <strong>{labels[feature.feature] || feature.feature}</strong>
+                    <span>{number(feature.coverage_pct, 1)}%</span>
+                  </div>
+                  <div className="factor-grid">
+                    <TeamFactor label="Partidos con dato en ambos equipos" value={feature.games_with_both_teams ?? 0} />
+                    <TeamFactor label="Partidos objetivo" value={pregameFeatureCoverage.target_games ?? 0} />
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <h3 className="detail-heading">Profundidad del historial disponible</h3>
+          <div className="factor-grid">
+            {(pregameFeatureCoverage.history_depth || []).map((item: AnyRecord) => (
+              <TeamFactor
+                key={item.minimum_prior_games_per_team}
+                label={`Ambos equipos con al menos ${item.minimum_prior_games_per_team} partidos previos`}
+                value={`${item.games_with_both_teams} · ${number(item.coverage_pct, 1)}%`}
+              />
+            ))}
+          </div>
+          <h3 className="detail-heading">Fuentes consultadas</h3>
+          <div className="factor-grid">
+            {(pregameFeatureCoverage.sources || []).map((source: AnyRecord) => (
+              <TeamFactor
+                key={source.key}
+                label={source.key === "weekly_team_stats" ? "NFLverse · estadísticas semanales" : "NFLverse · jugada por jugada"}
+                value={source.available ? `Disponible · ${source.rows} filas` : `No disponible · ${source.error || "sin detalle"}`}
+              />
+            ))}
+          </div>
+          <p className="model-note">
+            Corte temporal: solo partidos completados cuyo kickoff fue estrictamente anterior al partido objetivo.
+            Se excluyen el mismo partido y los partidos futuros. La disponibilidad dentro de una semana y el momento real de publicación
+            de cada fuente todavía deben validarse antes de persistir predicciones experimentales de producción.
+          </p>
+        </section>
+      ) : pregameFeatureCoverageError ? (
+        <section className="panel detail-panel">
+          <div className="section-kicker">DATOS AVANZADOS · AUDITORÍA PREGAME</div>
+          <h2>Cobertura de estadísticas avanzadas</h2>
+          <p className="model-note">No se pudo cargar la auditoría: {pregameFeatureCoverageError}</p>
         </section>
       ) : null}
 
