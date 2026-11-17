@@ -162,8 +162,11 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                 "third_n": 0, "third_yes": 0,
                 "fourth_n": 0, "fourth_yes": 0,
                 "yards_sum": 0.0, "yards_n": 0,
-                "plays_n": 0, "pass_td_n": 0, "rush_td_n": 0, "td_data_n": 0,
-                "sacks_n": 0, "interceptions_n": 0, "fumbles_lost_n": 0,
+                "game_id": game_id, "plays_n": 0, "pass_td_n": 0, "rush_td_n": 0, "td_data_n": 0,
+                "pass_td_total": 0, "rush_td_total": 0,
+                "sacks_n": 0, "sacks_total": 0,
+                "interceptions_n": 0, "interceptions_total": 0,
+                "fumbles_lost_n": 0, "fumbles_lost_total": 0,
                 "turnover_data_n": 0,
             }
 
@@ -187,22 +190,32 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                 bucket["fourth_yes"] += int(fourth_converted)
             if pass_td is not None:
                 bucket["pass_td_n"] += 1
+                bucket["pass_td_total"] += int(pass_td > 0)
                 bucket["td_data_n"] += 1
             if rush_td is not None:
                 bucket["rush_td_n"] += 1
+                bucket["rush_td_total"] += int(rush_td > 0)
                 bucket["td_data_n"] += 1
             if sack is not None:
                 bucket["sacks_n"] += 1
+                bucket["sacks_total"] += int(sack > 0)
             if interception is not None:
                 bucket["interceptions_n"] += 1
+                bucket["interceptions_total"] += int(interception > 0)
+                bucket["turnover_data_n"] += 1
             if fumble_lost is not None:
                 bucket["fumbles_lost_n"] += 1
+                bucket["fumbles_lost_total"] += int(fumble_lost > 0)
+                bucket["turnover_data_n"] += 1
 
         if defense:
             bucket = pbp_history.setdefault(("DEF:" + defense, game_id), new_bucket())
             if epa is not None:
                 bucket["epa_sum"] += epa
                 bucket["epa_n"] += 1
+            if success is not None:
+                bucket["success_n"] += 1
+                bucket["success_yes"] += int(success > 0)
             if yards is not None:
                 bucket["yards_sum"] += yards
                 bucket["yards_n"] += 1
@@ -228,6 +241,122 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
         and _parse_time(game.get("kickoff"))
     ]
     target_count = len(targets)
+
+    def _mean(values):
+        usable = [value for value in values if value is not None and math.isfinite(value)]
+        return round(sum(usable) / len(usable), 3) if usable else None
+
+    advanced_team_profiles = []
+    for target in targets:
+        cutoff = _parse_time(target["kickoff"])
+        profile = {
+            "game_id": str(target.get("game_id")),
+            "kickoff": target.get("kickoff"),
+            "home": str(target.get("home") or ""),
+            "away": str(target.get("away") or ""),
+            "window_games": 5,
+            "teams": {},
+        }
+        for team in (target["home"], target["away"]):
+            team_key = str(team).upper()
+            prior_team_rows = [
+                item for item in team_history.get(team_key, [])
+                if item["kickoff"] is not None and item["kickoff"] < cutoff
+            ]
+            prior_team_rows = list({item["game_id"]: item for item in prior_team_rows}.values())
+            prior_team_rows.sort(key=lambda item: item["kickoff"])
+            prior_team_rows = prior_team_rows[-5:]
+            prior_ids = {item["game_id"] for item in prior_team_rows}
+            offense_rows = [
+                item for (entry_team, _), item in pbp_history.items()
+                if entry_team == team_key and item["kickoff"] < cutoff
+                and item.get("game_id") in prior_ids
+            ]
+            defense_rows = [
+                item for (entry_team, _), item in pbp_history.items()
+                if entry_team == "DEF:" + team_key and item["kickoff"] < cutoff
+                and item.get("game_id") in prior_ids
+            ]
+
+            def _ratio(numerator, denominator):
+                return round(numerator / denominator, 4) if denominator else None
+
+            off_epa_n = sum(item["epa_n"] for item in offense_rows)
+            off_epa_sum = sum(item["epa_sum"] for item in offense_rows)
+            success_n = sum(item["success_n"] for item in offense_rows)
+            success_yes = sum(item["success_yes"] for item in offense_rows)
+            yards_n = sum(item["yards_n"] for item in offense_rows)
+            yards_sum = sum(item["yards_sum"] for item in offense_rows)
+            third_n = sum(item["third_n"] for item in offense_rows)
+            third_yes = sum(item["third_yes"] for item in offense_rows)
+            fourth_n = sum(item["fourth_n"] for item in offense_rows)
+            fourth_yes = sum(item["fourth_yes"] for item in offense_rows)
+            def_epa_n = sum(item["epa_n"] for item in defense_rows)
+            def_epa_sum = sum(item["epa_sum"] for item in defense_rows)
+            def_yards_n = sum(item["yards_n"] for item in defense_rows)
+            def_yards_sum = sum(item["yards_sum"] for item in defense_rows)
+
+            profile["teams"][team_key] = {
+                "games_sampled": len(prior_team_rows),
+                "sample_game_ids": [item["game_id"] for item in prior_team_rows],
+                "passing_yards_per_game": _mean([item.get("passing_yards") for item in prior_team_rows]),
+                "rushing_yards_per_game": _mean([item.get("rushing_yards") for item in prior_team_rows]),
+                "passing_touchdowns_per_game": _mean([item.get("passing_tds") for item in prior_team_rows]),
+                "rushing_touchdowns_per_game": _mean([item.get("rushing_tds") for item in prior_team_rows]),
+                "interceptions_per_game": _mean([item.get("passing_interceptions") for item in prior_team_rows]),
+                "fumbles_lost_per_game": _mean([item.get("rushing_fumbles_lost") for item in prior_team_rows]),
+                "turnovers_per_game": _mean([
+                    item.get("interceptions_total", 0) + item.get("fumbles_lost_total", 0)
+                    if item.get("turnover_data_n", 0) else None for item in offense_rows
+                ]),
+                "offensive_interceptions_per_game": _mean([
+                    item.get("interceptions_total") if item.get("interceptions_n", 0) else None
+                    for item in offense_rows
+                ]),
+                "offensive_fumbles_lost_per_game": _mean([
+                    item.get("fumbles_lost_total") if item.get("fumbles_lost_n", 0) else None
+                    for item in offense_rows
+                ]),
+                "sacks_suffered_per_game": _mean([item.get("sacks_suffered") for item in prior_team_rows]),
+                "passing_epa_per_game": _mean([item.get("passing_epa") for item in prior_team_rows]),
+                "rushing_epa_per_game": _mean([item.get("rushing_epa") for item in prior_team_rows]),
+                "offensive_epa_per_play": _ratio(off_epa_sum, off_epa_n),
+                "offensive_success_rate": _ratio(success_yes, success_n),
+                "offensive_yards_per_play": _ratio(yards_sum, yards_n),
+                "third_down_conversion_rate": _ratio(third_yes, third_n),
+                "fourth_down_conversion_rate": _ratio(fourth_yes, fourth_n),
+                "defensive_epa_allowed_per_play": _ratio(def_epa_sum, def_epa_n),
+                "defensive_yards_allowed_per_play": _ratio(def_yards_sum, def_yards_n),
+                "defensive_success_rate_allowed": _ratio(
+                    sum(item["success_yes"] for item in defense_rows),
+                    sum(item["success_n"] for item in defense_rows),
+                ),
+                "defensive_touchdowns_allowed_per_game": _mean([
+                    item.get("pass_td_total", 0) + item.get("rush_td_total", 0)
+                    if item.get("td_data_n", 0) else None for item in defense_rows
+                ]),
+                "defensive_sacks_per_game": _mean([
+                    item.get("sacks_total") if item.get("sacks_n", 0) else None
+                    for item in defense_rows
+                ]),
+                "defensive_interceptions_per_game": _mean([
+                    item.get("interceptions_total") if item.get("interceptions_n", 0) else None
+                    for item in defense_rows
+                ]),
+                "defensive_fumbles_recovered_per_game": _mean([
+                    item.get("fumbles_lost_total") if item.get("fumbles_lost_n", 0) else None
+                    for item in defense_rows
+                ]),
+                "defensive_turnovers_per_game": _mean([
+                    item.get("interceptions_total", 0) + item.get("fumbles_lost_total", 0)
+                    if item.get("turnover_data_n", 0) else None for item in defense_rows
+                ]),
+                "offensive_plays_sampled": sum(item["plays_n"] for item in offense_rows),
+                "third_down_attempts": third_n,
+                "fourth_down_attempts": fourth_n,
+            }
+        advanced_team_profiles.append(profile)
+
     history_thresholds = {1: 0, 3: 0, 5: 0}
     metric_counts = {
         "team_passing_epa": 0,
@@ -361,5 +490,13 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
              "coverage_pct": coverage(count)}
             for feature, count in metric_counts.items()
         ],
+        "advanced_team_profiles": advanced_team_profiles,
+        "advanced_team_profile_method": {
+            "window": "Últimos 5 partidos completados disponibles antes del kickoff",
+            "pregame_cutoff": "Cada partido del perfil debe tener kickoff estrictamente anterior al partido objetivo.",
+            "rates": "EPA, éxito, yardas por jugada y conversiones se calculan sobre jugadas o intentos disponibles; se incluyen denominadores para terceras y cuartas oportunidades.",
+            "missing_values": "null significa dato no disponible; no se sustituye por cero.",
+            "read_only": True,
+        },
         "next_step": "Validar integridad y calcular predicciones históricas walk-forward con estas variables en modo experimental.",
     }
