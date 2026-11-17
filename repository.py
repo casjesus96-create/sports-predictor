@@ -438,6 +438,7 @@ def settle_prediction(
     actual_away_score,
     prediction_id=None,
     model_version=CURRENT_MODEL_VERSION,
+    pitcher_boxscore_feed=None,
 ):
     """
     Liquida una predicción pendiente y registra CORRECT o INCORRECT.
@@ -476,6 +477,24 @@ def settle_prediction(
 
     prediction = existing.data[0]
     features = prediction.get("features") or {}
+
+    if pitcher_boxscore_feed is not None:
+        from mlb_backtest import extract_pitcher_strikeout_observations
+
+        observations = extract_pitcher_strikeout_observations(
+            pitcher_boxscore_feed,
+            features,
+        )
+        if observations.get("status") == "captured":
+            features = dict(features)
+            features["actual_pitcher_strikeout_observations"] = {
+                **observations,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+                "event_id": str(event_id),
+                "model_version": prediction.get("model_version"),
+                "snapshot_id": prediction.get("id"),
+                "pregame_data_cutoff": prediction.get("data_cutoff"),
+            }
 
     predicted_winner = features.get("predicted_winner")
 
@@ -550,6 +569,7 @@ def settle_prediction(
     now = datetime.now(timezone.utc).isoformat()
 
     update_data = {
+        "features": features,
         "result_status": "SETTLED",
         "prediction_result": prediction_result,
         "actual_winner": actual_winner,
