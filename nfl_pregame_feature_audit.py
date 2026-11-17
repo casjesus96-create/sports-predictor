@@ -202,9 +202,11 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             if interception is not None:
                 bucket["interceptions_n"] += 1
                 bucket["interceptions_total"] += int(interception > 0)
+                bucket["turnover_data_n"] += 1
             if fumble_lost is not None:
                 bucket["fumbles_lost_n"] += 1
                 bucket["fumbles_lost_total"] += int(fumble_lost > 0)
+                bucket["turnover_data_n"] += 1
 
         if defense:
             bucket = pbp_history.setdefault(("DEF:" + defense, game_id), new_bucket())
@@ -301,9 +303,16 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                 "interceptions_per_game": _mean([item.get("passing_interceptions") for item in prior_team_rows]),
                 "fumbles_lost_per_game": _mean([item.get("rushing_fumbles_lost") for item in prior_team_rows]),
                 "turnovers_per_game": _mean([
-                    item.get("passing_interceptions") + item.get("rushing_fumbles_lost")
-                    if item.get("passing_interceptions") is not None and item.get("rushing_fumbles_lost") is not None
-                    else None for item in prior_team_rows
+                    item.get("interceptions_total", 0) + item.get("fumbles_lost_total", 0)
+                    if item.get("turnover_data_n", 0) else None for item in offense_rows
+                ]),
+                "offensive_interceptions_per_game": _mean([
+                    item.get("interceptions_total") if item.get("interceptions_n", 0) else None
+                    for item in offense_rows
+                ]),
+                "offensive_fumbles_lost_per_game": _mean([
+                    item.get("fumbles_lost_total") if item.get("fumbles_lost_n", 0) else None
+                    for item in offense_rows
                 ]),
                 "sacks_suffered_per_game": _mean([item.get("sacks_suffered") for item in prior_team_rows]),
                 "passing_epa_per_game": _mean([item.get("passing_epa") for item in prior_team_rows]),
@@ -319,7 +328,10 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                     item.get("pass_td_total", 0) + item.get("rush_td_total", 0)
                     if item.get("td_data_n", 0) else None for item in defense_rows
                 ]),
-                "defensive_sacks_per_game": _mean([item.get("sacks_total") for item in defense_rows]),
+                "defensive_sacks_per_game": _mean([
+                    item.get("sacks_total") if item.get("sacks_n", 0) else None
+                    for item in defense_rows
+                ]),
                 "defensive_interceptions_per_game": _mean([item.get("interceptions_total") for item in defense_rows]),
                 "defensive_fumbles_recovered_per_game": _mean([item.get("fumbles_lost_total") for item in defense_rows]),
                 "defensive_turnovers_per_game": _mean([
