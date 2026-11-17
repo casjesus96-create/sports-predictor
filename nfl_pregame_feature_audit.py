@@ -59,7 +59,15 @@ def _number(row, key):
 
 def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
     """Measure whether candidate metrics exist strictly before each target kickoff."""
-    games = load_schedule(season=season)
+    schedule_error = None
+    try:
+        games = load_schedule(season=season)
+    except Exception as exc:
+        # Keep the audit endpoint available and report the failed source
+        # instead of turning the whole NFL detail panel into a generic 502.
+        games = []
+        schedule_error = f"{type(exc).__name__}: {str(exc)[:240]}"
+
     schedule_by_id = {
         str(game.get("game_id")): game
         for game in games
@@ -76,7 +84,10 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
         ):
             completed[game_id] = game
 
-    sources = []
+    sources = [{
+        "key": "schedule", "available": schedule_error is None,
+        "rows": len(games), "columns": None, "error": schedule_error,
+    }]
     try:
         team_rows, team_columns = _download_rows(
             session, TEAM_STATS_URL.format(season=season)
@@ -85,11 +96,12 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             "key": "weekly_team_stats", "available": True,
             "rows": len(team_rows), "columns": len(team_columns), "error": None,
         })
-    except (requests.RequestException, OSError, EOFError, csv.Error) as exc:
+    except Exception as exc:
         team_rows, team_columns = [], []
         sources.append({
             "key": "weekly_team_stats", "available": False,
-            "rows": 0, "columns": 0, "error": type(exc).__name__,
+            "rows": 0, "columns": 0,
+            "error": f"{type(exc).__name__}: {str(exc)[:240]}",
         })
 
     try:
@@ -100,11 +112,12 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             "key": "play_by_play", "available": True,
             "rows": len(pbp_rows), "columns": len(pbp_columns), "error": None,
         })
-    except (requests.RequestException, OSError, EOFError, csv.Error) as exc:
+    except Exception as exc:
         pbp_rows, pbp_columns = [], []
         sources.append({
             "key": "play_by_play", "available": False,
-            "rows": 0, "columns": 0, "error": type(exc).__name__,
+            "rows": 0, "columns": 0,
+            "error": f"{type(exc).__name__}: {str(exc)[:240]}",
         })
 
     team_history = {}
