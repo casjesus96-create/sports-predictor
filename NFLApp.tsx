@@ -876,6 +876,7 @@ export default function NFLApp() {
                     <h4 className="detail-heading">Defensa</h4>
                     <div className="factor-grid">
                       <TeamFactor label="EPA permitido / jugada" value={number(team.stats.defensive_epa_allowed_per_play, 3)} />
+                      <TeamFactor label="Eficiencia permitida al rival" value={pct(team.stats.defensive_success_rate_allowed)} />
                       <TeamFactor label="Yardas permitidas / jugada" value={number(team.stats.defensive_yards_allowed_per_play, 2)} />
                       <TeamFactor label="TD permitidos / partido" value={number(team.stats.defensive_touchdowns_allowed_per_game, 2)} />
                       <TeamFactor label="Sacks defensivos / partido" value={number(team.stats.defensive_sacks_per_game, 2)} />
