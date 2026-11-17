@@ -95,6 +95,16 @@ def test_pregame_audit_excludes_same_game_and_future_games(monkeypatch):
     assert buf_before_g2["fourth_down_conversion_rate"] is None
     # Defensive profile uses prior plays only and keeps absent denominators null.
     assert buf_before_g2["defensive_yards_allowed_per_play"] == 5
+    assert buf_before_g2["passing_epa_per_game"] == 1.2
+    assert buf_before_g2["offensive_epa_per_play"] == 0.3
+    assert buf_before_g2["offensive_success_rate"] == 1
+    assert buf_before_g2["offensive_yards_per_play"] == 12
+    assert buf_before_g2["defensive_epa_allowed_per_play"] == -0.2
+    assert buf_before_g2["offensive_interceptions_per_game"] == 0
+    assert buf_before_g2["offensive_fumbles_lost_per_game"] == 0
+    assert buf_before_g2["turnovers_per_game"] == 0
+    assert buf_before_g2["defensive_sacks_per_game"] == 0
+    assert buf_before_g2["defensive_turnovers_per_game"] == 0
     assert result["advanced_team_profile_method"]["read_only"] is True
 
 
