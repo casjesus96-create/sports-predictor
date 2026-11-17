@@ -88,3 +88,35 @@ def test_market_probabilities_are_monotonic_for_goal_thresholds():
     assert totals["over_2_5"]["probability"] >= totals["over_3_5"]["probability"]
     assert totals["under_1_5"]["probability"] <= totals["under_2_5"]["probability"]
     assert totals["under_2_5"]["probability"] <= totals["under_3_5"]["probability"]
+
+def test_official_model_excludes_results_at_or_after_target_kickoff():
+    matches = sample_matches()
+    for index, item in enumerate(matches, start=1):
+        item["utcDate"] = f"2026-10-{index:02d}T12:00:00Z"
+
+    future = match("A", "B", 20, 0)
+    future["utcDate"] = "2026-11-01T12:00:00Z"
+    same_kickoff = match("B", "A", 0, 20)
+    same_kickoff["utcDate"] = "2026-10-10T12:00:00Z"
+    undated = match("A", "B", 15, 0)
+
+    result = predict_1x2(
+        "A", "B",
+        matches + [future, same_kickoff, undated],
+        kickoff_at="2026-10-10T12:00:00+00:00",
+    )
+
+    assert result["available"] is True
+    assert result["sample"]["completed_matches_in_competition"] == 9
+    assert result["sample"]["excluded_at_or_after_kickoff"] == 2
+    assert result["sample"]["excluded_missing_or_invalid_date"] == 1
+    assert result["sample"]["pregame_cutoff_applied"] is True
+
+
+def test_official_model_requires_timezone_aware_kickoff_when_cutoff_is_supplied():
+    try:
+        predict_1x2("A", "B", sample_matches(), kickoff_at="2026-10-10T12:00:00")
+    except ValueError as exc:
+        assert "zona horaria" in str(exc)
+    else:
+        raise AssertionError("Expected timezone-aware kickoff validation")

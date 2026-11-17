@@ -7,6 +7,7 @@ chronological, immutable pre-match snapshots and a sufficiently large sample.
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from collections import defaultdict
 from typing import Any
 
@@ -46,6 +47,7 @@ def predict_1x2(
     completed_matches: list[dict[str, Any]],
     *,
     home_advantage: float = 1.0,
+    kickoff_at: str | None = None,
 ) -> dict[str, Any]:
     """Estimate 1X2 and goal markets using independent Poisson score matrix. League home/away scoring averages already encode average home advantage, so the explicit multiplier defaults to neutral (1.0) to avoid double counting. Non-neutral overrides are retained for controlled validation."""
     if not home_team.strip() or not away_team.strip() or home_team == away_team:
@@ -53,9 +55,48 @@ def predict_1x2(
     if not 0.8 <= home_advantage <= 1.3:
         raise ValueError("home_advantage debe estar entre 0.8 y 1.3.")
 
-    parsed = [row for match in completed_matches if (row := _match_goals(match))]
+    cutoff = None
+    if kickoff_at is not None:
+        try:
+            cutoff = datetime.fromisoformat(str(kickoff_at).strip().replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            raise ValueError("kickoff_at debe ser una fecha ISO 8601 válida con zona horaria.")
+        if cutoff.tzinfo is None:
+            raise ValueError("kickoff_at debe incluir zona horaria.")
+        cutoff = cutoff.astimezone(timezone.utc)
+
+    parsed = []
+    excluded_at_or_after_kickoff = 0
+    excluded_missing_date = 0
+    for match in completed_matches:
+        row = _match_goals(match)
+        if row is None:
+            continue
+        if cutoff is not None:
+            raw_date = row[4]
+            try:
+                match_date = datetime.fromisoformat(str(raw_date).strip().replace("Z", "+00:00")) if raw_date else None
+            except (TypeError, ValueError):
+                match_date = None
+            if match_date is None or match_date.tzinfo is None:
+                excluded_missing_date += 1
+                continue
+            if match_date.astimezone(timezone.utc) >= cutoff:
+                excluded_at_or_after_kickoff += 1
+                continue
+        parsed.append(row)
+
     if not parsed:
-        return {"available": False, "reason": "No hay partidos finalizados válidos.", "model_version": MODEL_VERSION}
+        return {
+            "available": False,
+            "reason": "No hay partidos finalizados válidos anteriores al kickoff.",
+            "model_version": MODEL_VERSION,
+            "sample": {
+                "completed_matches_in_competition": 0,
+                "excluded_at_or_after_kickoff": excluded_at_or_after_kickoff,
+                "excluded_missing_or_invalid_date": excluded_missing_date,
+            },
+        }
 
     league_home_avg = sum(row[2] for row in parsed) / len(parsed)
     league_away_avg = sum(row[3] for row in parsed) / len(parsed)
@@ -173,6 +214,9 @@ def predict_1x2(
         "most_likely_scorelines": scorelines,
         "sample": {
             "completed_matches_in_competition": len(parsed),
+            "excluded_at_or_after_kickoff": excluded_at_or_after_kickoff,
+            "excluded_missing_or_invalid_date": excluded_missing_date,
+            "pregame_cutoff_applied": cutoff is not None,
             "weighted_form": False,
             "home_advantage_multiplier": home_advantage,
             "home_advantage_policy": "neutral_multiplier_league_split_baseline",
