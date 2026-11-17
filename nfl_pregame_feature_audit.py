@@ -2,6 +2,7 @@
 import csv
 import gzip
 import io
+import math
 from datetime import datetime, timezone
 
 import requests
@@ -50,8 +51,9 @@ def _number(row, key):
         value = row.get(key)
         if value is None or str(value).strip() == "":
             return None
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
