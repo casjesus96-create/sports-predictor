@@ -359,7 +359,7 @@ def get_nfl_model_snapshots(limit=500):
         .select("*")
         .eq("sport", SPORT)
         .eq("league", LEAGUE)
-        .order("created_at", desc=False)
+        .order("created_at", desc=True)
         .limit(max(1, min(int(limit), 2000)))
         .execute()
     )
