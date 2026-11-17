@@ -130,3 +130,35 @@ def test_number_rejects_non_finite_and_malformed_metrics():
     assert audit._number({"metric": "-Infinity"}, "metric") is None
     assert audit._number({"metric": "not-a-number"}, "metric") is None
     assert audit._number({"metric": ""}, "metric") is None
+
+def test_pregame_audit_reports_schedule_source_failure(monkeypatch):
+    def fail_schedule(season):
+        raise RuntimeError("schedule source unavailable")
+
+    monkeypatch.setattr(audit, "load_schedule", fail_schedule)
+    result = audit.audit_nfl_pregame_feature_coverage(2026, session=object())
+
+    schedule = next(item for item in result["sources"] if item["key"] == "schedule")
+    assert schedule["available"] is False
+    assert "schedule source unavailable" in schedule["error"]
+    assert result["advanced_team_profiles"] == []
+
+
+def test_pregame_audit_reports_unexpected_stats_source_failure(monkeypatch):
+    monkeypatch.setattr(
+        audit, "load_schedule",
+        lambda season: [_game("g1", "2026-09-01T17:00:00+00:00", "BUF", "MIA", 20, 10)],
+    )
+
+    def fail_download(session, url):
+        raise RuntimeError("compressed source could not be decoded")
+
+    monkeypatch.setattr(audit, "_download_rows", fail_download)
+    result = audit.audit_nfl_pregame_feature_coverage(2026, session=object())
+
+    weekly = next(item for item in result["sources"] if item["key"] == "weekly_team_stats")
+    pbp = next(item for item in result["sources"] if item["key"] == "play_by_play")
+    assert weekly["available"] is False
+    assert pbp["available"] is False
+    assert "could not be decoded" in weekly["error"]
+    assert result["success"] is True
