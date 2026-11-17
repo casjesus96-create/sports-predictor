@@ -1800,15 +1800,17 @@ export default function NFLApp() {
               </p>
             </>
           ) : (
-            <p className="empty">No hay una muestra pregame disponible para este partido. Puede tratarse de un partido sin historial previo o de datos de fuente aún no publicados.</p>
-            {Array.isArray(pregameFeatureCoverage?.sources) ? (
-              <div className="model-note">
-                <b>Diagnóstico de fuentes:</b>
-                {pregameFeatureCoverage.sources.filter((source: AnyRecord) => !source.available).map((source: AnyRecord) => (
-                  <div key={source.key}>{source.key}: {source.error || "fuente no disponible"}</div>
-                ))}
-              </div>
-            ) : null}
+            <>
+              <p className="empty">No hay una muestra pregame disponible para este partido. Puede tratarse de un partido sin historial previo o de datos de fuente aún no publicados.</p>
+              {Array.isArray(pregameFeatureCoverage?.sources) ? (
+                <div className="model-note">
+                  <b>Diagnóstico de fuentes:</b>
+                  {pregameFeatureCoverage.sources.filter((source: AnyRecord) => !source.available).map((source: AnyRecord) => (
+                    <div key={source.key}>{source.key}: {source.error || "fuente no disponible"}</div>
+                  ))}
+                </div>
+              ) : null}
+            </>
           )}
         </section>
       ) : pregameFeatureCoverageError ? (
