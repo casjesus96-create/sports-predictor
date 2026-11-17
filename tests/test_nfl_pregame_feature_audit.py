@@ -76,7 +76,7 @@ def test_pregame_audit_excludes_same_game_and_future_games(monkeypatch):
     assert features["team_sacks_suffered"] == 1
     assert features["pbp_yards_per_play"] == 1
     assert features["pbp_offensive_touchdowns"] == 1
-    assert features["pbp_fourth_down_rate"] == 1
+    assert features["pbp_fourth_down_rate"] == 0  # No fourth-down attempts in prior sample
     assert features["pbp_defensive_yards_allowed"] == 1
     assert features["pbp_defensive_sacks"] == 1
     assert features["pbp_defensive_turnovers"] == 1
