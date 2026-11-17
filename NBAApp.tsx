@@ -940,6 +940,21 @@ export default function NBAApp() {
                                                       </div>
                                                     );
                                                   })}
+                                                  <div style={{ borderTop: "1px solid var(--border)", marginTop: 8, paddingTop: 8 }}>
+                                                    <b style={{ fontSize: 11 }}>Cobertura de los 9 mercados · misma aparición</b>
+                                                    <p className="muted">Cada mercado combinado cuenta únicamente partidos donde están disponibles todos sus componentes en el mismo boxscore. El denominador son las apariciones con al menos una estadística válida dentro de los últimos 15 boxscores disponibles; no equivale a minutos ni confirma participación.</p>
+                                                    {["PTS", "REB", "AST", "PRA", "PR", "PA", "RA", "BLK", "STL"].map((market: string) => {
+                                                      const numerator = Number(player.games_sampled_by_market?.[market]) || 0;
+                                                      const denominator = Number(player.market_coverage_denominator) || 0;
+                                                      const coverage = denominator > 0 && numerator <= denominator ? (numerator / denominator) * 100 : null;
+                                                      return (
+                                                        <div key={market} className="score-row">
+                                                          <span>{market}</span>
+                                                          <b>{numerator}/{denominator} · {coverage === null ? "No estimable" : coverage.toFixed(0) + "%"}</b>
+                                                        </div>
+                                                      );
+                                                    })}
+                                                  </div>
                                                   {(Number(player.duplicate_stat_records_excluded) || 0) > 0 ? (
                                                     <small className="muted">Registros estadísticos duplicados o conflictivos excluidos: {player.duplicate_stat_records_excluded}. No se utilizaron para calcular promedios.</small>
                                                   ) : (

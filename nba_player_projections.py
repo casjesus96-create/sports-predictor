@@ -31,6 +31,17 @@ PROJECTION_KEYS = {
     "blocks": "projected_blocks",
     "steals": "projected_steals",
 }
+MARKET_COVERAGE_COMPONENTS = {
+    "PTS": ("points",),
+    "REB": ("rebounds",),
+    "AST": ("assists",),
+    "PRA": ("points", "rebounds", "assists"),
+    "PR": ("points", "rebounds"),
+    "PA": ("points", "assists"),
+    "RA": ("rebounds", "assists"),
+    "BLK": ("blocks",),
+    "STL": ("steals",),
+}
 
 
 def _parse_datetime(value):
@@ -154,15 +165,26 @@ def aggregate_player_projections(game_reports, team_histories, max_games=15):
                 key=lambda record: record.get("kickoff") or "",
                 reverse=True,
             )
+            market_history_window = market_history[:max_games]
+            market_games_denominator = len(market_history_window)
+            market_games_by_market = {
+                market: sum(
+                    1 for record in market_history_window
+                    if all(_is_valid_stat(record.get(component)) for component in components)
+                )
+                for market, components in MARKET_COVERAGE_COMPONENTS.items()
+            }
             row = {
                 "player_id": player_id,
                 "name": item["name"],
                 "position": item["position"],
                 "games_sampled": len(item["games"]),
                 "games_sampled_by_stat": {key: len(item["stat_games"].get(key, set())) for key in STAT_KEYS},
+                "games_sampled_by_market": market_games_by_market,
+                "market_coverage_denominator": market_games_denominator,
                 "duplicate_stat_records_excluded": item["duplicate_stat_records_excluded"],
                 "recent_windows": recent_windows,
-                "market_history": market_history[:max_games],
+                "market_history": market_history_window,
             }
             # Preserve the existing projection contract: projected_* remains the
             # mean of the latest five available appearances, not the expanded 15-game pool.

@@ -250,3 +250,34 @@ def test_conflicting_duplicate_player_stat_for_same_game_is_excluded():
         "completed": True, "assists": 4.0,
     }]
     assert player["duplicate_stat_records_excluded"] == 2
+
+
+def test_player_market_coverage_requires_every_component_in_the_same_game():
+    histories = {
+        "1": [
+            {"game_id": "g1", "home_team_id": "1", "home": "Home", "kickoff": "2026-10-01T00:00:00Z", "completed": True},
+            {"game_id": "g2", "home_team_id": "1", "home": "Home", "kickoff": "2026-10-02T00:00:00Z", "completed": True},
+            {"game_id": "g3", "home_team_id": "1", "home": "Home", "kickoff": "2026-10-03T00:00:00Z", "completed": True},
+        ]
+    }
+    reports = {
+        "g1": {"available": True, "teams": [{"team_id": "1", "players": [
+            {"player_id": "p1", "name": "Player", "points": 20, "rebounds": 6, "assists": None, "blocks": 1, "steals": 2}
+        ]}]},
+        "g2": {"available": True, "teams": [{"team_id": "1", "players": [
+            {"player_id": "p1", "name": "Player", "points": 18, "rebounds": 5, "assists": 4, "blocks": 0, "steals": 1}
+        ]}]},
+        "g3": {"available": True, "teams": [{"team_id": "1", "players": [
+            {"player_id": "p1", "name": "Player", "points": None, "rebounds": 7, "assists": 3, "blocks": 2, "steals": 0}
+        ]}]},
+    }
+
+    result = aggregate_player_projections(reports, histories)
+    player = result["teams"][0]["players"][0]
+
+    assert player["market_coverage_denominator"] == 3
+    assert player["games_sampled_by_market"] == {
+        "PTS": 2, "REB": 3, "AST": 2, "PRA": 1,
+        "PR": 2, "PA": 1, "RA": 2, "BLK": 3, "STL": 3,
+    }
+    assert len(player["market_history"]) == 3
