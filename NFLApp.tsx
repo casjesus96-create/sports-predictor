@@ -180,14 +180,22 @@ export default function NFLApp() {
 
   async function request(path: string, options?: RequestInit) {
     const response = await fetch(`${API}${path}`, options);
-    const data = await response.json().catch(() => ({}));
+    const raw = await response.text();
+    let data: AnyRecord = {};
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      data = { message: raw.slice(0, 300) };
+    }
 
     if (!response.ok) {
+      const detail = data?.detail;
       const message =
-        data?.detail?.message ||
-        (typeof data?.detail === "string" ? data.detail : "") ||
+        detail?.message ||
+        detail?.details ||
+        (typeof detail === "string" ? detail : "") ||
         data?.message ||
-        "La API devolvió un error.";
+        `Error HTTP ${response.status} al consultar la API.`;
       throw new Error(message);
     }
 
@@ -1793,6 +1801,14 @@ export default function NFLApp() {
             </>
           ) : (
             <p className="empty">No hay una muestra pregame disponible para este partido. Puede tratarse de un partido sin historial previo o de datos de fuente aún no publicados.</p>
+            {Array.isArray(pregameFeatureCoverage?.sources) ? (
+              <div className="model-note">
+                <b>Diagnóstico de fuentes:</b>
+                {pregameFeatureCoverage.sources.filter((source: AnyRecord) => !source.available).map((source: AnyRecord) => (
+                  <div key={source.key}>{source.key}: {source.error || "fuente no disponible"}</div>
+                ))}
+              </div>
+            ) : null}
           )}
         </section>
       ) : pregameFeatureCoverageError ? (
