@@ -395,6 +395,7 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                 "offensive_success_plays_sampled": success_n,
                 "offensive_yards_plays_sampled": yards_n,
                 "defensive_epa_plays_sampled": def_epa_n,
+                "defensive_success_plays_sampled": sum(item["success_n"] for item in defense_rows),
                 "defensive_yards_plays_sampled": def_yards_n,
                 "defensive_touchdowns_games_sampled": sum(item["td_data_n"] > 0 for item in defense_rows),
                 "defensive_sacks_games_sampled": sum(item["sacks_n"] > 0 for item in defense_rows),
