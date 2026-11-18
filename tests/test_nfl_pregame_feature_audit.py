@@ -46,8 +46,8 @@ def test_pregame_audit_excludes_same_game_and_future_games(monkeypatch):
         {"game_id": "g1", "posteam": "MIA", "defteam": "BUF",
          "epa": "-0.2", "success": "0", "down": "3",
          "third_down_converted": "0", "fourth_down_converted": "0",
-         "yards_gained": "5", "pass_touchdown": "0", "rush_touchdown": "0",
-         "sack": "0", "interception": "0", "fumble_lost": "0",
+         "yards_gained": "5", "pass_touchdown": "1", "rush_touchdown": "0",
+         "sack": "1", "interception": "1", "fumble_lost": "1",
          "play_deleted": "0", "aborted_play": "0"},
     ]
 
@@ -111,8 +111,18 @@ def test_pregame_audit_excludes_same_game_and_future_games(monkeypatch):
     assert buf_before_g2["offensive_interceptions_per_game"] == 0
     assert buf_before_g2["offensive_fumbles_lost_per_game"] == 0
     assert buf_before_g2["turnovers_per_game"] == 0
-    assert buf_before_g2["defensive_sacks_per_game"] == 0
-    assert buf_before_g2["defensive_turnovers_per_game"] == 0
+    # Defensive event totals must count positive events from opponent plays,
+    # while their denominators expose whether the source actually had data.
+    assert buf_before_g2["defensive_touchdowns_allowed_per_game"] == 1
+    assert buf_before_g2["defensive_sacks_per_game"] == 1
+    assert buf_before_g2["defensive_interceptions_per_game"] == 1
+    assert buf_before_g2["defensive_fumbles_recovered_per_game"] == 1
+    assert buf_before_g2["defensive_turnovers_per_game"] == 2
+    assert buf_before_g2["defensive_plays_sampled"] == 1
+    assert buf_before_g2["defensive_sacks_games_sampled"] == 1
+    assert buf_before_g2["defensive_interceptions_games_sampled"] == 1
+    assert buf_before_g2["defensive_fumbles_games_sampled"] == 1
+    assert buf_before_g2["defensive_turnovers_games_sampled"] == 1
     assert result["advanced_team_profile_method"]["read_only"] is True
 
 
