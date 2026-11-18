@@ -1,5 +1,5 @@
 import PercentageSignal from "./PercentageSignal";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Game = {
   game_id: string;
@@ -494,9 +494,12 @@ export default function NBAApp() {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const predictionByGame = new Map(predictions.map((item) => [String(item.event_id), item]));
+  const predictionByGame = useMemo(
+    () => new Map(predictions.map((item) => [String(item.event_id), item])),
+    [predictions],
+  );
 
-  const mergedGames = (() => {
+  const mergedGames = useMemo(() => {
     const byId = new Map<string, Game>();
     for (const game of games) {
       if (game.game_id) byId.set(String(game.game_id), game);
@@ -511,11 +514,12 @@ export default function NBAApp() {
     return Array.from(byId.values()).sort(
       (a, b) => new Date(a.kickoff || 0).getTime() - new Date(b.kickoff || 0).getTime(),
     );
-  })();
+  }, [games, predictions]);
 
-  const filteredGames = allGames
-    ? mergedGames
-    : mergedGames.filter((game) => gameDate(game.kickoff) === date);
+  const filteredGames = useMemo(
+    () => allGames ? mergedGames : mergedGames.filter((game) => gameDate(game.kickoff) === date),
+    [allGames, mergedGames, date],
+  );
 
   const settleAllPending = async () => {
     setBusy("settle-all");
