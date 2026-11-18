@@ -85,19 +85,20 @@ def test_projection_coverage_excludes_opponents_from_historical_boxscores():
 
 
 
-def test_project_players_fetches_twenty_pregame_games_for_market_backtesting(monkeypatch):
+def test_project_players_fetches_thirty_pregame_games_for_market_backtesting(monkeypatch):
+    from datetime import datetime, timedelta, timezone
     import nba_player_projections as module
 
     histories = {
         "1": [
             {
                 "game_id": f"g{index}",
-                "kickoff": f"2026-10-{index:02d}T00:00:00Z",
+                "kickoff": (datetime(2026, 10, 1, tzinfo=timezone.utc) + timedelta(days=index - 1)).isoformat(),
                 "completed": True,
                 "home_team_id": "1",
                 "home": "Home",
             }
-            for index in range(1, 23)
+            for index in range(1, 33)
         ]
     }
     fetched = []
@@ -122,20 +123,21 @@ def test_project_players_fetches_twenty_pregame_games_for_market_backtesting(mon
 
     monkeypatch.setattr(module, "fetch_player_boxscore", fake_fetch)
     result = module.project_players_from_recent_games(
-        histories, "2026-10-30T00:00:00Z"
+        histories, "2026-12-01T00:00:00Z"
     )
 
-    assert len(fetched) == 20
-    assert set(fetched) == {f"g{index}" for index in range(3, 23)}
+    assert len(fetched) == 30
+    assert set(fetched) == {f"g{index}" for index in range(3, 33)}
     player = result["teams"][0]["players"][0]
-    assert result["max_games_per_team"] == 20
-    assert len(player["market_history"]) == 20
+    assert result["max_games_per_team"] == 30
+    assert len(player["market_history"]) == 30
+    assert player["market_coverage_denominator"] == 30
     assert player["recent_windows"]["points"]["5"]["games"] == 5
     assert player["recent_windows"]["points"]["10"]["games"] == 10
     assert player["recent_windows"]["points"]["15"]["games"] == 15
-    assert player["recent_windows"]["points"]["5"]["average"] == 20
-    assert player["projected_points"] == 20
-
+    assert player["recent_windows"]["points"]["5"]["average"] == 30
+    # The official player projection contract remains based on the latest five appearances.
+    assert player["projected_points"] == 30
 
 def test_player_market_history_preserves_raw_pregame_boxscore_records():
     histories = {
