@@ -568,26 +568,36 @@ export default function TennisApp() {
     setMatchSnapshot(null);
     setCandidateProjection(null);
     setMatchProjectionMessage("");
-    if (!selected || !selected.match_id) return;
+    if (!selected || !selected.match_id) {
+      setMatchProjectionLoading(false);
+      return;
+    }
 
     const loadProjectionForSelectedMatch = async () => {
       setMatchProjectionLoading(true);
+      let snapshotLookupError = "";
       try {
-        const snapshotResponse = await request<MatchSnapshotResponse>(
-          `${API}/matches/${encodeURIComponent(selected.match_id)}/snapshot?league=${league}`,
-        );
-        if (cancelled) return;
-        if (snapshotResponse.snapshot) {
-          setMatchSnapshot(snapshotResponse.snapshot);
-          setMatchProjectionMessage("Pronóstico original capturado antes del inicio. Se muestran sus probabilidades inmutables.");
-          return;
+        try {
+          const snapshotResponse = await request<MatchSnapshotResponse>(
+            `${API}/matches/${encodeURIComponent(selected.match_id)}/snapshot?league=${league}`,
+          );
+          if (cancelled) return;
+          if (snapshotResponse.snapshot) {
+            setMatchSnapshot(snapshotResponse.snapshot);
+            setMatchProjectionMessage("Pronóstico original capturado antes del inicio. Se muestran sus probabilidades inmutables.");
+            return;
+          }
+        } catch (err) {
+          snapshotLookupError = err instanceof Error ? err.message : "No se pudo consultar el registro guardado.";
         }
 
         const startAt = selected.start_time ? new Date(selected.start_time).getTime() : Number.NaN;
         const alreadyStarted = selected.completed || selected.status === "in" || selected.status === "post"
           || !Number.isFinite(startAt) || startAt <= Date.now();
         if (alreadyStarted) {
-          setMatchProjectionMessage("No existe un pronóstico prepartido guardado para este encuentro. No calculamos uno después del inicio.");
+          setMatchProjectionMessage(snapshotLookupError
+            ? `No se pudo consultar el registro original: ${snapshotLookupError}. No se calcula un pronóstico después del inicio.`
+            : "No existe un pronóstico prepartido guardado para este encuentro. No calculamos uno después del inicio.");
           return;
         }
 
@@ -610,7 +620,9 @@ export default function TennisApp() {
         );
         if (cancelled) return;
         setCandidateProjection(preview);
-        setMatchProjectionMessage("Estimación candidata de Elo general. Es una vista previa y todavía no está guardada como snapshot.");
+        setMatchProjectionMessage(snapshotLookupError
+          ? `Vista previa candidata no guardada. No se pudo verificar si ya existía un snapshot: ${snapshotLookupError}`
+          : "Estimación candidata de Elo general. Es una vista previa y todavía no está guardada como snapshot.");
       } catch (err) {
         if (!cancelled) setMatchProjectionMessage(err instanceof Error ? err.message : "No se pudo consultar el pronóstico del encuentro.");
       } finally {
