@@ -28,7 +28,7 @@ MAX_SCORE = 30
 OPENFOOTBALL_COMPETITIONS = {
     "PT1": {
         "name": "Primeira Liga", "country": "Portugal", "first_year": 2018,
-        "source": "europe", "path": "{year}-{next_year}/portugal/{year}-{next_year}_pt1.txt",
+        "source": "europe", "path": "portugal/{year}-{next_year}_pt1.txt",
     },
     "NL1": {
         "name": "Eredivisie", "country": "Netherlands", "first_year": 2018,
