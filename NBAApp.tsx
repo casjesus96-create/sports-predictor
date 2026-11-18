@@ -129,6 +129,9 @@ type MarketHistoryRecord = {
   game_id: string;
   kickoff?: string | null;
   completed: boolean;
+  season?: number | string | null;
+  season_type?: number | string | null;
+  season_type_name?: string | null;
   points?: number;
   rebounds?: number;
   assists?: number;
@@ -1254,10 +1257,11 @@ export default function NBAApp() {
                                                         {sourceGames.length ? (
                                                           <div style={{ overflowX: "auto" }}>
                                                             <table>
-                                                              <thead><tr><th>Fecha</th><th>Game ID</th><th>Valor</th></tr></thead>
+                                                              <thead><tr><th>Fecha</th><th>Temporada</th><th>Game ID</th><th>Valor</th></tr></thead>
                                                               <tbody>{sourceGames.map((record: any) => (
                                                                 <tr key={String(record.game_id) + ":" + stat}>
                                                                   <td>{new Date(record.kickoff).toLocaleDateString()}</td>
+                                                                  <td>{record.season_type_name || (record.season_type === 3 ? "Playoffs" : record.season_type === 2 ? "Regular" : "—")}{record.season ? ` · ${record.season}` : ""}</td>
                                                                   <td><code>{record.game_id}</code></td>
                                                                   <td><b>{numberLabel(record[stat])}</b></td>
                                                                 </tr>
