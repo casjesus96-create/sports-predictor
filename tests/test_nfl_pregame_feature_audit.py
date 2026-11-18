@@ -1,3 +1,6 @@
+import gzip
+import io
+
 import nfl_pregame_feature_audit as audit
 
 
@@ -166,3 +169,39 @@ def test_pregame_audit_reports_unexpected_stats_source_failure(monkeypatch):
     assert pbp["available"] is False
     assert "could not be decoded" in weekly["error"]
     assert result["success"] is True
+
+
+def test_download_rows_streams_and_aggregates_without_returning_raw_rows():
+    payload = io.BytesIO()
+    with gzip.GzipFile(fileobj=payload, mode="wb") as zipped:
+        zipped.write(b"game_id,posteam,epa\\ng1,BUF,0.5\\ng2,MIA,-0.2\\n")
+    compressed = payload.getvalue()
+
+    class FakeResponse:
+        def __init__(self):
+            self.raw = io.BytesIO(compressed)
+            self.closed = False
+
+        def raise_for_status(self):
+            return None
+
+        def close(self):
+            self.closed = True
+
+    class FakeSession:
+        def get(self, url, timeout, stream=False):
+            assert stream is True
+            self.response = FakeResponse()
+            return self.response
+
+    seen = []
+    session = FakeSession()
+    row_count, columns = audit._download_rows(
+        session, "https://example.test/sample.csv.gz",
+        row_handler=lambda row: seen.append(row["game_id"]),
+    )
+
+    assert row_count == 2
+    assert columns == ["game_id", "posteam", "epa"]
+    assert seen == ["g1", "g2"]
+    assert session.response.closed is True
