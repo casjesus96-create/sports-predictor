@@ -37,6 +37,18 @@ def test_service_stats_use_only_available_denominators():
     assert stats["break_points_saved_pct"] == 0.4286
 
 
+def test_service_averages_exclude_matches_without_service_points():
+    stats = _aggregate_service_stats([
+        ({"w_ace": "3", "w_df": "1", "w_svpt": "50", "w_1stIn": "30",
+          "w_1stWon": "24", "w_2ndWon": "12", "w_bpSaved": "2", "w_bpFaced": "4"}, "winner"),
+        ({"l_ace": "8", "l_df": "5"}, "loser"),
+    ])
+    assert stats["matches_with_service_stats"] == 1
+    assert stats["aces_total"] == 3
+    assert stats["aces_per_match"] == 3.0
+    assert stats["double_faults_per_match"] == 1.0
+
+
 def test_profile_filters_out_matches_on_or_after_cutoff(monkeypatch):
     rows = (
         {"tourney_date": "20261001", "winner_name": "Player One", "loser_name": "Player Two",
@@ -66,7 +78,48 @@ def test_profile_filters_out_matches_on_or_after_cutoff(monkeypatch):
     assert profile["recent_matches"][0]["opponent"] == "Player Three"
     assert profile["recent_matches"][0]["result"] == "L"
     assert profile["recent_matches"][1]["score"] is None
+    assert profile["recent_matches"][0]["date_precision"] == "tournament_start_date"
+    assert profile["recent_matches"][0]["is_walkover"] is False
 
+
+
+def test_walkover_counts_for_result_but_not_service_statistics(monkeypatch):
+    rows = (
+        {
+            "tourney_date": "20260525",
+            "winner_name": "Player One",
+            "loser_name": "Player Two",
+            "surface": "Clay",
+            "score": "W/O",
+        },
+        {
+            "tourney_date": "20260520",
+            "winner_name": "Player Three",
+            "loser_name": "Player One",
+            "surface": "Clay",
+            "score": "6-4 6-3",
+            "l_ace": "2",
+            "l_df": "1",
+            "l_svpt": "40",
+            "l_1stIn": "25",
+            "l_1stWon": "15",
+            "l_2ndWon": "8",
+            "l_bpSaved": "1",
+            "l_bpFaced": "3",
+        },
+    )
+    monkeypatch.setattr("tennis_history.load_year", lambda league, year: rows if year == 2026 else ())
+
+    profile = get_player_profile("Player One", "ATP", "2026-06-01", lookback_days=365)
+
+    assert profile["matches_in_window"] == 2
+    assert profile["wins_in_window"] == 1
+    assert profile["losses_in_window"] == 1
+    assert profile["data_quality"]["matches_with_service_stats"] == 1
+    assert profile["service_return_stats_last_10_matches"]["matches_with_service_stats"] == 1
+    walkover = next(item for item in profile["recent_matches"] if item["is_walkover"])
+    assert walkover["result"] == "W"
+    assert walkover["score"] == "W/O"
 
 def test_profile_rejects_invalid_surface_and_league():
     with pytest.raises(ValueError, match="surface"):
