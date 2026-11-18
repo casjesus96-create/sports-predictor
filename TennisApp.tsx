@@ -46,11 +46,14 @@ type HistoricalProfile = {
     source_freshness_thresholds_days: { current_max: number; delayed_max: number };
     source: string;
     source_url: string;
+    source_license?: string;
+    source_attribution?: string;
     warning: string;
   };
   recent_matches: Array<{
     date: string;
-    date_precision: "tournament_start_date";
+    date_precision: "tournament_start_date" | "exact_match_date";
+    category?: string;
     is_walkover: boolean;
     tournament: string | null;
     opponent: string;
@@ -1344,6 +1347,8 @@ export default function TennisApp() {
                   {historicalProfiles.map((profile) => {
                     const service = profile.service_return_stats_last_10_matches;
                     const sourceFreshness = profile.data_quality.source_freshness_status;
+                    const hasExactMatchDates = profile.recent_matches.length > 0 && profile.recent_matches.every((item) => item.date_precision === "exact_match_date");
+                    const isValuebetennisArchive = profile.data_quality.source === "Valuebetennis ATP/WTA historical match CSV";
                     const sourceFreshnessLabel = sourceFreshness === "current" ? "Reciente"
                       : sourceFreshness === "delayed" ? "Con retraso"
                       : sourceFreshness === "stale" ? "Desactualizado" : "Sin datos";
@@ -1359,7 +1364,7 @@ export default function TennisApp() {
                       { label: "Cobertura de estadísticas de saque (últimos 10)", value: formatCoverage(service.matches_with_service_stats, profile.last_10.matches) },
                       { label: "Victorias en muestra filtrada", value: `${profile.surface_window.wins} / ${profile.surface_window.matches}` },
                       { label: "Último ranking observado", value: formatMetric(profile.ranking_latest_in_window) },
-                      { label: "Días desde inicio del último torneo registrado", value: formatMetric(profile.days_since_last_match) },
+                      { label: hasExactMatchDates ? "Días desde el último partido registrado" : "Días desde inicio del último torneo registrado", value: formatMetric(profile.days_since_last_match) },
                       { label: "Partidos últimos 7 días", value: formatMetric(profile.workload_matches_last_7_days) },
                       { label: "Partidos últimos 14 días", value: formatMetric(profile.workload_matches_last_14_days) },
                       { label: "Aces por partido (últimos 10)", value: formatMetric(service.aces_per_match) },
@@ -1372,7 +1377,7 @@ export default function TennisApp() {
                     return (
                       <article className="tennis-profile-card" key={profile.player_name} style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, background: "#10253a" }}>
                         <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{profile.player_name}</h4>
-                        <p style={{ margin: "0 0 12px", color: "#b7c8d8", fontSize: 12 }}>Histórico {profile.league} · 365 días · {profile.data_quality.matches_with_service_stats} partidos con estadísticas de saque en la ventana histórica</p>
+                        <p style={{ margin: "0 0 12px", color: "#b7c8d8", fontSize: 12 }}>Histórico {profile.league} · 365 días · {isValuebetennisArchive ? "Resultados con fecha exacta · fuente CC BY 4.0" : `${profile.data_quality.matches_with_service_stats} partidos con estadísticas de saque en la fuente histórica`}</p>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
                           {metrics.map((metric) => (
                             <div key={metric.label} style={{ border: "1px solid #29445b", borderRadius: 8, padding: 9 }}>
@@ -1390,15 +1395,16 @@ export default function TennisApp() {
                             Último resultado disponible: <strong style={{ color: "#fff" }}>{profile.data_quality.latest_match_date_in_source || "Sin fecha verificable"}</strong>
                             {" · "}Antigüedad de la fuente: <strong style={{ color: sourceFreshnessColor }}>{profile.data_quality.source_data_age_days === null ? "No calculable" : `${profile.data_quality.source_data_age_days} días`}</strong>
                           </div>
-                          <p style={{ margin: "5px 0 0", color: "#b7c8d8", fontSize: 10 }}>Este indicador mide la fecha más reciente de los resultados del archivo consultado; es independiente de los días sin competir de este jugador. Criterio: reciente ≤{profile.data_quality.source_freshness_thresholds_days.current_max} días; con retraso hasta {profile.data_quality.source_freshness_thresholds_days.delayed_max}; después, desactualizado.</p>
+                          <p style={{ margin: "5px 0 0", color: "#b7c8d8", fontSize: 10 }}>Este indicador mide el resultado más reciente presente en el archivo consultado; es independiente de los días sin competir de este jugador. Criterio: reciente ≤{profile.data_quality.source_freshness_thresholds_days.current_max} días; con retraso hasta {profile.data_quality.source_freshness_thresholds_days.delayed_max}; después, desactualizado.</p>
+                          {profile.data_quality.source_attribution ? <p style={{ margin: "5px 0 0", color: "#8fa8bd", fontSize: 9 }}>Atribución: {profile.data_quality.source_attribution}</p> : null}
                         </div>
                         <div style={{ marginTop: 12, border: "1px solid #29445b", borderRadius: 8, padding: 10, background: "#0b1b2c" }}>
-                          <strong style={{ fontSize: 12 }}>Últimos encuentros · ordenados por fecha del torneo</strong>
-                          <p style={{ margin: "5px 0", color: "#b7c8d8", fontSize: 10 }}>La fuente histórica solo proporciona la fecha de inicio del torneo, no el día exacto de cada partido. Los walkovers cuentan en el balance, pero no en las estadísticas de saque.</p>
+                          <strong style={{ fontSize: 12 }}>Últimos encuentros · {hasExactMatchDates ? "ordenados por fecha exacta del partido" : "ordenados por fecha del torneo"}</strong>
+                          <p style={{ margin: "5px 0", color: "#b7c8d8", fontSize: 10 }}>{hasExactMatchDates ? "Las fechas corresponden al día real del partido (UTC). Esta fuente no publica estadísticas de saque; no se estiman ni se completan artificialmente." : "La fuente histórica solo proporciona la fecha de inicio del torneo, no el día exacto de cada partido."} Los walkovers cuentan en el balance, pero no en las estadísticas de saque.</p>
                           {profile.recent_matches.length ? (
                             <div style={{ overflowX: "auto", marginTop: 7 }}>
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 360 }}>
-                                <thead><tr style={{ color: "#b7c8d8", textAlign: "left" }}><th style={{ padding: 5 }}>Inicio del torneo</th><th style={{ padding: 5 }}>Rival</th><th style={{ padding: 5 }}>Resultado</th><th style={{ padding: 5 }}>Marcador</th><th style={{ padding: 5 }}>Pista</th></tr></thead>
+                                <thead><tr style={{ color: "#b7c8d8", textAlign: "left" }}><th style={{ padding: 5 }}>{hasExactMatchDates ? "Fecha del partido (UTC)" : "Inicio del torneo"}</th><th style={{ padding: 5 }}>Rival</th><th style={{ padding: 5 }}>Resultado</th><th style={{ padding: 5 }}>Marcador</th><th style={{ padding: 5 }}>Pista</th></tr></thead>
                                 <tbody>{profile.recent_matches.map((item, index) => (
                                   <tr key={`${item.date}-${item.opponent}-${index}`} style={{ borderTop: "1px solid #29445b" }}>
                                     <td style={{ padding: 5, whiteSpace: "nowrap" }}>{item.date}</td>
