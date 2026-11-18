@@ -48,9 +48,13 @@ def test_pregame_audit_excludes_same_game_and_future_games(monkeypatch):
          "play_deleted": "0", "aborted_play": "0"},
     ]
 
-    def fake_download(session, url):
+    def fake_download(session, url, row_handler=None):
         if "stats_team" in url:
             return team_rows, list(team_rows[0])
+        if row_handler is not None:
+            for row in pbp_rows:
+                row_handler(row)
+            return len(pbp_rows), list(pbp_rows[0])
         return pbp_rows, list(pbp_rows[0])
 
     monkeypatch.setattr(audit, "_download_rows", fake_download)
@@ -150,7 +154,7 @@ def test_pregame_audit_reports_unexpected_stats_source_failure(monkeypatch):
         lambda season: [_game("g1", "2026-09-01T17:00:00+00:00", "BUF", "MIA", 20, 10)],
     )
 
-    def fail_download(session, url):
+    def fail_download(session, url, row_handler=None):
         raise RuntimeError("compressed source could not be decoded")
 
     monkeypatch.setattr(audit, "_download_rows", fail_download)
