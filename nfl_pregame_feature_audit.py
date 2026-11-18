@@ -37,13 +37,28 @@ def _truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "y"}
 
 
-def _download_rows(session, url):
-    response = session.get(url, timeout=TIMEOUT_SECONDS)
-    response.raise_for_status()
-    with gzip.GzipFile(fileobj=io.BytesIO(response.content), mode="rb") as zipped:
-        wrapper = io.TextIOWrapper(zipped, encoding="utf-8-sig", errors="replace")
-        reader = csv.DictReader(wrapper)
-        return list(reader), list(reader.fieldnames or [])
+def _download_rows(session, url, row_handler=None):
+    """Read a gzipped CSV incrementally; optionally aggregate rows without retaining them."""
+    response = session.get(url, timeout=TIMEOUT_SECONDS, stream=True)
+    try:
+        response.raise_for_status()
+        raw_stream = getattr(response, "raw", None)
+        source = raw_stream if raw_stream is not None else io.BytesIO(response.content)
+        with gzip.GzipFile(fileobj=source, mode="rb") as zipped:
+            wrapper = io.TextIOWrapper(zipped, encoding="utf-8-sig", errors="replace")
+            reader = csv.DictReader(wrapper)
+            columns = list(reader.fieldnames or [])
+            if row_handler is None:
+                return list(reader), columns
+            row_count = 0
+            for row in reader:
+                row_handler(row)
+                row_count += 1
+            return row_count, columns
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
 
 
 def _number(row, key):
@@ -104,22 +119,6 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             "error": f"{type(exc).__name__}: {str(exc)[:240]}",
         })
 
-    try:
-        pbp_rows, pbp_columns = _download_rows(
-            session, PBP_URL.format(season=season)
-        )
-        sources.append({
-            "key": "play_by_play", "available": True,
-            "rows": len(pbp_rows), "columns": len(pbp_columns), "error": None,
-        })
-    except Exception as exc:
-        pbp_rows, pbp_columns = [], []
-        sources.append({
-            "key": "play_by_play", "available": False,
-            "rows": 0, "columns": 0,
-            "error": f"{type(exc).__name__}: {str(exc)[:240]}",
-        })
-
     team_history = {}
     for row in team_rows:
         game_id = str(row.get("game_id") or "")
@@ -143,17 +142,19 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             "rushing_fumbles_lost": _number(row, "rushing_fumbles_lost"),
         })
 
+
     pbp_history = {}
-    for row in pbp_rows:
+
+    def process_pbp_row(row):
         game_id = str(row.get("game_id") or "")
         game = completed.get(game_id)
         if game is None:
-            continue
+            return
         kickoff = _parse_time(game.get("kickoff"))
         if kickoff is None:
-            continue
+            return
         if _truthy(row.get("play_deleted")) or _truthy(row.get("aborted_play")):
-            continue
+            return
         offense = str(row.get("posteam") or "").strip().upper()
         defense = str(row.get("defteam") or "").strip().upper()
         epa = _number(row, "epa")
@@ -167,7 +168,7 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
         fumble_lost = _number(row, "fumble_lost")
         third_converted = _truthy(row.get("third_down_converted"))
         fourth_converted = _truthy(row.get("fourth_down_converted"))
-
+        
         def new_bucket():
             return {
                 "kickoff": kickoff, "epa_sum": 0.0, "epa_n": 0,
@@ -182,7 +183,7 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                 "fumbles_lost_n": 0, "fumbles_lost_total": 0,
                 "turnover_data_n": 0,
             }
-
+        
         if offense:
             bucket = pbp_history.setdefault((offense, game_id), new_bucket())
             bucket["plays_n"] += 1
@@ -220,7 +221,7 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                 bucket["fumbles_lost_n"] += 1
                 bucket["fumbles_lost_total"] += int(fumble_lost > 0)
                 bucket["turnover_data_n"] += 1
-
+        
         if defense:
             bucket = pbp_history.setdefault(("DEF:" + defense, game_id), new_bucket())
             if epa is not None:
@@ -246,6 +247,24 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             if fumble_lost is not None:
                 bucket["fumbles_lost_n"] += 1
                 bucket["turnover_data_n"] += 1
+        
+
+    try:
+        pbp_row_count, pbp_columns = _download_rows(
+            session, PBP_URL.format(season=season),
+            row_handler=process_pbp_row,
+        )
+        sources.append({
+            "key": "play_by_play", "available": True,
+            "rows": pbp_row_count, "columns": len(pbp_columns), "error": None,
+        })
+    except Exception as exc:
+        pbp_history = {}
+        sources.append({
+            "key": "play_by_play", "available": False,
+            "rows": 0, "columns": 0,
+            "error": f"{type(exc).__name__}: {str(exc)[:240]}",
+        })
 
     targets = [
         game for game in games
