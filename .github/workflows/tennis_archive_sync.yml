@@ -1,0 +1,39 @@
+name: Tennis Historical Archive Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: "Primer año a importar (2021 para la carga completa)"
+        required: true
+        default: "2021"
+      end_year:
+        description: "Último año a importar"
+        required: true
+        default: "2026"
+  schedule:
+    - cron: "37 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Import ATP/WTA results into Supabase
+        env:
+          SUPABASE_URL: \${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: \${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TENNIS_ARCHIVE_START_YEAR: \${{ github.event.inputs.start_year || '' }}
+          TENNIS_ARCHIVE_END_YEAR: \${{ github.event.inputs.end_year || '' }}
+        run: python sync_tennis_archive.py
