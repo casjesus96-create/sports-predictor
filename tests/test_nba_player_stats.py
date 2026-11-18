@@ -1,3 +1,4 @@
+import pytest
 from nba_player_stats import parse_player_boxscore
 
 
@@ -137,9 +138,6 @@ def test_parse_player_boxscore_merges_non_conflicting_partial_stat_groups():
     assert player["blocks"] == 1
     assert player["steals"] == 2
     assert player["stat_conflicts"] == []
-
-
-import pytest
 
 
 @pytest.mark.parametrize("raw_value", ["NaN", "Infinity", "-Infinity", "-1", "-0.5"])
