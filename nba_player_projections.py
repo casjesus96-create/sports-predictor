@@ -83,9 +83,13 @@ def aggregate_player_projections(game_reports, team_histories, max_games=30):
                 # Preserve season metadata to disclose when a rolling sample
                 # crosses regular-season or playoff boundaries.
                 game_context_by_id[game_id] = {
-                    "season": game.get("season"),
-                    "season_type": game.get("season_type"),
-                    "season_type_name": game.get("season_type_name"),
+                    key: value
+                    for key, value in (
+                        ("season", game.get("season")),
+                        ("season_type", game.get("season_type")),
+                        ("season_type_name", game.get("season_type_name")),
+                    )
+                    if value is not None and value != ""
                 }
 
     for game_id, report in (game_reports or {}).items():
