@@ -45,12 +45,12 @@ OPENFOOTBALL_COMPETITIONS = {
 }
 
 _DATE_LINE = re.compile(
-    r"^\\s{2,}(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\\s+"
-    r"([A-Za-z]{3})\\s+(\\d{1,2})(?:\\s+(\\d{4}))?\\s*$"
+    r"^\s{2,}(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+"
+    r"([A-Za-z]{3})\s+(\d{1,2})(?:\s+(\d{4}))?\s*$"
 )
 _MATCH_LINE = re.compile(
-    r"^\\s*(?:\\d{1,2}:\\d{2}\\s+)?(.+?)\\s+v\\s+(.+?)\\s+"
-    r"(\\d{1,2})-(\\d{1,2})(?:\\s|$)"
+    r"^\s*(?:\d{1,2}:\d{2}\s+)?(.+?)\s+v\s+(.+?)\s+"
+    r"(\d{1,2})-(\d{1,2})(?:\s|$)"
 )
 
 
@@ -108,8 +108,8 @@ def parse_openfootball_matches(
         away_name = away_name.strip()
         # Country tags in international fixtures are source annotations, not
         # part of the club identity used by the archive.
-        home_name = re.sub(r"\\s+\\([A-Z]{3}\\)$", "", home_name).strip()
-        away_name = re.sub(r"\\s+\\([A-Z]{3}\\)$", "", away_name).strip()
+        home_name = re.sub(r"\s+\([A-Z]{3}\)$", "", home_name).strip()
+        away_name = re.sub(r"\s+\([A-Z]{3}\)$", "", away_name).strip()
         home_score, away_score = int(home_raw), int(away_raw)
         home_key, away_key = normalize_team_key(home_name), normalize_team_key(away_name)
         if (
