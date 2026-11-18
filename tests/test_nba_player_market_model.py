@@ -246,3 +246,16 @@ def test_boolean_line_is_rejected(line):
     result = evaluate_over_under([10, 11, 12, 13, 14], line)
     assert result["available"] is False
     assert result["reason"] == "INVALID_LINE_OR_MINIMUM"
+
+
+@pytest.mark.parametrize("value", [0, -1, 5.9, float("nan"), float("inf"), "5.9"])
+def test_non_positive_or_fractional_minimum_sample_is_rejected(value):
+    result = evaluate_over_under([10, 11, 12, 13, 14], 10, min_sample=value)
+    assert result["available"] is False
+    assert result["reason"] == "INVALID_LINE_OR_MINIMUM"
+
+
+def test_integer_string_minimum_sample_remains_supported():
+    result = evaluate_over_under([10, 11, 12, 13, 14], 10, min_sample="5")
+    assert result["available"] is True
+    assert result["minimum_sample"] == 5
