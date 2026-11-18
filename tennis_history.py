@@ -204,15 +204,26 @@ def get_player_profile(
     first_year = (cutoff - timedelta(days=int(lookback_days))).year
     rows: list[tuple[date, dict[str, str]]] = []
     years_available: list[int] = []
+    source_dates: list[date] = []
     for year in range(first_year, cutoff.year + 1):
         annual_rows = load_year(league, year)
         if annual_rows:
             years_available.append(year)
         for row in annual_rows:
             played_on = _match_date(row)
+            if played_on and played_on < cutoff:
+                source_dates.append(played_on)
             if played_on and cutoff - timedelta(days=int(lookback_days)) <= played_on < cutoff:
                 rows.append((played_on, row))
     rows.sort(key=lambda item: (item[0], str(item[1].get("tourney_id") or ""), str(item[1].get("match_num") or "")))
+    latest_source_match_date = max(source_dates) if source_dates else None
+    source_data_age_days = (cutoff - latest_source_match_date).days if latest_source_match_date else None
+    source_freshness_status = (
+        "unknown" if source_data_age_days is None
+        else "current" if source_data_age_days <= 45
+        else "delayed" if source_data_age_days <= 90
+        else "stale"
+    )
 
     target = normalize_player_name(player_name)
     matching_names = set()
@@ -306,12 +317,18 @@ def get_player_profile(
             "annual_files_available": years_available,
             "matches_found": len(player_matches),
             "matches_with_service_stats": _aggregate_service_stats(recent_service)["matches_with_service_stats"],
+            "latest_match_date_in_source": latest_source_match_date.isoformat() if latest_source_match_date else None,
+            "source_data_age_days": source_data_age_days,
+            "source_freshness_status": source_freshness_status,
             "source": f"Jeff Sackmann {league} historical match CSVs",
             "source_url": SOURCE_REPOSITORY_URLS[league],
             "upstream_provenance_url": UPSTREAM_PROVENANCE_URLS[league],
             "warning": (
                 "Las estadísticas de servicio no están disponibles para todos los partidos. "
                 "El perfil solo cubre los archivos anuales accesibles y el periodo solicitado."
+                + (f" El último resultado presente en los archivos consultados es del {latest_source_match_date.isoformat()} "
+                   f"({source_data_age_days} días antes del corte); la cobertura histórica está desactualizada."
+                   if source_freshness_status == "stale" else "")
             ),
         },
     }
