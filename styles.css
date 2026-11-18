@@ -1141,3 +1141,106 @@ button:disabled{cursor:not-allowed;opacity:.55}
   content-visibility:auto;
   contain-intrinsic-size:1px 1100px;
 }
+
+
+/* NBA player markets: collapsed by default and expanded on demand. */
+.nba-market-accordion {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 14px;
+  border: 1px solid #35516a;
+  border-radius: 11px;
+  background: #0d1d2d;
+  overflow: hidden;
+}
+.nba-market-accordion,
+.nba-market-accordion * {
+  box-sizing: border-box;
+}
+.nba-market-accordion-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 11px 13px;
+  cursor: pointer;
+  list-style: none;
+}
+.nba-market-accordion-summary::-webkit-details-marker { display: none; }
+.nba-market-accordion-summary > span:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.nba-market-accordion-summary strong {
+  color: #edf5fc;
+  font-size: .9rem;
+  overflow-wrap: anywhere;
+}
+.nba-market-accordion-summary small {
+  color: #9fb3c8;
+  font-size: .73rem;
+  line-height: 1.4;
+}
+.nba-market-accordion-indicator {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #46627b;
+  border-radius: 50%;
+  color: #e2eaf2;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.nba-market-accordion[open] .nba-market-accordion-indicator { font-size: 0; }
+.nba-market-accordion[open] .nba-market-accordion-indicator::after { content: "−"; font-size: 1.15rem; }
+.nba-market-accordion-content {
+  min-width: 0;
+  padding: 0 12px 12px;
+  border-top: 1px solid #294056;
+}
+.nba-market-grid,
+.nba-market-grid > *,
+.nba-market-card,
+.nba-market-card > * {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.nba-market-card {
+  padding: 12px !important;
+  overflow: hidden;
+}
+.nba-market-card table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+.nba-market-card th,
+.nba-market-card td {
+  padding: 8px 9px;
+  border-bottom: 1px solid #35516a;
+  text-align: left;
+  vertical-align: middle;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.nba-market-card th { color: #b8cadb; font-size: .72rem; }
+.nba-market-card td { color: #e2eaf2; font-size: .76rem; }
+.nba-market-card tr:last-child td { border-bottom: 0; }
+.nba-market-card details > summary {
+  cursor: pointer;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .nba-market-accordion-summary { padding: 10px 11px; }
+  .nba-market-accordion-content { padding: 0 9px 10px; }
+  .nba-market-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .nba-market-card { padding: 10px !important; }
+  .nba-market-card th,
+  .nba-market-card td { padding: 7px 6px; }
+}
