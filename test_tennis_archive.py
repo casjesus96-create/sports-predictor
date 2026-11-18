@@ -36,6 +36,7 @@ def test_build_match_payload_preserves_exact_date_surface_and_provenance():
     assert payload["match_date"] == "2026-11-17"
     assert payload["match_datetime_utc"] == "2026-11-17T14:30:00+00:00"
     assert payload["surface"] == "Hard"
+    assert payload["surface_detail"] == "Hard"
     assert payload["winner_id"] == "101"
     assert payload["source_license"] == "CC BY 4.0"
     assert "Valuebetennis" in payload["source_attribution"]
@@ -79,3 +80,12 @@ def test_resolve_year_range_defaults_and_manual_full_backfill():
 
     assert resolve_year_range(current_year=2026) == (2025, 2026)
     assert resolve_year_range("2021", "2026", 2026) == (2021, 2026)
+
+
+def test_indoor_hard_is_grouped_as_hard_but_raw_label_is_preserved():
+    payload = archive.build_match_payload(
+        row(surface="I.hard"),
+        "2026-11-18T00:00:00+00:00",
+    )
+    assert payload["surface"] == "Hard"
+    assert payload["surface_detail"] == "I.hard"
