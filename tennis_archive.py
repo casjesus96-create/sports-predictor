@@ -9,8 +9,9 @@ model. The source attribution is stored on every imported row.
 from __future__ import annotations
 
 import logging
-import os
-from datetime import date, datetime, timezone
+import re
+import unicodedata
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from repository import get_supabase_client
@@ -106,8 +107,10 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
         "round_code": _optional_nonnegative_int(row.get("tour")),
         "player1_id": player1_id,
         "player1_name": player1_name,
+        "player1_name_key": normalize_player_name(player1_name),
         "player2_id": player2_id,
         "player2_name": player2_name,
+        "player2_name_key": normalize_player_name(player2_name),
         "winner_id": winner_id,
         "score": str(row.get("score") or "").strip()[:100] or None,
         "duration_minutes": _optional_nonnegative_int(row.get("duree_min")),
@@ -223,4 +226,209 @@ def sync_tennis_archive(
         **totals,
         "by_year": by_year,
         "errors": errors[:20],
+    }
+
+
+def normalize_player_name(value: Any) -> str:
+    """Normalize names conservatively for exact-key lookup, never fuzzy-match."""
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    ascii_name = "".join(char for char in normalized if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", " ", ascii_name.casefold()).strip()
+
+
+def get_player_archive_profile(
+    player_name: str,
+    league: str,
+    cutoff_date: date,
+    lookback_days: int,
+    surface: str | None = None,
+) -> dict[str, Any] | None:
+    """Read exact-date player form from the persisted, source-attributed archive.
+
+    Returns None when the archive is not yet installed/populated so callers
+    can preserve the legacy read path. Ambiguous name-to-ID matches are flagged
+    and are never combined into one player's profile.
+    """
+    target = normalize_player_name(player_name)
+    selected_league = str(league or "").strip().upper()
+    if not target or selected_league not in SUPPORTED_LEAGUES:
+        return None
+
+    client = get_supabase_client()
+    start = cutoff_date - timedelta(days=int(lookback_days))
+    columns = (
+        "source_match_id,match_date,match_datetime_utc,tournament,category,surface,"
+        "round_code,player1_id,player1_name,player1_name_key,player2_id,"
+        "player2_name,player2_name_key,winner_id,score"
+    )
+    first = (
+        client.table(TABLE).select(columns)
+        .eq("league", selected_league)
+        .eq("player1_name_key", target)
+        .gte("match_date", start.isoformat())
+        .lt("match_date", cutoff_date.isoformat())
+        .order("match_date", desc=False).limit(1000).execute()
+    ).data or []
+    second = (
+        client.table(TABLE).select(columns)
+        .eq("league", selected_league)
+        .eq("player2_name_key", target)
+        .gte("match_date", start.isoformat())
+        .lt("match_date", cutoff_date.isoformat())
+        .order("match_date", desc=False).limit(1000).execute()
+    ).data or []
+
+    unique: dict[str, dict[str, Any]] = {}
+    for row in first + second:
+        unique[str(row.get("source_match_id") or "")] = row
+    rows = list(unique.values())
+    eligible = {"main tour", "masters", "grand chelem", "grand slam"}
+    rows = [
+        row for row in rows
+        if str(row.get("category") or "").strip().casefold() in eligible
+    ]
+    if not rows:
+        return None
+
+    player_ids = set()
+    for row in rows:
+        if row.get("player1_name_key") == target:
+            player_ids.add(str(row.get("player1_id") or ""))
+        if row.get("player2_name_key") == target:
+            player_ids.add(str(row.get("player2_id") or ""))
+    player_ids.discard("")
+    if len(player_ids) != 1:
+        return {"identity_ambiguous": True}
+
+    player_id = next(iter(player_ids))
+    rows.sort(key=lambda row: (
+        str(row.get("match_date") or ""),
+        str(row.get("match_datetime_utc") or ""),
+        str(row.get("source_match_id") or ""),
+    ))
+    matches = []
+    for row in rows:
+        side = (
+            "player1" if str(row.get("player1_id") or "") == player_id
+            else "player2" if str(row.get("player2_id") or "") == player_id
+            else None
+        )
+        if side is None:
+            continue
+        opponent_side = "player2" if side == "player1" else "player1"
+        winner = str(row.get("winner_id") or "")
+        is_walkover = bool(re.search(
+            r"\bW\s*/?\s*O\b|\bWALKOVER\b",
+            str(row.get("score") or ""),
+            re.IGNORECASE,
+        ))
+        matches.append({
+            "date": str(row.get("match_date")),
+            "date_precision": "exact_match_date",
+            "is_walkover": is_walkover,
+            "tournament": row.get("tournament"),
+            "category": row.get("category"),
+            "opponent": str(row.get(f"{opponent_side}_name") or "Desconocido"),
+            "result": "W" if winner == player_id else "L",
+            "score": str(row.get("score") or "").strip() or None,
+            "surface": row.get("surface"),
+            "round": str(row.get("round_code")) if row.get("round_code") is not None else None,
+        })
+
+    if not matches:
+        return None
+
+    def summarize(sample):
+        wins = sum(item["result"] == "W" for item in sample)
+        losses = len(sample) - wins
+        return {
+            "matches": len(sample),
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(wins / len(sample), 4) if sample else None,
+        }
+
+    last_5 = matches[-5:]
+    last_10 = matches[-10:]
+    last_played = date.fromisoformat(matches[-1]["date"])
+    selected = [item for item in matches if not surface or item["surface"] == surface]
+    surface_wins = sum(item["result"] == "W" for item in selected)
+
+    latest_result = (
+        client.table(TABLE).select("match_date")
+        .eq("league", selected_league)
+        .lt("match_date", cutoff_date.isoformat())
+        .order("match_date", desc=True).limit(1).execute()
+    ).data or []
+    latest_source_date = (
+        date.fromisoformat(str(latest_result[0]["match_date"])[:10])
+        if latest_result else None
+    )
+    source_age = (cutoff_date - latest_source_date).days if latest_source_date else None
+    freshness = (
+        "unknown" if source_age is None
+        else "current" if source_age <= 45
+        else "delayed" if source_age <= 90
+        else "stale"
+    )
+
+    return {
+        "success": True,
+        "league": selected_league,
+        "player_name": player_name,
+        "cutoff_date_exclusive": cutoff_date.isoformat(),
+        "lookback_days": int(lookback_days),
+        "matches_in_window": len(matches),
+        "wins_in_window": sum(item["result"] == "W" for item in matches),
+        "losses_in_window": sum(item["result"] == "L" for item in matches),
+        "win_rate": round(
+            sum(item["result"] == "W" for item in matches) / len(matches), 4
+        ),
+        "last_5": summarize(last_5),
+        "last_10": summarize(last_10),
+        "recent_matches": list(reversed(matches[-10:])),
+        "surface_window": {
+            "matches": len(selected),
+            "wins": surface_wins,
+            "losses": len(selected) - surface_wins,
+            "win_rate": round(surface_wins / len(selected), 4) if selected else None,
+        },
+        "ranking_latest_in_window": None,
+        "days_since_last_match": (cutoff_date - last_played).days,
+        "workload_matches_last_7_days": sum(
+            date.fromisoformat(item["date"]) >= cutoff_date - timedelta(days=7)
+            for item in matches
+        ),
+        "workload_matches_last_14_days": sum(
+            date.fromisoformat(item["date"]) >= cutoff_date - timedelta(days=14)
+            for item in matches
+        ),
+        "service_return_stats_last_10_matches": {
+            "matches_with_service_stats": 0,
+            "aces_total": None,
+            "double_faults_total": None,
+            "aces_per_match": None,
+            "double_faults_per_match": None,
+            "first_serve_in_pct": None,
+            "first_serve_points_won_pct": None,
+            "second_serve_points_won_pct": None,
+            "break_points_saved_pct": None,
+        },
+        "data_quality": {
+            "annual_files_available": [],
+            "matches_found": len(matches),
+            "matches_with_service_stats": 0,
+            "latest_match_date_in_source": latest_source_date.isoformat() if latest_source_date else None,
+            "source_data_age_days": source_age,
+            "source_freshness_status": freshness,
+            "source_freshness_thresholds_days": {"current_max": 45, "delayed_max": 90},
+            "source": "Valuebetennis ATP/WTA historical match CSV",
+            "source_url": "https://www.valuebetennis.com/donnees.htm",
+            "source_license": SOURCE_LICENSE,
+            "source_attribution": SOURCE_ATTRIBUTION,
+            "warning": (
+                "Perfil actualizado con fechas exactas y superficie desde Valuebetennis. "
+                "Esta fuente no publica estadísticas de saque; no se estiman ni se rellenan."
+            ),
+        },
     }
