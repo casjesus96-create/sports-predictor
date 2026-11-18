@@ -110,3 +110,35 @@ def test_blends_equal_general_when_all_surface_rows_fallback():
 def test_rejects_period_over_366_days():
     with pytest.raises(ValueError):
         evaluate_surface_rows([], "2023-01-01", "2024-01-02")
+
+
+
+def test_exact_duplicate_matches_are_excluded_before_elo_updates_and_evaluation():
+    original = match("20240101", "A", "B", "Hard")
+    duplicate = deepcopy(original)
+    later = match("20240102", "A", "B", "Hard")
+
+    result = evaluate_surface_rows(
+        [original, duplicate, later],
+        "2024-01-02",
+        "2024-01-02",
+        min_surface_matches=1,
+    )
+
+    assert result["data_quality"]["historical_rows_seen"] == 3
+    assert result["data_quality"]["duplicate_matches_excluded"] == 1
+    assert result["data_quality"]["valid_matches_used_for_rating_updates"] == 2
+    assert result["evaluation"]["general_elo"]["matches_evaluated"] == 1
+
+
+def test_duplicate_match_exclusion_is_independent_of_input_order():
+    original = match("20240101", "A", "B", "Hard")
+    duplicate = deepcopy(original)
+    rows = [original, duplicate, match("20240102", "B", "A", "Clay")]
+
+    first = evaluate_surface_rows(rows, "2024-01-02", "2024-01-02")
+    second = evaluate_surface_rows(list(reversed(deepcopy(rows))), "2024-01-02", "2024-01-02")
+
+    assert first["evaluation"] == second["evaluation"]
+    assert first["data_quality"]["duplicate_matches_excluded"] == 1
+    assert second["data_quality"]["duplicate_matches_excluded"] == 1
