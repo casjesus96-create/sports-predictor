@@ -1244,3 +1244,303 @@ button:disabled{cursor:not-allowed;opacity:.55}
   .nba-market-card th,
   .nba-market-card td { padding: 7px 6px; }
 }
+
+
+/* NBA: contención real del layout y desplazamiento horizontal accesible. */
+.nba-app,
+.nba-app *,
+.nba-app *::before,
+.nba-app *::after {
+  box-sizing: border-box;
+}
+
+.nba-app {
+  width: 100%;
+  max-width: 1250px;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.nba-app .content-grid,
+.nba-app .games-list,
+.nba-app .game-card,
+.nba-app .panel,
+.nba-app .metrics-grid,
+.nba-app .analysis-content,
+.nba-app .analysis-teams,
+.nba-app .nba-market-accordion,
+.nba-app .nba-market-grid,
+.nba-app .nba-market-card,
+.nba-app .side-column,
+.nba-app .detail-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.nba-app h1,
+.nba-app h2,
+.nba-app h3,
+.nba-app h4,
+.nba-app p,
+.nba-app label,
+.nba-app small,
+.nba-app summary,
+.nba-app .muted,
+.nba-app .game-meta,
+.nba-app .section-heading,
+.nba-app .game-head,
+.nba-app .matchup strong,
+.nba-app .score-row span,
+.nba-app .score-row b,
+.nba-app .nba-market-card span,
+.nba-app .nba-market-card small {
+  min-width: 0;
+  max-width: 100%;
+  word-break: normal;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.nba-app .game-head,
+.nba-app .section-heading,
+.nba-app .toolbar,
+.nba-app .toolbar-actions,
+.nba-app .model-note,
+.nba-app .score-row,
+.nba-app .quality {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nba-app .toolbar > *,
+.nba-app .toolbar label,
+.nba-app .toolbar-actions > *,
+.nba-app .game-head > *,
+.nba-app .section-heading > *,
+.nba-app .score-row > *,
+.nba-app .model-note > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.nba-app .score-row {
+  align-items: flex-start;
+}
+
+.nba-app .score-row span {
+  flex: 1 1 130px;
+}
+
+.nba-app .score-row b {
+  flex: 0 1 auto;
+  text-align: right;
+  white-space: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.nba-app .matchup {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.nba-app .matchup > div {
+  min-width: 0;
+}
+
+.nba-app .matchup strong {
+  line-height: 1.3;
+}
+
+.nba-app .prediction-strip,
+.nba-app .factor-grid,
+.nba-app .prob-grid,
+.nba-app .analysis-teams {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.nba-app .prediction-strip > *,
+.nba-app .factor-grid > *,
+.nba-app .prob-grid > *,
+.nba-app .analysis-teams > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.nba-app .nba-market-accordion-summary {
+  min-width: 0;
+}
+
+.nba-app .nba-market-accordion-summary > span:first-child {
+  flex: 1 1 auto;
+}
+
+.nba-app .nba-market-accordion-summary small {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.nba-app .nba-market-card {
+  overflow: hidden;
+}
+
+.nba-app .nba-market-card > div,
+.nba-app .nba-market-card > label,
+.nba-app .nba-market-card .panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.nba-app .nba-market-card table {
+  width: max-content;
+  min-width: 610px;
+  max-width: none;
+  table-layout: auto;
+}
+
+.nba-app .nba-market-table-scroll,
+.nba-app [style*="overflowX: auto"] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.nba-app .nba-market-table-scroll table,
+.nba-app [style*="overflowX: auto"] table {
+  margin: 0;
+}
+
+.nba-app button,
+.nba-app input,
+.nba-app select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.nba-app button {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.nba-app input {
+  width: 100%;
+}
+
+@media (max-width: 700px) {
+  .nba-app .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nba-app .side-column {
+    order: initial;
+  }
+
+  .nba-app .analysis-teams {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nba-app .nba-market-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .nba-app {
+    padding-left: 11px;
+    padding-right: 11px;
+  }
+
+  .nba-app .metrics-grid,
+  .nba-app .prediction-strip,
+  .nba-app .factor-grid,
+  .nba-app .prob-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nba-app .game-card,
+  .nba-app .panel,
+  .nba-app .nba-market-card {
+    max-width: 100%;
+  }
+
+  .nba-app .game-card {
+    padding: 12px;
+  }
+
+  .nba-app .nba-market-accordion-content {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .nba-app .nba-market-card {
+    padding: 10px !important;
+  }
+
+  .nba-app .nba-market-card th,
+  .nba-app .nba-market-card td {
+    padding: 8px 9px;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  .nba-app .score-row span {
+    flex-basis: 110px;
+  }
+
+  .nba-app .score-row b {
+    max-width: 58%;
+  }
+
+  .nba-app .toolbar-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nba-app .model-note {
+    align-items: flex-start;
+  }
+
+  .nba-app .model-note span {
+    text-align: left;
+  }
+}
+
+@media (max-width: 400px) {
+  .nba-app .matchup {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .nba-app .home-team {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .nba-app .matchup .vs {
+    display: none;
+  }
+
+  .nba-app .metrics-grid,
+  .nba-app .prediction-strip,
+  .nba-app .factor-grid,
+  .nba-app .prob-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nba-app .score-row {
+    gap: 5px;
+  }
+
+  .nba-app .score-row span {
+    flex-basis: 100%;
+  }
+
+  .nba-app .score-row b {
+    max-width: 100%;
+    text-align: left;
+  }
+}
