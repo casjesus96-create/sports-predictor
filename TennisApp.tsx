@@ -46,6 +46,8 @@ type HistoricalProfile = {
   };
   recent_matches: Array<{
     date: string;
+    date_precision: "tournament_start_date";
+    is_walkover: boolean;
     tournament: string | null;
     opponent: string;
     result: "W" | "L";
@@ -1346,7 +1348,7 @@ export default function TennisApp() {
                       { label: "Cobertura de estadísticas de saque (últimos 10)", value: formatCoverage(service.matches_with_service_stats, profile.last_10.matches) },
                       { label: "Victorias en muestra filtrada", value: `${profile.surface_window.wins} / ${profile.surface_window.matches}` },
                       { label: "Último ranking observado", value: formatMetric(profile.ranking_latest_in_window) },
-                      { label: "Días desde último partido", value: formatMetric(profile.days_since_last_match) },
+                      { label: "Días desde inicio del último torneo registrado", value: formatMetric(profile.days_since_last_match) },
                       { label: "Partidos últimos 7 días", value: formatMetric(profile.workload_matches_last_7_days) },
                       { label: "Partidos últimos 14 días", value: formatMetric(profile.workload_matches_last_14_days) },
                       { label: "Aces por partido (últimos 10)", value: formatMetric(service.aces_per_match) },
@@ -1369,16 +1371,17 @@ export default function TennisApp() {
                           ))}
                         </div>
                         <div style={{ marginTop: 12, border: "1px solid #29445b", borderRadius: 8, padding: 10, background: "#0b1b2c" }}>
-                          <strong style={{ fontSize: 12 }}>Últimos partidos · muestra cronológica</strong>
+                          <strong style={{ fontSize: 12 }}>Últimos encuentros · ordenados por fecha del torneo</strong>
+                          <p style={{ margin: "5px 0", color: "#b7c8d8", fontSize: 10 }}>La fuente histórica solo proporciona la fecha de inicio del torneo, no el día exacto de cada partido. Los walkovers cuentan en el balance, pero no en las estadísticas de saque.</p>
                           {profile.recent_matches.length ? (
                             <div style={{ overflowX: "auto", marginTop: 7 }}>
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 360 }}>
-                                <thead><tr style={{ color: "#b7c8d8", textAlign: "left" }}><th style={{ padding: 5 }}>Fecha</th><th style={{ padding: 5 }}>Rival</th><th style={{ padding: 5 }}>Resultado</th><th style={{ padding: 5 }}>Marcador</th><th style={{ padding: 5 }}>Pista</th></tr></thead>
+                                <thead><tr style={{ color: "#b7c8d8", textAlign: "left" }}><th style={{ padding: 5 }}>Inicio del torneo</th><th style={{ padding: 5 }}>Rival</th><th style={{ padding: 5 }}>Resultado</th><th style={{ padding: 5 }}>Marcador</th><th style={{ padding: 5 }}>Pista</th></tr></thead>
                                 <tbody>{profile.recent_matches.map((item, index) => (
                                   <tr key={`${item.date}-${item.opponent}-${index}`} style={{ borderTop: "1px solid #29445b" }}>
                                     <td style={{ padding: 5, whiteSpace: "nowrap" }}>{item.date}</td>
                                     <td style={{ padding: 5 }}>{item.opponent}</td>
-                                    <td style={{ padding: 5, color: item.result === "W" ? "#5eead4" : "#fca5a5", fontWeight: 800 }}>{item.result === "W" ? "Victoria" : "Derrota"}</td>
+                                    <td style={{ padding: 5, color: item.result === "W" ? "#5eead4" : "#fca5a5", fontWeight: 800 }}>{item.result === "W" ? (item.is_walkover ? "Victoria · W/O" : "Victoria") : (item.is_walkover ? "Derrota · W/O" : "Derrota")}</td>
                                     <td style={{ padding: 5, whiteSpace: "nowrap" }}>{item.score || "—"}</td>
                                     <td style={{ padding: 5 }}>{item.surface || "—"}</td>
                                   </tr>
