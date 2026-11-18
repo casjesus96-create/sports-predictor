@@ -286,3 +286,37 @@ def test_player_market_coverage_requires_every_component_in_the_same_game():
         "PR": 2, "PA": 1, "RA": 2, "BLK": 3, "STL": 3,
     }
     assert len(player["market_history"]) == 3
+
+
+def test_player_market_history_preserves_season_and_season_type_context():
+    histories = {
+        "1": [{
+            "game_id": "playoff-game",
+            "home_team_id": "1",
+            "home": "Home",
+            "kickoff": "2026-05-01T00:00:00Z",
+            "completed": True,
+            "season": 2025,
+            "season_type": 3,
+            "season_type_name": "Playoffs",
+        }]
+    }
+    reports = {
+        "playoff-game": {
+            "available": True,
+            "teams": [{
+                "team_id": "1",
+                "players": [{
+                    "player_id": "p1", "name": "Player", "points": 24,
+                    "rebounds": 8, "assists": 5,
+                }],
+            }],
+        }
+    }
+
+    result = aggregate_player_projections(reports, histories)
+    record = result["teams"][0]["players"][0]["market_history"][0]
+
+    assert record["season"] == 2025
+    assert record["season_type"] == 3
+    assert record["season_type_name"] == "Playoffs"

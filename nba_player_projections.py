@@ -73,12 +73,24 @@ def aggregate_player_projections(game_reports, team_histories, max_games=30):
     team_game_ids = defaultdict(set)
     known_game_ids = set()
     kickoff_by_game = {}
+    game_context_by_id = {}
     for games in (team_histories or {}).values():
         for game in games or []:
             game_id = str(game.get("game_id") or "")
             if game_id:
                 known_game_ids.add(game_id)
                 kickoff_by_game[game_id] = _parse_datetime(game.get("kickoff"))
+                # Preserve season metadata to disclose when a rolling sample
+                # crosses regular-season or playoff boundaries.
+                game_context_by_id[game_id] = {
+                    key: value
+                    for key, value in (
+                        ("season", game.get("season")),
+                        ("season_type", game.get("season_type")),
+                        ("season_type_name", game.get("season_type_name")),
+                    )
+                    if value is not None and value != ""
+                }
 
     for game_id, report in (game_reports or {}).items():
         game_id = str(game_id)
@@ -158,6 +170,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=30):
                         "game_id": game_id,
                         "kickoff": record["kickoff"].isoformat() if record.get("kickoff") else None,
                         "completed": True,
+                        **game_context_by_id.get(game_id, {}),
                     })
                     market_record[stat_key] = record["value"]
             market_history = sorted(
