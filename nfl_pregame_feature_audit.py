@@ -37,13 +37,28 @@ def _truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "y"}
 
 
-def _download_rows(session, url):
-    response = session.get(url, timeout=TIMEOUT_SECONDS)
-    response.raise_for_status()
-    with gzip.GzipFile(fileobj=io.BytesIO(response.content), mode="rb") as zipped:
-        wrapper = io.TextIOWrapper(zipped, encoding="utf-8-sig", errors="replace")
-        reader = csv.DictReader(wrapper)
-        return list(reader), list(reader.fieldnames or [])
+def _download_rows(session, url, row_handler=None):
+    """Read a gzipped CSV incrementally; optionally aggregate rows without retaining them."""
+    response = session.get(url, timeout=TIMEOUT_SECONDS, stream=True)
+    try:
+        response.raise_for_status()
+        raw_stream = getattr(response, "raw", None)
+        source = raw_stream if raw_stream is not None else io.BytesIO(response.content)
+        with gzip.GzipFile(fileobj=source, mode="rb") as zipped:
+            wrapper = io.TextIOWrapper(zipped, encoding="utf-8-sig", errors="replace")
+            reader = csv.DictReader(wrapper)
+            columns = list(reader.fieldnames or [])
+            if row_handler is None:
+                return list(reader), columns
+            row_count = 0
+            for row in reader:
+                row_handler(row)
+                row_count += 1
+            return row_count, columns
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
 
 
 def _number(row, key):
@@ -105,15 +120,16 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
         })
 
     try:
-        pbp_rows, pbp_columns = _download_rows(
-            session, PBP_URL.format(season=season)
+        pbp_row_count, pbp_columns = _download_rows(
+            session, PBP_URL.format(season=season),
+            row_handler=process_pbp_row,
         )
         sources.append({
             "key": "play_by_play", "available": True,
-            "rows": len(pbp_rows), "columns": len(pbp_columns), "error": None,
+            "rows": pbp_row_count, "columns": len(pbp_columns), "error": None,
         })
     except Exception as exc:
-        pbp_rows, pbp_columns = [], []
+        pbp_history = {}
         sources.append({
             "key": "play_by_play", "available": False,
             "rows": 0, "columns": 0,
@@ -144,108 +160,110 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
         })
 
     pbp_history = {}
-    for row in pbp_rows:
-        game_id = str(row.get("game_id") or "")
-        game = completed.get(game_id)
-        if game is None:
-            continue
-        kickoff = _parse_time(game.get("kickoff"))
-        if kickoff is None:
-            continue
-        if _truthy(row.get("play_deleted")) or _truthy(row.get("aborted_play")):
-            continue
-        offense = str(row.get("posteam") or "").strip().upper()
-        defense = str(row.get("defteam") or "").strip().upper()
-        epa = _number(row, "epa")
-        success = _number(row, "success")
-        down = _number(row, "down")
-        yards = _number(row, "yards_gained")
-        pass_td = _number(row, "pass_touchdown")
-        rush_td = _number(row, "rush_touchdown")
-        sack = _number(row, "sack")
-        interception = _number(row, "interception")
-        fumble_lost = _number(row, "fumble_lost")
-        third_converted = _truthy(row.get("third_down_converted"))
-        fourth_converted = _truthy(row.get("fourth_down_converted"))
 
-        def new_bucket():
-            return {
-                "kickoff": kickoff, "epa_sum": 0.0, "epa_n": 0,
-                "success_n": 0, "success_yes": 0,
-                "third_n": 0, "third_yes": 0,
-                "fourth_n": 0, "fourth_yes": 0,
-                "yards_sum": 0.0, "yards_n": 0,
-                "game_id": game_id, "plays_n": 0, "pass_td_n": 0, "rush_td_n": 0, "td_data_n": 0,
-                "pass_td_total": 0, "rush_td_total": 0,
-                "sacks_n": 0, "sacks_total": 0,
-                "interceptions_n": 0, "interceptions_total": 0,
-                "fumbles_lost_n": 0, "fumbles_lost_total": 0,
-                "turnover_data_n": 0,
-            }
-
-        if offense:
-            bucket = pbp_history.setdefault((offense, game_id), new_bucket())
-            bucket["plays_n"] += 1
-            if epa is not None:
-                bucket["epa_sum"] += epa
-                bucket["epa_n"] += 1
-            if success is not None:
-                bucket["success_n"] += 1
-                bucket["success_yes"] += int(success > 0)
-            if yards is not None:
-                bucket["yards_sum"] += yards
-                bucket["yards_n"] += 1
-            if down == 3:
-                bucket["third_n"] += 1
-                bucket["third_yes"] += int(third_converted)
-            if down == 4:
-                bucket["fourth_n"] += 1
-                bucket["fourth_yes"] += int(fourth_converted)
-            if pass_td is not None:
-                bucket["pass_td_n"] += 1
-                bucket["pass_td_total"] += int(pass_td > 0)
-                bucket["td_data_n"] += 1
-            if rush_td is not None:
-                bucket["rush_td_n"] += 1
-                bucket["rush_td_total"] += int(rush_td > 0)
-                bucket["td_data_n"] += 1
-            if sack is not None:
-                bucket["sacks_n"] += 1
-                bucket["sacks_total"] += int(sack > 0)
-            if interception is not None:
-                bucket["interceptions_n"] += 1
-                bucket["interceptions_total"] += int(interception > 0)
-                bucket["turnover_data_n"] += 1
-            if fumble_lost is not None:
-                bucket["fumbles_lost_n"] += 1
-                bucket["fumbles_lost_total"] += int(fumble_lost > 0)
-                bucket["turnover_data_n"] += 1
-
-        if defense:
-            bucket = pbp_history.setdefault(("DEF:" + defense, game_id), new_bucket())
-            if epa is not None:
-                bucket["epa_sum"] += epa
-                bucket["epa_n"] += 1
-            if success is not None:
-                bucket["success_n"] += 1
-                bucket["success_yes"] += int(success > 0)
-            if yards is not None:
-                bucket["yards_sum"] += yards
-                bucket["yards_n"] += 1
-            if pass_td is not None:
-                bucket["pass_td_n"] += 1
-                bucket["td_data_n"] += 1
-            if rush_td is not None:
-                bucket["rush_td_n"] += 1
-                bucket["td_data_n"] += 1
-            if sack is not None:
-                bucket["sacks_n"] += 1
-            if interception is not None:
-                bucket["interceptions_n"] += 1
-                bucket["turnover_data_n"] += 1
-            if fumble_lost is not None:
-                bucket["fumbles_lost_n"] += 1
-                bucket["turnover_data_n"] += 1
+    def process_pbp_row(row):
+            game_id = str(row.get("game_id") or "")
+            game = completed.get(game_id)
+            if game is None:
+                continue
+            kickoff = _parse_time(game.get("kickoff"))
+            if kickoff is None:
+                continue
+            if _truthy(row.get("play_deleted")) or _truthy(row.get("aborted_play")):
+                continue
+            offense = str(row.get("posteam") or "").strip().upper()
+            defense = str(row.get("defteam") or "").strip().upper()
+            epa = _number(row, "epa")
+            success = _number(row, "success")
+            down = _number(row, "down")
+            yards = _number(row, "yards_gained")
+            pass_td = _number(row, "pass_touchdown")
+            rush_td = _number(row, "rush_touchdown")
+            sack = _number(row, "sack")
+            interception = _number(row, "interception")
+            fumble_lost = _number(row, "fumble_lost")
+            third_converted = _truthy(row.get("third_down_converted"))
+            fourth_converted = _truthy(row.get("fourth_down_converted"))
+        
+            def new_bucket():
+                return {
+                    "kickoff": kickoff, "epa_sum": 0.0, "epa_n": 0,
+                    "success_n": 0, "success_yes": 0,
+                    "third_n": 0, "third_yes": 0,
+                    "fourth_n": 0, "fourth_yes": 0,
+                    "yards_sum": 0.0, "yards_n": 0,
+                    "game_id": game_id, "plays_n": 0, "pass_td_n": 0, "rush_td_n": 0, "td_data_n": 0,
+                    "pass_td_total": 0, "rush_td_total": 0,
+                    "sacks_n": 0, "sacks_total": 0,
+                    "interceptions_n": 0, "interceptions_total": 0,
+                    "fumbles_lost_n": 0, "fumbles_lost_total": 0,
+                    "turnover_data_n": 0,
+                }
+        
+            if offense:
+                bucket = pbp_history.setdefault((offense, game_id), new_bucket())
+                bucket["plays_n"] += 1
+                if epa is not None:
+                    bucket["epa_sum"] += epa
+                    bucket["epa_n"] += 1
+                if success is not None:
+                    bucket["success_n"] += 1
+                    bucket["success_yes"] += int(success > 0)
+                if yards is not None:
+                    bucket["yards_sum"] += yards
+                    bucket["yards_n"] += 1
+                if down == 3:
+                    bucket["third_n"] += 1
+                    bucket["third_yes"] += int(third_converted)
+                if down == 4:
+                    bucket["fourth_n"] += 1
+                    bucket["fourth_yes"] += int(fourth_converted)
+                if pass_td is not None:
+                    bucket["pass_td_n"] += 1
+                    bucket["pass_td_total"] += int(pass_td > 0)
+                    bucket["td_data_n"] += 1
+                if rush_td is not None:
+                    bucket["rush_td_n"] += 1
+                    bucket["rush_td_total"] += int(rush_td > 0)
+                    bucket["td_data_n"] += 1
+                if sack is not None:
+                    bucket["sacks_n"] += 1
+                    bucket["sacks_total"] += int(sack > 0)
+                if interception is not None:
+                    bucket["interceptions_n"] += 1
+                    bucket["interceptions_total"] += int(interception > 0)
+                    bucket["turnover_data_n"] += 1
+                if fumble_lost is not None:
+                    bucket["fumbles_lost_n"] += 1
+                    bucket["fumbles_lost_total"] += int(fumble_lost > 0)
+                    bucket["turnover_data_n"] += 1
+        
+            if defense:
+                bucket = pbp_history.setdefault(("DEF:" + defense, game_id), new_bucket())
+                if epa is not None:
+                    bucket["epa_sum"] += epa
+                    bucket["epa_n"] += 1
+                if success is not None:
+                    bucket["success_n"] += 1
+                    bucket["success_yes"] += int(success > 0)
+                if yards is not None:
+                    bucket["yards_sum"] += yards
+                    bucket["yards_n"] += 1
+                if pass_td is not None:
+                    bucket["pass_td_n"] += 1
+                    bucket["td_data_n"] += 1
+                if rush_td is not None:
+                    bucket["rush_td_n"] += 1
+                    bucket["td_data_n"] += 1
+                if sack is not None:
+                    bucket["sacks_n"] += 1
+                if interception is not None:
+                    bucket["interceptions_n"] += 1
+                    bucket["turnover_data_n"] += 1
+                if fumble_lost is not None:
+                    bucket["fumbles_lost_n"] += 1
+                    bucket["turnover_data_n"] += 1
+        
 
     targets = [
         game for game in games
