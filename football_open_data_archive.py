@@ -28,15 +28,15 @@ MAX_SCORE = 30
 OPENFOOTBALL_COMPETITIONS = {
     "PPL": {
         "name": "Primeira Liga", "country": "Portugal", "first_year": 2018,
-        "source": "europe", "path": "portugal/{year}-{next_year}_pt1.txt",
+        "source": "europe", "path": "portugal/{year}-{next_year_short}_pt1.txt",
     },
     "DED": {
         "name": "Eredivisie", "country": "Netherlands", "first_year": 2018,
-        "source": "europe", "path": "netherlands/{year}-{next_year}_nl1.txt",
+        "source": "europe", "path": "netherlands/{year}-{next_year_short}_nl1.txt",
     },
     "CL": {
         "name": "UEFA Champions League", "country": "Europe", "first_year": 2011,
-        "source": "champions", "path": "{year}-{next_year}/cl.txt",
+        "source": "champions", "path": "{year}-{next_year_short}/cl.txt",
     },
     "BSA": {
         "name": "Brasileirão Série A", "country": "Brazil", "first_year": 2018,
@@ -56,7 +56,11 @@ _MATCH_LINE = re.compile(
 
 def _season_path(config: dict[str, Any], year: int) -> str:
     next_year = year + 1
-    return config["path"].format(year=year, next_year=next_year)
+    return config["path"].format(
+        year=year,
+        next_year=next_year,
+        next_year_short=str(next_year)[-2:],
+    )
 
 
 def _source_url(competition: str, year: int) -> str:
