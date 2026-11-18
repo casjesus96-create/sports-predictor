@@ -241,3 +241,7 @@ def test_import_excludes_non_model_competition_categories_explicitly():
     assert parsed["rows"] == []
     assert parsed["rows_excluded_category"] == 2
     assert parsed["rows_rejected"] == 0
+
+
+def test_archive_player_name_key_matches_profile_normalization_rules():
+    assert archive.normalize_player_name("João  &  Co.") == "joao and co"
