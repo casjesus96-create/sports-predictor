@@ -1096,12 +1096,18 @@ def archive_season_comparison(
     if not selected_season.isdigit():
         raise HTTPException(status_code=400, detail="La temporada debe usar el código de cuatro dígitos, por ejemplo 2526.")
 
-    start_short = int(selected_season[:2])
-    start_year = 2000 + start_short if start_short < 90 else 1900 + start_short
-    season_codes = [
-        f"{(start_year + offset) % 100:02d}{(start_year + offset + 1) % 100:02d}"
-        for offset in (-1, 0, 1)
-    ]
+    season_number = int(selected_season)
+    if 1900 <= season_number <= 2100:
+        # Calendar-year competitions such as Brasileirão store YYYY.
+        season_codes = [str(season_number + offset) for offset in (-1, 0, 1)]
+    else:
+        # European seasons retain the existing YYZZ convention (e.g. 2526).
+        start_short = int(selected_season[:2])
+        start_year = 2000 + start_short if start_short < 90 else 1900 + start_short
+        season_codes = [
+            f"{(start_year + offset) % 100:02d}{(start_year + offset + 1) % 100:02d}"
+            for offset in (-1, 0, 1)
+        ]
     client = _client_or_503()
     try:
         def read_sample(competition_code: str, season_code: str) -> list[dict[str, Any]]:
