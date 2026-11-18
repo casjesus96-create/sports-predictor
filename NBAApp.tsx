@@ -1261,7 +1261,7 @@ export default function NBAApp() {
                                                               <tbody>{sourceGames.map((record: any) => (
                                                                 <tr key={String(record.game_id) + ":" + stat}>
                                                                   <td>{new Date(record.kickoff).toLocaleDateString()}</td>
-                                                                  <td>{record.season_type_name || (record.season_type === 3 ? "Playoffs" : record.season_type === 2 ? "Regular" : "—")}{record.season ? ` · ${record.season}` : ""}</td>
+                                                                  <td>{record.season_type_name || (String(record.season_type) === "3" ? "Playoffs" : String(record.season_type) === "2" ? "Regular" : "—")}{record.season ? ` · ${record.season}` : ""}</td>
                                                                   <td><code>{record.game_id}</code></td>
                                                                   <td><b>{numberLabel(record[stat])}</b></td>
                                                                 </tr>
