@@ -1091,6 +1091,13 @@ export default function NBAApp() {
                                                                   <>
                                                                     <div className="score-row"><span>Historial válido disponible</span><b>{backtest.availableHistory}/30</b></div>
                                                                     <div className="score-row"><span>Muestra común para comparar ventanas</span><b>{backtest.comparisonSample}</b></div>
+                                                                    <small className="muted" style={{ display: "block", marginTop: 4 }}>
+                                                                      {backtest.comparisonSample === 0
+                                                                        ? `Falta(n) ${Math.max(0, 16 - backtest.availableHistory)} partido(s) válido(s) para iniciar la comparación común. Con 16 habrá 1 objetivo compartido; se necesitan 20 para llegar a N=5.`
+                                                                        : backtest.comparisonSample < 5
+                                                                          ? `Comparación iniciada con ${backtest.comparisonSample} objetivo(s) común(es). Faltan ${5 - backtest.comparisonSample} para alcanzar N=5; hacen falta ${Math.max(0, 20 - backtest.availableHistory)} partido(s) válido(s) adicional(es).`
+                                                                          : `Comparación común disponible: N=${backtest.comparisonSample}. Mantén presente que sigue siendo una muestra descriptiva.`}
+                                                                    </small>
                                                                     <div style={{ overflowX: "auto", marginTop: 6 }}>
                                                                       <table>
                                                                         <thead><tr><th>Ventana</th><th>Eval. propias</th><th>MAE común</th><th>Sesgo común</th><th>RMSE común</th><th>O / U / Push común</th></tr></thead>
