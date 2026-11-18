@@ -138,8 +138,13 @@ def parse_year_rows(
     """Build a unique batch; conflicting duplicate source IDs fail closed."""
     unique: dict[str, dict[str, Any]] = {}
     rejected = 0
+    excluded_category = 0
     duplicates = 0
     for row in rows:
+        category = str(row.get("categorie") or "").strip().casefold()
+        if category not in ELIGIBLE_CATEGORIES:
+            excluded_category += 1
+            continue
         payload = build_match_payload(row, imported_at)
         if payload is None:
             rejected += 1
@@ -163,6 +168,7 @@ def parse_year_rows(
         "rows": list(unique.values()),
         "rows_seen": len(rows),
         "rows_rejected": rejected,
+        "rows_excluded_category": excluded_category,
         "duplicate_rows": duplicates,
     }
 
@@ -186,6 +192,7 @@ def sync_tennis_archive(
         "rows_seen": 0,
         "valid_matches": 0,
         "rows_rejected": 0,
+        "rows_excluded_category": 0,
         "duplicate_rows": 0,
         "upserted_rows": 0,
         "failed_years": 0,
@@ -204,12 +211,14 @@ def sync_tennis_archive(
                 "valid_matches": len(payloads),
                 "rows_seen": parsed["rows_seen"],
                 "rows_rejected": parsed["rows_rejected"],
+                "rows_excluded_category": parsed["rows_excluded_category"],
                 "duplicate_rows": parsed["duplicate_rows"],
             })
             totals["years_loaded"] += 1
             totals["rows_seen"] += parsed["rows_seen"]
             totals["valid_matches"] += len(payloads)
             totals["rows_rejected"] += parsed["rows_rejected"]
+            totals["rows_excluded_category"] += parsed["rows_excluded_category"]
             totals["duplicate_rows"] += parsed["duplicate_rows"]
 
             for offset in range(0, len(payloads), UPSERT_BATCH_SIZE):
