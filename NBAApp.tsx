@@ -1263,7 +1263,9 @@ export default function NBAApp() {
                                                   })}
                                                 </details>
                                               </div>
-                                              <div style={{ marginTop: 1                                              <PlayerMarketLab player={player} />                          ))}
+                                              <PlayerMarketLab player={player} />
+                                            </article>
+                                          ))}
                                         </div>
                                       </div>
                                     ))}
