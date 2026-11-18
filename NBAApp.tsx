@@ -1,5 +1,5 @@
 import PercentageSignal from "./PercentageSignal";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 
 type Game = {
   game_id: string;
@@ -489,13 +489,160 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+
+type PlayerMarketLabProps = { player: any };
+
+/**
+ * Aísla el estado de las líneas manuales por jugador.
+ * React.memo evita reconstruir las tarjetas y sus evaluaciones cuando cambia
+ * una línea de otro jugador o se actualiza estado ajeno al laboratorio.
+ */
+const PlayerMarketLab = memo(function PlayerMarketLab({ player }: PlayerMarketLabProps) {
+  const [marketLines, setMarketLines] = useState<Record<string, string>>({});
+  return (
+                                              <div style={{ marginTop: 14 }}>
+                                                <b>Laboratorio Over / Under</b>
+                                                <p className="muted" style={{ margin: "4px 0 10px" }}>Introduce una línea manual. La evaluación usa los mismos partidos que puedes auditar debajo.</p>
+                                                <div className="nba-market-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))", gap: 9, minWidth: 0, width: "100%" }}>
+                                                  {["PTS", "REB", "AST", "PRA", "PR", "PA", "RA", "BLK", "STL"].map((market) => {
+                                                    const lineKey = String(player.player_id || player.name) + ":" + market;
+                                                    const line = marketLines[lineKey] || "";
+                                                    const recommendation = cachedRecommendedMarketLine(player.market_history, market);
+                                                    const evaluation = cachedMarketLineEvaluation(player.market_history, market, line);
+                                                    return (
+                                                      <section key={market} className="panel nba-market-card" style={{ padding: 10, minWidth: 0, width: "100%", boxSizing: "border-box", overflow: "hidden" }}>
+                                                        <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0 }}><b style={{ flex: "0 0 auto" }}>{market}</b><small className="muted" style={{ minWidth: 0, flex: "1 1 130px", overflowWrap: "anywhere", textAlign: "right" }}>{PLAYER_MARKET_DESCRIPTIONS[market]}</small></div>
+                                                        <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
+                                                          <div className="score-row"><span>Línea de referencia sugerida</span><b>{recommendation ? numberLabel(recommendation.line) : "No disponible"}</b></div>
+                                                          <small className="muted">{recommendation ? "Promedio últimos 5: " + numberLabel(recommendation.average) + " · N=" + recommendation.sample + ". Redondeo al medio punto más cercano." : "Se requieren 5 partidos válidos con todas las estadísticas de este mercado."}</small>
+                                                          {(() => {
+                                                            const backtest = cachedRecommendedLineBacktest(player.market_history, market);
+                                                            return (
+                                                              <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
+                                                                <b style={{ fontSize: 11 }}>Estabilidad cronológica por ventana</b>
+                                                                <small className="muted" style={{ display: "block", marginTop: 3 }}>Compara líneas calculadas con los 5, 10 y 15 partidos previos. Cada evaluación usa solo partidos anteriores al que se mide; no hay fuga de información.</small>
+                                                                {backtest && (
+                                                                  <>
+                                                                    <div className="score-row"><span>Historial válido disponible</span><b>{backtest.availableHistory}/30</b></div>
+                                                                    <div className="score-row"><span>Muestra común para comparar ventanas</span><b>{backtest.comparisonSample}</b></div>
+                                                                    <small className="muted" style={{ display: "block", marginTop: 4 }}>
+                                                                      {backtest.comparisonSample === 0
+                                                                        ? `Falta(n) ${Math.max(0, 16 - backtest.availableHistory)} partido(s) válido(s) para iniciar la comparación común. Con 16 habrá 1 objetivo compartido; se necesitan 20 para llegar a N=5.`
+                                                                        : backtest.comparisonSample < 5
+                                                                          ? `Comparación iniciada con ${backtest.comparisonSample} objetivo(s) común(es). Faltan ${5 - backtest.comparisonSample} para alcanzar N=5; hacen falta ${Math.max(0, 20 - backtest.availableHistory)} partido(s) válido(s) adicional(es).`
+                                                                          : `Comparación común disponible: N=${backtest.comparisonSample}. Mantén presente que sigue siendo una muestra descriptiva.`}
+                                                                    </small>
+                                                                    <div style={{ overflowX: "auto", marginTop: 6 }}>
+                                                                      <table>
+                                                                        <thead><tr><th>Ventana</th><th>Eval. propias</th><th>MAE común</th><th>Sesgo común</th><th>RMSE común</th><th>O / U / Push común</th></tr></thead>
+                                                                        <tbody>
+                                                                          {[5, 10, 15].map((windowSize) => {
+                                                                            const comparison = backtest.windowComparisons[String(windowSize)];
+                                                                            return <tr key={windowSize}>
+                                                                              <td>Últimos {windowSize}</td>
+                                                                              <td>{comparison.sample}</td>
+                                                                              <td>{comparison.comparisonMae == null ? "—" : numberLabel(comparison.comparisonMae)}</td>
+                                                                              <td>{comparison.comparisonBias == null ? "—" : numberLabel(comparison.comparisonBias)}</td>
+                                                                              <td>{comparison.comparisonRmse == null ? "—" : numberLabel(comparison.comparisonRmse)}</td>
+                                                                              <td>
+                                                                                O {comparison.comparisonOver} · U {comparison.comparisonUnder} · P {comparison.comparisonPush}
+                                                                                {comparison.comparisonSample >= 5 ? (
+                                                                                  <small className="muted" style={{ display: "block" }}>
+                                                                                    {((comparison.comparisonOver / comparison.comparisonSample) * 100).toFixed(0)}% / {((comparison.comparisonUnder / comparison.comparisonSample) * 100).toFixed(0)}% / {((comparison.comparisonPush / comparison.comparisonSample) * 100).toFixed(0)}%
+                                                                                  </small>
+                                                                                ) : <small className="muted" style={{ display: "block" }}>N pequeño</small>}
+                                                                              </td>
+                                                                            </tr>;
+                                                                          })}
+                                                                        </tbody>
+                                                                      </table>
+                                                                    </div>
+                                                                    <small className="muted" style={{ display: "block", marginTop: 5 }}>MAE, sesgo, RMSE y conteos O/U/Push usan exactamente los mismos partidos objetivo para las tres ventanas. Los porcentajes O/U/Push son frecuencias históricas descriptivas, no probabilidades futuras ni señales automáticas de apuesta; se muestran con porcentaje solo desde 5 casos comunes. “Eval. propias” conserva la muestra cronológica total de cada ventana. Se necesitan 16 partidos válidos para empezar a comparar; con 20, la muestra común es de 5.</small>
+                                                                  </>
+                                                                )}
+                                                                {backtest && backtest.evaluations.length > 0 && (
+                                                                  <details style={{ marginTop: 6 }}>
+                                                                    <summary>Ver evaluaciones cronológicas de ventana 5 ({backtest.sample})</summary>
+                                                                    <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
+                                                                      {backtest.evaluations.map((item) => <li key={item.game_id}>{new Date(item.kickoff).toLocaleDateString()} · línea {numberLabel(item.line)} · real {numberLabel(item.actual)} · error {item.error > 0 ? "+" : ""}{numberLabel(item.error)}</li>)}
+                                                                    </ul>
+                                                                  </details>
+                                                                )}
+                                                              </div>
+                                                            );
+                                                          })()}
+                                                          {recommendation && <button className="secondary" type="button" style={{ width: "100%", marginTop: 7 }} onClick={() => setMarketLines((current) => ({ ...current, [lineKey]: String(recommendation.line) }))}>Usar línea sugerida</button>}
+                                                        </div>
+                                                        <label style={{ display: "block", marginTop: 8 }}>
+                                                          <span className="muted">Línea personalizada</span>
+                                                          <input
+                                                            aria-label={player.name + " línea personalizada " + market + ": " + PLAYER_MARKET_DESCRIPTIONS[market]}
+                                                            type="number" min="0" step="0.5" inputMode="decimal" placeholder={recommendation ? String(recommendation.line) : "Ej. 24.5"}
+                                                            value={line}
+                                                            onChange={(event) => setMarketLines((current) => ({ ...current, [lineKey]: event.target.value }))}
+                                                            style={{ width: "100%", boxSizing: "border-box", marginTop: 3 }}
+                                                          />
+                                                        </label>
+                                                        {!evaluation ? (
+                                                          <p className="muted" style={{ marginBottom: 0 }}>Introduce una línea para evaluar.</p>
+                                                        ) : "error" in evaluation ? (
+                                                          <p className="muted">{evaluation.error}</p>
+                                                        ) : "insufficient" in evaluation ? (
+                                                          <div className="muted">
+                                                            <b>Prom. 5/10/15:</b> {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}
+                                                            <p style={{ margin: "5px 0" }}>Muestra: {evaluation.sample}/5 · Probabilidades no disponibles</p>
+                                                          </div>
+                                                        ) : (
+                                                          <div style={{ marginTop: 9 }}>
+                                                            <div className="nba-market-probabilities" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, minWidth: 0, width: "100%" }}>
+                                                              <div>
+                                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 4, minWidth: 0 }}><span>Over</span><b style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{(evaluation.overProbability * 100).toFixed(1)}%</b></div>
+                                                                <div style={{ height: 7, width: "100%", boxSizing: "border-box", background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, evaluation.overProbability * 100))}%`, maxWidth: "100%", background: "#16a34a", borderRadius: 99 }} /></div>
+                                                              </div>
+                                                              <div>
+                                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 4, minWidth: 0 }}><span>Under</span><b style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{(evaluation.underProbability * 100).toFixed(1)}%</b></div>
+                                                                <div style={{ height: 7, width: "100%", boxSizing: "border-box", background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, evaluation.underProbability * 100))}%`, maxWidth: "100%", background: "#64748b", borderRadius: 99 }} /></div>
+                                                              </div>
+                                                            </div>
+                                                            <small className="muted" style={{ display: "block", marginTop: 8 }}>Conteos: O {evaluation.over} · U {evaluation.under} · Push {evaluation.push} · N={evaluation.sample} · N decisivos={evaluation.over + evaluation.under}</small>
+                                                            <small className="muted" style={{ display: "block" }}>IC95% O {evaluation.overInterval ? `${(evaluation.overInterval[0] * 100).toFixed(1)}–${(evaluation.overInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
+                                                            <small className="muted" style={{ display: "block" }}>IC95% U {evaluation.underInterval ? `${(evaluation.underInterval[0] * 100).toFixed(1)}–${(evaluation.underInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
+                                                            <small className="muted" style={{ display: "block", marginTop: 5 }}>Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}</small>
+                                                            <small className="muted" style={{ display: "block" }}>Línea {evaluation.lineRelation} al promedio 15 ({numberLabel(evaluation.average15)}).</small>
+                                                            <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
+                                                              <b style={{ fontSize: 11 }}>Estabilidad al retirar un partido</b>
+                                                              <small className="muted" style={{ display: "block", marginTop: 3 }}>Se recalcula la ventaja histórica Over/Under retirando, uno por uno, cada juego de la muestra. No es una probabilidad futura.</small>
+                                                              <div className="score-row"><span>Lectura original</span><b>{evaluation.sensitivity.originalSide === "BALANCED" ? "Equilibrada" : evaluation.sensitivity.originalSide}</b></div>
+                                                              <div className="score-row"><span>Clasificación</span><b>{evaluation.sensitivity.status === "ROBUST" ? "Consistente" : evaluation.sensitivity.status === "SENSITIVE" ? "Sensible" : "Sin ventaja clara"}</b></div>
+                                                              {evaluation.sensitivity.consistencyRate !== null && <div className="score-row"><span>Mantiene la misma lectura</span><b>{(evaluation.sensitivity.consistencyRate * 100).toFixed(1)}% · {evaluation.sensitivity.matchingComparisons}/{evaluation.sensitivity.comparisons}</b></div>}
+                                                              <div className="score-row"><span>Rango Over tras retirar un juego</span><b>{evaluation.sensitivity.minimumOverRate === null || evaluation.sensitivity.maximumOverRate === null ? "—" : (evaluation.sensitivity.minimumOverRate * 100).toFixed(1) + "–" + (evaluation.sensitivity.maximumOverRate * 100).toFixed(1) + "%"}</b></div>
+                                                              <small className="muted">Consistente = conserva la misma ventaja en al menos 80% de las pruebas. Con muestra pequeña, interpretar con cautela.</small>
+                                                            </div>
+                                                            {evaluation.lineIsDistant && <p className="tone-negative" style={{ margin: "6px 0" }}><b>Aviso: línea a más de 1.5 desviaciones estándar.</b></p>}
+                                                          </div>
+                                                        )}
+                                                        {evaluation && !("error" in evaluation) && evaluation.usedGames.length > 0 && (
+                                                          <details style={{ marginTop: 8 }}>
+                                                            <summary>Partidos usados ({evaluation.usedGames.length})</summary>
+                                                            <ul style={{ paddingLeft: 18 }}>
+                                                              {evaluation.usedGames.map((game) => <li key={game.game_id}>{new Date(game.kickoff).toLocaleDateString()} · <code>{game.game_id}</code> · {numberLabel(game.value)}</li>)}
+                                                            </ul>
+                                                          </details>
+                                                        )}
+                                                      </section>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+  );
+});
+
 export default function NBAApp() {
   const [date, setDate] = useState(localDate());
   const [allGames, setAllGames] = useState(false);
   const [games, setGames] = useState<Game[]>([]);
   const [predictions, setPredictions] = useState<PredictionRow[]>([]);
   const [playerBoxscores, setPlayerBoxscores] = useState<Record<string, PlayerBoxscore>>({});
-  const [marketLines, setMarketLines] = useState<Record<string, string>>({});
   const [boxscoreBusy, setBoxscoreBusy] = useState<string | null>(null);
   const [performance, setPerformance] = useState<Performance | null>(null);
   const [quarterAudit, setQuarterAudit] = useState<any>(null);
@@ -1116,140 +1263,7 @@ export default function NBAApp() {
                                                   })}
                                                 </details>
                                               </div>
-                                              <div style={{ marginTop: 14 }}>
-                                                <b>Laboratorio Over / Under</b>
-                                                <p className="muted" style={{ margin: "4px 0 10px" }}>Introduce una línea manual. La evaluación usa los mismos partidos que puedes auditar debajo.</p>
-                                                <div className="nba-market-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))", gap: 9, minWidth: 0, width: "100%" }}>
-                                                  {["PTS", "REB", "AST", "PRA", "PR", "PA", "RA", "BLK", "STL"].map((market) => {
-                                                    const lineKey = String(player.player_id || player.name) + ":" + market;
-                                                    const line = marketLines[lineKey] || "";
-                                                    const recommendation = cachedRecommendedMarketLine(player.market_history, market);
-                                                    const evaluation = cachedMarketLineEvaluation(player.market_history, market, line);
-                                                    return (
-                                                      <section key={market} className="panel nba-market-card" style={{ padding: 10, minWidth: 0, width: "100%", boxSizing: "border-box", overflow: "hidden" }}>
-                                                        <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0 }}><b style={{ flex: "0 0 auto" }}>{market}</b><small className="muted" style={{ minWidth: 0, flex: "1 1 130px", overflowWrap: "anywhere", textAlign: "right" }}>{PLAYER_MARKET_DESCRIPTIONS[market]}</small></div>
-                                                        <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
-                                                          <div className="score-row"><span>Línea de referencia sugerida</span><b>{recommendation ? numberLabel(recommendation.line) : "No disponible"}</b></div>
-                                                          <small className="muted">{recommendation ? "Promedio últimos 5: " + numberLabel(recommendation.average) + " · N=" + recommendation.sample + ". Redondeo al medio punto más cercano." : "Se requieren 5 partidos válidos con todas las estadísticas de este mercado."}</small>
-                                                          {(() => {
-                                                            const backtest = cachedRecommendedLineBacktest(player.market_history, market);
-                                                            return (
-                                                              <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
-                                                                <b style={{ fontSize: 11 }}>Estabilidad cronológica por ventana</b>
-                                                                <small className="muted" style={{ display: "block", marginTop: 3 }}>Compara líneas calculadas con los 5, 10 y 15 partidos previos. Cada evaluación usa solo partidos anteriores al que se mide; no hay fuga de información.</small>
-                                                                {backtest && (
-                                                                  <>
-                                                                    <div className="score-row"><span>Historial válido disponible</span><b>{backtest.availableHistory}/30</b></div>
-                                                                    <div className="score-row"><span>Muestra común para comparar ventanas</span><b>{backtest.comparisonSample}</b></div>
-                                                                    <small className="muted" style={{ display: "block", marginTop: 4 }}>
-                                                                      {backtest.comparisonSample === 0
-                                                                        ? `Falta(n) ${Math.max(0, 16 - backtest.availableHistory)} partido(s) válido(s) para iniciar la comparación común. Con 16 habrá 1 objetivo compartido; se necesitan 20 para llegar a N=5.`
-                                                                        : backtest.comparisonSample < 5
-                                                                          ? `Comparación iniciada con ${backtest.comparisonSample} objetivo(s) común(es). Faltan ${5 - backtest.comparisonSample} para alcanzar N=5; hacen falta ${Math.max(0, 20 - backtest.availableHistory)} partido(s) válido(s) adicional(es).`
-                                                                          : `Comparación común disponible: N=${backtest.comparisonSample}. Mantén presente que sigue siendo una muestra descriptiva.`}
-                                                                    </small>
-                                                                    <div style={{ overflowX: "auto", marginTop: 6 }}>
-                                                                      <table>
-                                                                        <thead><tr><th>Ventana</th><th>Eval. propias</th><th>MAE común</th><th>Sesgo común</th><th>RMSE común</th><th>O / U / Push común</th></tr></thead>
-                                                                        <tbody>
-                                                                          {[5, 10, 15].map((windowSize) => {
-                                                                            const comparison = backtest.windowComparisons[String(windowSize)];
-                                                                            return <tr key={windowSize}>
-                                                                              <td>Últimos {windowSize}</td>
-                                                                              <td>{comparison.sample}</td>
-                                                                              <td>{comparison.comparisonMae == null ? "—" : numberLabel(comparison.comparisonMae)}</td>
-                                                                              <td>{comparison.comparisonBias == null ? "—" : numberLabel(comparison.comparisonBias)}</td>
-                                                                              <td>{comparison.comparisonRmse == null ? "—" : numberLabel(comparison.comparisonRmse)}</td>
-                                                                              <td>
-                                                                                O {comparison.comparisonOver} · U {comparison.comparisonUnder} · P {comparison.comparisonPush}
-                                                                                {comparison.comparisonSample >= 5 ? (
-                                                                                  <small className="muted" style={{ display: "block" }}>
-                                                                                    {((comparison.comparisonOver / comparison.comparisonSample) * 100).toFixed(0)}% / {((comparison.comparisonUnder / comparison.comparisonSample) * 100).toFixed(0)}% / {((comparison.comparisonPush / comparison.comparisonSample) * 100).toFixed(0)}%
-                                                                                  </small>
-                                                                                ) : <small className="muted" style={{ display: "block" }}>N pequeño</small>}
-                                                                              </td>
-                                                                            </tr>;
-                                                                          })}
-                                                                        </tbody>
-                                                                      </table>
-                                                                    </div>
-                                                                    <small className="muted" style={{ display: "block", marginTop: 5 }}>MAE, sesgo, RMSE y conteos O/U/Push usan exactamente los mismos partidos objetivo para las tres ventanas. Los porcentajes O/U/Push son frecuencias históricas descriptivas, no probabilidades futuras ni señales automáticas de apuesta; se muestran con porcentaje solo desde 5 casos comunes. “Eval. propias” conserva la muestra cronológica total de cada ventana. Se necesitan 16 partidos válidos para empezar a comparar; con 20, la muestra común es de 5.</small>
-                                                                  </>
-                                                                )}
-                                                                {backtest && backtest.evaluations.length > 0 && (
-                                                                  <details style={{ marginTop: 6 }}>
-                                                                    <summary>Ver evaluaciones cronológicas de ventana 5 ({backtest.sample})</summary>
-                                                                    <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
-                                                                      {backtest.evaluations.map((item) => <li key={item.game_id}>{new Date(item.kickoff).toLocaleDateString()} · línea {numberLabel(item.line)} · real {numberLabel(item.actual)} · error {item.error > 0 ? "+" : ""}{numberLabel(item.error)}</li>)}
-                                                                    </ul>
-                                                                  </details>
-                                                                )}
-                                                              </div>
-                                                            );
-                                                          })()}
-                                                          {recommendation && <button className="secondary" type="button" style={{ width: "100%", marginTop: 7 }} onClick={() => setMarketLines((current) => ({ ...current, [lineKey]: String(recommendation.line) }))}>Usar línea sugerida</button>}
-                                                        </div>
-                                                        <label style={{ display: "block", marginTop: 8 }}>
-                                                          <span className="muted">Línea personalizada</span>
-                                                          <input
-                                                            aria-label={player.name + " línea personalizada " + market + ": " + PLAYER_MARKET_DESCRIPTIONS[market]}
-                                                            type="number" min="0" step="0.5" inputMode="decimal" placeholder={recommendation ? String(recommendation.line) : "Ej. 24.5"}
-                                                            value={line}
-                                                            onChange={(event) => setMarketLines((current) => ({ ...current, [lineKey]: event.target.value }))}
-                                                            style={{ width: "100%", boxSizing: "border-box", marginTop: 3 }}
-                                                          />
-                                                        </label>
-                                                        {!evaluation ? (
-                                                          <p className="muted" style={{ marginBottom: 0 }}>Introduce una línea para evaluar.</p>
-                                                        ) : "error" in evaluation ? (
-                                                          <p className="muted">{evaluation.error}</p>
-                                                        ) : "insufficient" in evaluation ? (
-                                                          <div className="muted">
-                                                            <b>Prom. 5/10/15:</b> {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}
-                                                            <p style={{ margin: "5px 0" }}>Muestra: {evaluation.sample}/5 · Probabilidades no disponibles</p>
-                                                          </div>
-                                                        ) : (
-                                                          <div style={{ marginTop: 9 }}>
-                                                            <div className="nba-market-probabilities" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, minWidth: 0, width: "100%" }}>
-                                                              <div>
-                                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 4, minWidth: 0 }}><span>Over</span><b style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{(evaluation.overProbability * 100).toFixed(1)}%</b></div>
-                                                                <div style={{ height: 7, width: "100%", boxSizing: "border-box", background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, evaluation.overProbability * 100))}%`, maxWidth: "100%", background: "#16a34a", borderRadius: 99 }} /></div>
-                                                              </div>
-                                                              <div>
-                                                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 4, minWidth: 0 }}><span>Under</span><b style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{(evaluation.underProbability * 100).toFixed(1)}%</b></div>
-                                                                <div style={{ height: 7, width: "100%", boxSizing: "border-box", background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, evaluation.underProbability * 100))}%`, maxWidth: "100%", background: "#64748b", borderRadius: 99 }} /></div>
-                                                              </div>
-                                                            </div>
-                                                            <small className="muted" style={{ display: "block", marginTop: 8 }}>Conteos: O {evaluation.over} · U {evaluation.under} · Push {evaluation.push} · N={evaluation.sample} · N decisivos={evaluation.over + evaluation.under}</small>
-                                                            <small className="muted" style={{ display: "block" }}>IC95% O {evaluation.overInterval ? `${(evaluation.overInterval[0] * 100).toFixed(1)}–${(evaluation.overInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
-                                                            <small className="muted" style={{ display: "block" }}>IC95% U {evaluation.underInterval ? `${(evaluation.underInterval[0] * 100).toFixed(1)}–${(evaluation.underInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
-                                                            <small className="muted" style={{ display: "block", marginTop: 5 }}>Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}</small>
-                                                            <small className="muted" style={{ display: "block" }}>Línea {evaluation.lineRelation} al promedio 15 ({numberLabel(evaluation.average15)}).</small>
-                                                            <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
-                                                              <b style={{ fontSize: 11 }}>Estabilidad al retirar un partido</b>
-                                                              <small className="muted" style={{ display: "block", marginTop: 3 }}>Se recalcula la ventaja histórica Over/Under retirando, uno por uno, cada juego de la muestra. No es una probabilidad futura.</small>
-                                                              <div className="score-row"><span>Lectura original</span><b>{evaluation.sensitivity.originalSide === "BALANCED" ? "Equilibrada" : evaluation.sensitivity.originalSide}</b></div>
-                                                              <div className="score-row"><span>Clasificación</span><b>{evaluation.sensitivity.status === "ROBUST" ? "Consistente" : evaluation.sensitivity.status === "SENSITIVE" ? "Sensible" : "Sin ventaja clara"}</b></div>
-                                                              {evaluation.sensitivity.consistencyRate !== null && <div className="score-row"><span>Mantiene la misma lectura</span><b>{(evaluation.sensitivity.consistencyRate * 100).toFixed(1)}% · {evaluation.sensitivity.matchingComparisons}/{evaluation.sensitivity.comparisons}</b></div>}
-                                                              <div className="score-row"><span>Rango Over tras retirar un juego</span><b>{evaluation.sensitivity.minimumOverRate === null || evaluation.sensitivity.maximumOverRate === null ? "—" : (evaluation.sensitivity.minimumOverRate * 100).toFixed(1) + "–" + (evaluation.sensitivity.maximumOverRate * 100).toFixed(1) + "%"}</b></div>
-                                                              <small className="muted">Consistente = conserva la misma ventaja en al menos 80% de las pruebas. Con muestra pequeña, interpretar con cautela.</small>
-                                                            </div>
-                                                            {evaluation.lineIsDistant && <p className="tone-negative" style={{ margin: "6px 0" }}><b>Aviso: línea a más de 1.5 desviaciones estándar.</b></p>}
-                                                          </div>
-                                                        )}
-                                                        {evaluation && !("error" in evaluation) && evaluation.usedGames.length > 0 && (
-                                                          <details style={{ marginTop: 8 }}>
-                                                            <summary>Partidos usados ({evaluation.usedGames.length})</summary>
-                                                            <ul style={{ paddingLeft: 18 }}>
-                                                              {evaluation.usedGames.map((game) => <li key={game.game_id}>{new Date(game.kickoff).toLocaleDateString()} · <code>{game.game_id}</code> · {numberLabel(game.value)}</li>)}
-                                                            </ul>
-                                                          </details>
-                                                        )}
-                                                      </section>
-                                                    );
-                                                  })}
-                                                </div>
-                                              </div>
+                                              <PlayerMarketLab player={player} />
                                             </article>
                                           ))}
                                         </div>
