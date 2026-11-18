@@ -25,14 +25,24 @@ def build_confidence_calibration(observations, minimum_sample: int = 30):
         (0.90, 0.950001),
     )
     valid = []
+    excluded_invalid_probability = 0
+    excluded_invalid_result = 0
     for item in observations or []:
         try:
             confidence = float(item.get("confidence"))
-        except (AttributeError, TypeError, ValueError):
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            excluded_invalid_probability += 1
             continue
         if not math.isfinite(confidence) or not 0.5 <= confidence <= 0.95:
+            excluded_invalid_probability += 1
             continue
-        valid.append({"confidence": confidence, "correct": bool(item.get("correct"))})
+        # Calibration outcomes must be verified booleans. Values such as the
+        # string "false", 0, or 1 must not be silently coerced into results.
+        outcome = item.get("correct") if isinstance(item, dict) else None
+        if not isinstance(outcome, bool):
+            excluded_invalid_result += 1
+            continue
+        valid.append({"confidence": confidence, "correct": outcome})
     correct = sum(item["correct"] for item in valid)
     calibration = []
     for low, high in bins:
@@ -53,6 +63,8 @@ def build_confidence_calibration(observations, minimum_sample: int = 30):
     size = len(valid)
     return {
         "sample_size": size, "minimum_sample_required": int(minimum_sample),
+        "excluded_invalid_probability": excluded_invalid_probability,
+        "excluded_invalid_result": excluded_invalid_result,
         "calibration_ready": size >= int(minimum_sample),
         "observed_accuracy": round(correct / size, 4) if size else None,
         "accuracy_ci_95": wilson_interval(correct, size), "bins": calibration,

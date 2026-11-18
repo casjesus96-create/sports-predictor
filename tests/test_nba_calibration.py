@@ -92,3 +92,26 @@ def test_temporal_calibration_reports_insufficient_sample_and_exclusions():
     assert result["excluded_missing_kickoff"] == 1
     assert result["excluded_invalid_observation"] == 1
     assert result["minimum_per_window"] == 30
+
+def test_confidence_calibration_rejects_non_boolean_outcomes():
+    rows = [
+        {"confidence": 0.70, "correct": True},
+        {"confidence": 0.72, "correct": False},
+        {"confidence": 0.75, "correct": "false"},
+        {"confidence": 0.80, "correct": "true"},
+        {"confidence": 0.82, "correct": 0},
+        {"confidence": 0.84, "correct": 1},
+        {"confidence": 0.86, "correct": None},
+    ]
+
+    result = build_confidence_calibration(rows)
+
+    assert result["sample_size"] == 2
+    assert result["observed_accuracy"] == 0.5
+    assert result["excluded_invalid_result"] == 5
+    assert result["excluded_invalid_probability"] == 0
+    assert result["bins"][0]["sample_size"] == 2
+    assert result["bins"][0]["observed_accuracy"] == 0.5
+    assert result["read_only"] is True
+    assert result["official_probability_changed"] is False
+
