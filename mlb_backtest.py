@@ -372,9 +372,23 @@ def calculate_mlb_backtest_metrics(rows, tie_observations=None):
         "not_official_settled_pregame_snapshot": 0,
         "missing_or_invalid_run_projection": 0,
         "missing_or_invalid_final_score": 0,
+        "duplicate_event": 0,
     }
 
-    for row in rows or []:
+    # When multiple saved snapshots exist for one game, evaluate only the
+    # newest valid pregame snapshot. This prevents a refreshed/retried event
+    # from receiving extra weight in run-error and tie-probability metrics.
+    ordered_rows = sorted(
+        rows or [],
+        key=lambda row: (
+            _parse_datetime(row.get("data_cutoff") or row.get("created_at"))
+            or datetime.min.replace(tzinfo=timezone.utc)
+        ),
+        reverse=True,
+    )
+    seen_events = set()
+
+    for row in ordered_rows:
         if not snapshot_pregame_eligible(row):
             exclusions["not_official_settled_pregame_snapshot"] += 1
             continue
@@ -390,8 +404,16 @@ def calculate_mlb_backtest_metrics(rows, tie_observations=None):
         ):
             exclusions["missing_or_invalid_final_score"] += 1
             continue
+
+        event_id = str(row.get("event_id") or "").strip()
+        if event_id and event_id in seen_events:
+            exclusions["duplicate_event"] += 1
+            continue
+        if event_id:
+            seen_events.add(event_id)
+
         eligible.append({
-            "event_id": str(row.get("event_id") or ""),
+            "event_id": event_id,
             "home_expected": projection["home"],
             "away_expected": projection["away"],
             "tie_probability": projection["tie_probability"],
