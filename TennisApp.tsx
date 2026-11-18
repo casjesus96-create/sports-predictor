@@ -48,6 +48,9 @@ type HistoricalProfile = {
     source_url: string;
     source_license?: string;
     source_attribution?: string;
+    legacy_service_stats_latest_match_date?: string | null;
+    legacy_service_stats_age_days?: number | null;
+    legacy_service_stats_window_matches?: number;
     warning: string;
   };
   recent_matches: Array<{
@@ -1361,23 +1364,23 @@ export default function TennisApp() {
                       { label: "Porcentaje de victorias", value: formatPercent(profile.win_rate) },
                       { label: "Últimos 5", value: `${profile.last_5.wins}V – ${profile.last_5.losses}D` },
                       { label: "Últimos 10", value: `${profile.last_10.wins}V – ${profile.last_10.losses}D` },
-                      { label: "Cobertura de estadísticas de saque (últimos 10)", value: formatCoverage(service.matches_with_service_stats, profile.last_10.matches) },
+                      { label: isValuebetennisArchive ? "Cobertura de estadísticas de saque (archivo anterior)" : "Cobertura de estadísticas de saque (últimos 10)", value: formatCoverage(service.matches_with_service_stats, isValuebetennisArchive ? (profile.data_quality.legacy_service_stats_window_matches ?? 0) : profile.last_10.matches) },
                       { label: "Victorias en muestra filtrada", value: `${profile.surface_window.wins} / ${profile.surface_window.matches}` },
                       { label: "Último ranking observado", value: formatMetric(profile.ranking_latest_in_window) },
                       { label: hasExactMatchDates ? "Días desde el último partido registrado" : "Días desde inicio del último torneo registrado", value: formatMetric(profile.days_since_last_match) },
                       { label: "Partidos últimos 7 días", value: formatMetric(profile.workload_matches_last_7_days) },
                       { label: "Partidos últimos 14 días", value: formatMetric(profile.workload_matches_last_14_days) },
-                      { label: "Aces por partido (últimos 10)", value: formatMetric(service.aces_per_match) },
-                      { label: "Dobles faltas por partido", value: formatMetric(service.double_faults_per_match) },
-                      { label: "Primer saque dentro", value: formatPercent(service.first_serve_in_pct) },
-                      { label: "Puntos ganados con primer saque", value: formatPercent(service.first_serve_points_won_pct) },
-                      { label: "Puntos ganados con segundo saque", value: formatPercent(service.second_serve_points_won_pct) },
-                      { label: "Break points salvados", value: formatPercent(service.break_points_saved_pct) },
+                      { label: isValuebetennisArchive ? "Aces por partido (archivo anterior)" : "Aces por partido (últimos 10)", value: formatMetric(service.aces_per_match) },
+                      { label: isValuebetennisArchive ? "Dobles faltas por partido (archivo anterior)" : "Dobles faltas por partido", value: formatMetric(service.double_faults_per_match) },
+                      { label: isValuebetennisArchive ? "Primer saque dentro (archivo anterior)" : "Primer saque dentro", value: formatPercent(service.first_serve_in_pct) },
+                      { label: isValuebetennisArchive ? "Puntos ganados con primer saque (archivo anterior)" : "Puntos ganados con primer saque", value: formatPercent(service.first_serve_points_won_pct) },
+                      { label: isValuebetennisArchive ? "Puntos ganados con segundo saque (archivo anterior)" : "Puntos ganados con segundo saque", value: formatPercent(service.second_serve_points_won_pct) },
+                      { label: isValuebetennisArchive ? "Break points salvados (archivo anterior)" : "Break points salvados", value: formatPercent(service.break_points_saved_pct) },
                     ];
                     return (
                       <article className="tennis-profile-card" key={profile.player_name} style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, background: "#10253a" }}>
                         <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{profile.player_name}</h4>
-                        <p style={{ margin: "0 0 12px", color: "#b7c8d8", fontSize: 12 }}>Histórico {profile.league} · 365 días · {isValuebetennisArchive ? "Resultados con fecha exacta · fuente CC BY 4.0" : `${profile.data_quality.matches_with_service_stats} partidos con estadísticas de saque en la fuente histórica`}</p>
+                        <p style={{ margin: "0 0 12px", color: "#b7c8d8", fontSize: 12 }}>Histórico {profile.league} · 365 días · {isValuebetennisArchive ? `Resultados exactos · saque del archivo anterior hasta ${profile.data_quality.legacy_service_stats_latest_match_date || "fecha no disponible"}` : `${profile.data_quality.matches_with_service_stats} partidos con estadísticas de saque en la fuente histórica`}</p>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
                           {metrics.map((metric) => (
                             <div key={metric.label} style={{ border: "1px solid #29445b", borderRadius: 8, padding: 9 }}>
