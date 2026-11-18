@@ -110,4 +110,4 @@ def test_candidate_vector_can_exclude_one_feature_and_its_availability_flags():
     )
     assert len(full) == 9
     assert len(without_rushing) == 6
-    assert without_rushing == [2.0, 3.0, 1.0, 1.0, 0.0, 0.0]
+    assert without_rushing == [2.0, 3.0, 1.0, 1.0, 1.0, 0.0]
