@@ -500,10 +500,14 @@ type PlayerMarketLabProps = { player: any };
 const PlayerMarketLab = memo(function PlayerMarketLab({ player }: PlayerMarketLabProps) {
   const [marketLines, setMarketLines] = useState<Record<string, string>>({});
   return (
-                                              <div style={{ marginTop: 14 }}>
-                                                <b>Laboratorio Over / Under</b>
-                                                <p className="muted" style={{ margin: "4px 0 10px" }}>Introduce una línea manual. La evaluación usa los mismos partidos que puedes auditar debajo.</p>
-                                                <div className="nba-market-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))", gap: 9, minWidth: 0, width: "100%" }}>
+    <details className="nba-market-accordion">
+      <summary className="nba-market-accordion-summary">
+        <span><strong>Laboratorio Over / Under</strong><small>9 mercados disponibles · expandir para consultar</small></span>
+        <span className="nba-market-accordion-indicator" aria-hidden="true">+</span>
+      </summary>
+      <div className="nba-market-accordion-content">
+        <p className="muted" style={{ margin: "4px 0 12px" }}>Introduce una línea manual. La evaluación usa los mismos partidos que puedes auditar debajo.</p>
+        <div className="nba-market-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))", gap: 9, minWidth: 0, width: "100%" }}>
                                                   {["PTS", "REB", "AST", "PRA", "PR", "PA", "RA", "BLK", "STL"].map((market) => {
                                                     const lineKey = String(player.player_id || player.name) + ":" + market;
                                                     const line = marketLines[lineKey] || "";
@@ -632,8 +636,9 @@ const PlayerMarketLab = memo(function PlayerMarketLab({ player }: PlayerMarketLa
                                                       </section>
                                                     );
                                                   })}
-                                                </div>
-                                              </div>
+        </div>
+      </div>
+    </details>
   );
 });
 
