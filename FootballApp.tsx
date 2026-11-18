@@ -2698,8 +2698,8 @@ export default function FootballApp() {
             </section>}
                 <FootballMatchLessonsPanel competition={competition} match={match} />
                 <HeadToHeadPanel competition={competition} match={match} />
-                {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <TeamRecentFormPanel competition={competition} match={match} />}
-                {["PL", "PD", "SA", "BL1", "FL1"].includes(competition) && <FootballMarketPatternsPanel competition={competition} match={match} />}
+                {["PL", "PD", "SA", "BL1", "FL1", "PPL", "DED", "BSA", "CL"].includes(competition) && <TeamRecentFormPanel competition={competition} match={match} />}
+                {["PL", "PD", "SA", "BL1", "FL1", "PPL", "DED", "BSA", "CL"].includes(competition) && <FootballMarketPatternsPanel competition={competition} match={match} />}
             {prediction?.available && prediction.probabilities && prediction.expected_goals ? <section style={{ background: "#172033", padding: 12, borderRadius: 8 }}>
               <strong>Probabilidades 1X2</strong>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 112px), 1fr))", gap: 8, marginTop: 10 }}>
