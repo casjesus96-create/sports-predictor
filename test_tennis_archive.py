@@ -220,3 +220,13 @@ def test_persisted_profile_refuses_ambiguous_name_to_player_id(monkeypatch):
     )
 
     assert profile == {"identity_ambiguous": True}
+
+
+def test_same_source_match_id_can_exist_in_both_tours():
+    atp = row(genre="ATP")
+    wta = row(genre="WTA", joueur1_id="501", joueur2_id="502", vainqueur_id="501")
+    parsed = archive.parse_year_rows(
+        (atp, wta), 2026, "2026-11-18T00:00:00+00:00"
+    )
+    assert len(parsed["rows"]) == 2
+    assert {item["league"] for item in parsed["rows"]} == {"ATP", "WTA"}
