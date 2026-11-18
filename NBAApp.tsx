@@ -233,6 +233,9 @@ function evaluateRecommendedLineBacktest(records: MarketHistoryRecord[] | undefi
     comparisonMae: number | null;
     comparisonBias: number | null;
     comparisonRmse: number | null;
+    comparisonOver: number;
+    comparisonUnder: number;
+    comparisonPush: number;
     evaluations: LineEvaluation[];
   }> = {};
   for (const window of [5, 10, 15]) {
@@ -283,6 +286,9 @@ function evaluateRecommendedLineBacktest(records: MarketHistoryRecord[] | undefi
     const comparisonRmse = comparableEvaluations.length
       ? Math.sqrt(comparableEvaluations.reduce((sum, item) => sum + item.error * item.error, 0) / comparableEvaluations.length)
       : null;
+    const comparisonOver = comparableEvaluations.filter((item) => item.actual > item.line).length;
+    const comparisonUnder = comparableEvaluations.filter((item) => item.actual < item.line).length;
+    const comparisonPush = comparableEvaluations.filter((item) => item.actual === item.line).length;
     windowComparisons[String(window)] = {
       window,
       sample: evaluations.length,
@@ -292,6 +298,9 @@ function evaluateRecommendedLineBacktest(records: MarketHistoryRecord[] | undefi
       comparisonMae: comparableEvaluations.length >= 5 ? comparisonMae : null,
       comparisonBias: comparableEvaluations.length >= 5 ? comparisonBias : null,
       comparisonRmse: comparableEvaluations.length >= 5 ? comparisonRmse : null,
+      comparisonOver,
+      comparisonUnder,
+      comparisonPush,
       evaluations,
     };
   }
@@ -1084,7 +1093,7 @@ export default function NBAApp() {
                                                                     <div className="score-row"><span>Muestra común para comparar ventanas</span><b>{backtest.comparisonSample}</b></div>
                                                                     <div style={{ overflowX: "auto", marginTop: 6 }}>
                                                                       <table>
-                                                                        <thead><tr><th>Ventana</th><th>Eval. propias</th><th>MAE común</th><th>Sesgo común</th><th>RMSE común</th></tr></thead>
+                                                                        <thead><tr><th>Ventana</th><th>Eval. propias</th><th>MAE común</th><th>Sesgo común</th><th>RMSE común</th><th>O / U / Push común</th></tr></thead>
                                                                         <tbody>
                                                                           {[5, 10, 15].map((windowSize) => {
                                                                             const comparison = backtest.windowComparisons[String(windowSize)];
@@ -1094,12 +1103,20 @@ export default function NBAApp() {
                                                                               <td>{comparison.comparisonMae == null ? "—" : numberLabel(comparison.comparisonMae)}</td>
                                                                               <td>{comparison.comparisonBias == null ? "—" : numberLabel(comparison.comparisonBias)}</td>
                                                                               <td>{comparison.comparisonRmse == null ? "—" : numberLabel(comparison.comparisonRmse)}</td>
+                                                                              <td>
+                                                                                O {comparison.comparisonOver} · U {comparison.comparisonUnder} · P {comparison.comparisonPush}
+                                                                                {comparison.comparisonSample >= 5 ? (
+                                                                                  <small className="muted" style={{ display: "block" }}>
+                                                                                    {((comparison.comparisonOver / comparison.comparisonSample) * 100).toFixed(0)}% / {((comparison.comparisonUnder / comparison.comparisonSample) * 100).toFixed(0)}% / {((comparison.comparisonPush / comparison.comparisonSample) * 100).toFixed(0)}%
+                                                                                  </small>
+                                                                                ) : <small className="muted" style={{ display: "block" }}>N pequeño</small>}
+                                                                              </td>
                                                                             </tr>;
                                                                           })}
                                                                         </tbody>
                                                                       </table>
                                                                     </div>
-                                                                    <small className="muted" style={{ display: "block", marginTop: 5 }}>Las métricas MAE, sesgo y RMSE usan exactamente los mismos partidos evaluados para las tres ventanas, y solo aparecen con al menos 5 casos comparables. “Eval. propias” muestra cuántas evaluaciones cronológicas tiene cada ventana en total. Se necesitan 16 partidos válidos para empezar a comparar las tres ventanas; con 20, la muestra común es de 5.</small>
+                                                                    <small className="muted" style={{ display: "block", marginTop: 5 }}>MAE, sesgo, RMSE y conteos O/U/Push usan exactamente los mismos partidos objetivo para las tres ventanas. Los porcentajes O/U/Push son frecuencias históricas descriptivas, no probabilidades futuras ni señales automáticas de apuesta; se muestran con porcentaje solo desde 5 casos comunes. “Eval. propias” conserva la muestra cronológica total de cada ventana. Se necesitan 16 partidos válidos para empezar a comparar; con 20, la muestra común es de 5.</small>
                                                                   </>
                                                                 )}
                                                                 {backtest && backtest.evaluations.length > 0 && (
