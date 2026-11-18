@@ -353,12 +353,14 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
       ? sample.reduce((sum, value) => sum + value, 0) / sample.length
       : null;
   }
-  const average15 = windowAverages["15"];
-  const variance = values.length
-    ? values.reduce((sum, value) => sum + Math.pow(value - (average15 as number), 2), 0) / values.length
-    : 0;
+  const averageHistory = values.length
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : null;
+  const variance = averageHistory == null
+    ? 0
+    : values.reduce((sum, value) => sum + Math.pow(value - averageHistory, 2), 0) / values.length;
   const standardDeviation = Math.sqrt(variance);
-  const lineDistance = average15 == null ? null : Math.abs(line - average15);
+  const lineDistance = averageHistory == null ? null : Math.abs(line - averageHistory);
   const lineIsDistant = lineDistance != null && (
     standardDeviation > 0 ? lineDistance > 1.5 * standardDeviation : lineDistance > 0
   );
@@ -398,8 +400,8 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
     : sensitivityRate !== null && sensitivityRate >= 0.8 ? "ROBUST" : "SENSITIVE";
   return {
     sample: values.length, over, under, push, overProbability, underProbability, pushProbability: pushShare,
-    windowAverages, average15, standardDeviation, lineDistance, lineIsDistant, usedGames,
-    lineRelation: average15 == null || line === average15 ? "igual" : line < average15 ? "por debajo" : "por encima",
+    windowAverages, averageHistory, standardDeviation, lineDistance, lineIsDistant, usedGames,
+    lineRelation: averageHistory == null || line === averageHistory ? "igual" : line < averageHistory ? "por debajo" : "por encima",
     overInterval: wilsonInterval(over, decisive, 1 - pushShare),
     underInterval: wilsonInterval(under, decisive, 1 - pushShare),
     sensitivity: {
@@ -612,7 +614,7 @@ const PlayerMarketLab = memo(function PlayerMarketLab({ player }: PlayerMarketLa
                                                             <small className="muted" style={{ display: "block" }}>IC95% O {evaluation.overInterval ? `${(evaluation.overInterval[0] * 100).toFixed(1)}–${(evaluation.overInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
                                                             <small className="muted" style={{ display: "block" }}>IC95% U {evaluation.underInterval ? `${(evaluation.underInterval[0] * 100).toFixed(1)}–${(evaluation.underInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
                                                             <small className="muted" style={{ display: "block", marginTop: 5 }}>Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}</small>
-                                                            <small className="muted" style={{ display: "block" }}>Línea {evaluation.lineRelation} al promedio 15 ({numberLabel(evaluation.average15)}).</small>
+                                                            <small className="muted" style={{ display: "block" }}>Línea {evaluation.lineRelation} al promedio histórico de {evaluation.sample} partidos ({numberLabel(evaluation.averageHistory)}).</small>
                                                             <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
                                                               <b style={{ fontSize: 11 }}>Estabilidad al retirar un partido</b>
                                                               <small className="muted" style={{ display: "block", marginTop: 3 }}>Se recalcula la ventaja histórica Over/Under retirando, uno por uno, cada juego de la muestra. No es una probabilidad futura.</small>
