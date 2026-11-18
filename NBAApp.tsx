@@ -344,7 +344,7 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
     })
     .filter((record): record is { game_id: string; kickoff: string; value: number } => record !== null)
     .sort((a, b) => Date.parse(b.kickoff) - Date.parse(a.kickoff))
-    .slice(0, 15);
+    .slice(0, 30);
   const values = usedGames.map((record) => record.value);
   const windowAverages: Record<string, number | null> = {};
   for (const windowSize of [5, 10, 15]) {
@@ -608,7 +608,7 @@ const PlayerMarketLab = memo(function PlayerMarketLab({ player }: PlayerMarketLa
                                                                 <div style={{ height: 7, width: "100%", boxSizing: "border-box", background: "var(--border-color, #d1d5db)", borderRadius: 99, overflow: "hidden", marginTop: 4 }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, evaluation.underProbability * 100))}%`, maxWidth: "100%", background: "#64748b", borderRadius: 99 }} /></div>
                                                               </div>
                                                             </div>
-                                                            <small className="muted" style={{ display: "block", marginTop: 8 }}>Conteos: O {evaluation.over} · U {evaluation.under} · Push {evaluation.push} · N={evaluation.sample} · N decisivos={evaluation.over + evaluation.under}</small>
+                                                            <small className="muted" style={{ display: "block", marginTop: 8 }}>Conteos históricos (hasta 30 partidos válidos): O {evaluation.over} · U {evaluation.under} · Push {evaluation.push} · N={evaluation.sample} · N decisivos={evaluation.over + evaluation.under}</small>
                                                             <small className="muted" style={{ display: "block" }}>IC95% O {evaluation.overInterval ? `${(evaluation.overInterval[0] * 100).toFixed(1)}–${(evaluation.overInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
                                                             <small className="muted" style={{ display: "block" }}>IC95% U {evaluation.underInterval ? `${(evaluation.underInterval[0] * 100).toFixed(1)}–${(evaluation.underInterval[1] * 100).toFixed(1)}%` : "No estimable: sin resultados decisivos"}</small>
                                                             <small className="muted" style={{ display: "block", marginTop: 5 }}>Prom. 5/10/15: {[5, 10, 15].map((windowSize) => evaluation.windowAverages[String(windowSize)] == null ? "—" : numberLabel(evaluation.windowAverages[String(windowSize)])).join(" / ")}</small>
