@@ -25,6 +25,8 @@ import requests
 logger = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 20
 MAX_PROFILE_LOOKBACK_DAYS = 730
+SOURCE_FRESHNESS_CURRENT_MAX_DAYS = 45
+SOURCE_FRESHNESS_DELAYED_MAX_DAYS = 90
 SUPPORTED_LEAGUES = {"ATP", "WTA"}
 # The original Jeff Sackmann repositories are no longer reliably available.
 # This archival mirror preserves the original CSV schema and includes seasons
@@ -220,8 +222,8 @@ def get_player_profile(
     source_data_age_days = (cutoff - latest_source_match_date).days if latest_source_match_date else None
     source_freshness_status = (
         "unknown" if source_data_age_days is None
-        else "current" if source_data_age_days <= 45
-        else "delayed" if source_data_age_days <= 90
+        else "current" if source_data_age_days <= SOURCE_FRESHNESS_CURRENT_MAX_DAYS
+        else "delayed" if source_data_age_days <= SOURCE_FRESHNESS_DELAYED_MAX_DAYS
         else "stale"
     )
 
@@ -320,6 +322,10 @@ def get_player_profile(
             "latest_match_date_in_source": latest_source_match_date.isoformat() if latest_source_match_date else None,
             "source_data_age_days": source_data_age_days,
             "source_freshness_status": source_freshness_status,
+            "source_freshness_thresholds_days": {
+                "current_max": SOURCE_FRESHNESS_CURRENT_MAX_DAYS,
+                "delayed_max": SOURCE_FRESHNESS_DELAYED_MAX_DAYS,
+            },
             "source": f"Jeff Sackmann {league} historical match CSVs",
             "source_url": SOURCE_REPOSITORY_URLS[league],
             "upstream_provenance_url": UPSTREAM_PROVENANCE_URLS[league],
