@@ -166,6 +166,9 @@ def evaluate_over_under(
     Wilson intervals describe the unsmoothed conditional hit rate and are also
     scaled by the non-push share. No normality assumption is made.
     """
+    if isinstance(line, bool) or isinstance(min_sample, bool):
+        return {"available": False, "reason": "INVALID_LINE_OR_MINIMUM"}
+
     try:
         numeric_line = float(line)
         minimum = max(1, int(min_sample))
@@ -177,6 +180,9 @@ def evaluate_over_under(
 
     values = []
     for raw in observations or []:
+        # Python bool is a subclass of int; never treat True/False as boxscore stats.
+        if isinstance(raw, bool):
+            continue
         try:
             value = float(raw)
         except (TypeError, ValueError, OverflowError):
