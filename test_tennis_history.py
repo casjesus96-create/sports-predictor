@@ -62,6 +62,10 @@ def test_profile_filters_out_matches_on_or_after_cutoff(monkeypatch):
     assert profile["days_since_last_match"] == 5
     assert profile["ranking_latest_in_window"] == 11
     assert profile["data_quality"]["matches_with_service_stats"] == 2
+    assert [item["date"] for item in profile["recent_matches"]] == ["2026-10-10", "2026-10-01"]
+    assert profile["recent_matches"][0]["opponent"] == "Player Three"
+    assert profile["recent_matches"][0]["result"] == "L"
+    assert profile["recent_matches"][1]["score"] is None
 
 
 def test_profile_rejects_invalid_surface_and_league():

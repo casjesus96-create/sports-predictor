@@ -179,6 +179,23 @@ def tennis_candidate_projection(
         ) from exc
 
 
+@router.get("/matches/{match_id}/snapshot")
+def get_tennis_match_snapshot(
+    match_id: str,
+    league: str = Query("ATP", pattern="^(?i:ATP|WTA)$"),
+):
+    """Return the immutable pre-match snapshot, if one was captured."""
+    try:
+        snapshot = get_latest_snapshot(match_id, league.strip().upper())
+        return {"success": True, "snapshot": snapshot}
+    except Exception as exc:
+        logger.exception("Tennis snapshot lookup failed")
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "TENNIS_SNAPSHOT_LOOKUP_ERROR", "message": "No fue posible consultar el pronóstico guardado."},
+        ) from exc
+
+
 @router.post("/matches/{match_id}/predict")
 def save_tennis_match_projection(
     match_id: str,
