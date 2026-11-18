@@ -26,19 +26,19 @@ TIMEOUT_SECONDS = 30
 MAX_SCORE = 30
 
 OPENFOOTBALL_COMPETITIONS = {
-    "PT1": {
+    "PPL": {
         "name": "Primeira Liga", "country": "Portugal", "first_year": 2018,
         "source": "europe", "path": "portugal/{year}-{next_year}_pt1.txt",
     },
-    "NL1": {
+    "DED": {
         "name": "Eredivisie", "country": "Netherlands", "first_year": 2018,
         "source": "europe", "path": "netherlands/{year}-{next_year}_nl1.txt",
     },
-    "UCL": {
+    "CL": {
         "name": "UEFA Champions League", "country": "Europe", "first_year": 2011,
         "source": "champions", "path": "{year}-{next_year}/cl.txt",
     },
-    "BR1": {
+    "BSA": {
         "name": "Brasileirão Série A", "country": "Brazil", "first_year": 2018,
         "source": "south_america", "path": "brazil/{year}_br1.txt",
     },
