@@ -87,8 +87,10 @@ def _metric_map(team_rows, pbp_rows, completed):
             item["passing_epa"] = passing
         if rushing is not None:
             item["rushing_epa"] = rushing
-        if ints is not None or fumbles is not None:
-            item["turnovers"] = (ints or 0.0) + (fumbles or 0.0)
+        # A combined turnover feature is valid only when both components
+        # are observed; a missing component must not be silently treated as zero.
+        if ints is not None and fumbles is not None:
+            item["turnovers"] = ints + fumbles
 
     pbp = {}
     pbp_rows_count = 0
@@ -330,7 +332,21 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2025, min_traini
         if home_score == away_score:
             skipped["tie"] += 1
             continue
-        if not source_status or not any(s["available"] and s["season"] == int(target.get("season", -1)) for s in source_status):
+        target_source_available = any(
+            s["available"] and s["season"] == int(target.get("season", -1))
+            for s in source_status
+        )
+        # point_diff is schedule-derived and can exist even when every advanced
+        # source field is missing. Require at least one observed advanced feature
+        # for each team before scoring or adding a row to candidate training.
+        home_advanced_coverage = any(home_coverage[:-1])
+        away_advanced_coverage = any(away_coverage[:-1])
+        has_usable_features = (
+            target_source_available
+            and home_advanced_coverage
+            and away_advanced_coverage
+        )
+        if not has_usable_features:
             skipped["unavailable_features"] += 1
             continue
         coverage_denominator += 1
@@ -348,7 +364,12 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2025, min_traini
             outcomes.append(y)
             evaluated.append({"game_id": str(target["game_id"]), "season": int(target["season"]), "home_probability_official": round(p_base, 6), "home_probability_experimental": round(p_candidate, 6), "actual_home_win": bool(y), "prior_training_games": len(training), "home_history_games": home_n, "away_history_games": away_n})
         # Add this game's labeled feature vector only after scoring/skipping it.
-        if home_score is not None and away_score is not None and home_score != away_score:
+        if (
+            has_usable_features
+            and home_score is not None
+            and away_score is not None
+            and home_score != away_score
+        ):
             training.append((features, 1 if home_score > away_score else 0))
     base_score = _score(baseline_probs, outcomes)
     candidate_score = _score(candidate_probs, outcomes)
@@ -405,7 +426,7 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2025, min_traini
         "model_version": MODEL_VERSION, "candidate_version": "NFL-ADVANCED-WF-EXPERIMENTAL-1",
         "read_only": True, "model_impact": "none", "predictions_persisted": False,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "method": {"walk_forward": True, "target_cutoff": "strictly before target kickoff", "training_cutoff": "only earlier kickoff games; target is added to training after evaluation", "same_sample_comparison": True, "candidate_features": ([f"home_minus_away:{feature}" for feature in FEATURES] + [f"home_has_history:{feature}" for feature in FEATURES] + [f"away_has_history:{feature}" for feature in FEATURES]), "missing_value_strategy": "zero-filled metric values are paired with separate home/away availability indicators; missing is not assumed to mean a true zero", "training": "deterministic logistic regression refit at each target using only earlier labeled games", "limitations": "experimental candidate; source publication timing within a week and feature availability require further verification before any production use"},
+        "method": {"walk_forward": True, "target_cutoff": "strictly before target kickoff", "training_cutoff": "only earlier kickoff games; target is added to training after evaluation", "same_sample_comparison": True, "candidate_features": ([f"home_minus_away:{feature}" for feature in FEATURES] + [f"home_has_history:{feature}" for feature in FEATURES] + [f"away_has_history:{feature}" for feature in FEATURES]), "missing_value_strategy": "zero-filled metric values are paired with separate home/away availability indicators; missing is not assumed to mean a true zero", "training": "deterministic logistic regression refit at each target using only earlier labeled games", "training_sample_policy": "only earlier labeled games from seasons with available sources and at least one observed advanced feature for both teams; targets with missing advanced coverage are excluded from both scoring and training", "limitations": "experimental candidate; source publication timing within a week and feature availability require further verification before any production use"},
         "sources": source_status, "scored_games": len(outcomes), "skipped": skipped,
         "feature_coverage": [
             {"feature": feature, "games_with_both_teams": count,
