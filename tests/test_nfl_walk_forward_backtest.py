@@ -91,3 +91,23 @@ def test_metric_map_does_not_treat_missing_turnover_component_as_zero():
     metrics, _ = backtest._metric_map(team_rows, [], completed)
     assert "turnovers" not in metrics[("BUF", "g1")]
     assert metrics[("MIA", "g1")]["turnovers"] == 0.0
+
+
+
+def test_candidate_vector_can_exclude_one_feature_and_its_availability_flags():
+    full = backtest._candidate_vector(
+        home_values=[3.0, 5.0, 7.0],
+        away_values=[1.0, 2.0, 4.0],
+        home_coverage=[2, 0, 1],
+        away_coverage=[1, 3, 0],
+    )
+    without_rushing = backtest._candidate_vector(
+        home_values=[3.0, 5.0, 7.0],
+        away_values=[1.0, 2.0, 4.0],
+        home_coverage=[2, 0, 1],
+        away_coverage=[1, 3, 0],
+        excluded_feature="rushing_epa",
+    )
+    assert len(full) == 9
+    assert len(without_rushing) == 6
+    assert without_rushing == [2.0, 3.0, 1.0, 1.0, 1.0, 0.0]
