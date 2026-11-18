@@ -1,5 +1,5 @@
 import PercentageSignal from "./PercentageSignal";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Player = {
   id?: string;
@@ -365,6 +365,7 @@ export default function TennisApp() {
   const [date, setDate] = useState(localDate());
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [historicalProfiles, setHistoricalProfiles] = useState<HistoricalProfile[]>([]);
+  const profileRequestId = useRef(0);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
@@ -529,6 +530,7 @@ export default function TennisApp() {
   }, [refresh]);
 
   const loadHistoricalProfiles = useCallback(async (match: Match) => {
+    const requestId = ++profileRequestId.current;
     const player1 = match.player1?.name?.trim();
     const player2 = match.player2?.name?.trim();
     if (!player1 || !player2) {
@@ -554,11 +556,11 @@ export default function TennisApp() {
         request<HistoricalProfile>(buildUrl(player1)),
         request<HistoricalProfile>(buildUrl(player2)),
       ]);
-      setHistoricalProfiles([first, second]);
+      if (requestId === profileRequestId.current) setHistoricalProfiles([first, second]);
     } catch (err) {
-      setProfileError(err instanceof Error ? err.message : "No se pudieron cargar los perfiles históricos.");
+      if (requestId === profileRequestId.current) setProfileError(err instanceof Error ? err.message : "No se pudieron cargar los perfiles históricos.");
     } finally {
-      setProfileLoading(false);
+      if (requestId === profileRequestId.current) setProfileLoading(false);
     }
   }, [date, league]);
 
@@ -567,6 +569,8 @@ export default function TennisApp() {
     const selected = matches.find((item) => item.match_id === selectedMatchId);
     setMatchSnapshot(null);
     setCandidateProjection(null);
+    setProjectionResult(null);
+    setProjectionError("");
     setMatchProjectionMessage("");
     if (!selected || !selected.match_id) {
       setMatchProjectionLoading(false);
