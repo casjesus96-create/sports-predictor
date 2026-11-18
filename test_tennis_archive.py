@@ -230,3 +230,14 @@ def test_same_source_match_id_can_exist_in_both_tours():
     )
     assert len(parsed["rows"]) == 2
     assert {item["league"] for item in parsed["rows"]} == {"ATP", "WTA"}
+
+
+def test_import_excludes_non_model_competition_categories_explicitly():
+    parsed = archive.parse_year_rows(
+        (row(categorie="Challenger"), row(categorie="ITF")),
+        2026,
+        "2026-11-18T00:00:00+00:00",
+    )
+    assert parsed["rows"] == []
+    assert parsed["rows_excluded_category"] == 2
+    assert parsed["rows_rejected"] == 0
