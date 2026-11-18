@@ -44,6 +44,15 @@ type HistoricalProfile = {
     source_url: string;
     warning: string;
   };
+  recent_matches: Array<{
+    date: string;
+    tournament: string | null;
+    opponent: string;
+    result: "W" | "L";
+    score: string | null;
+    surface: string | null;
+    round: string | null;
+  }>;
 };
 
 type Match = {
@@ -84,6 +93,21 @@ type ProjectionResponse = {
   already_settled?: boolean;
   error?: string;
   detail?: string | { message?: string };
+};
+
+type MatchSnapshotResponse = {
+  success: boolean;
+  snapshot?: ProjectionResponse["snapshot"] | null;
+};
+
+type CandidateProjectionResponse = {
+  success: boolean;
+  model_version: string;
+  model_status: string;
+  player1: { name: string; rating: number; win_probability: number };
+  player2: { name: string; rating: number; win_probability: number };
+  historical_matches_used: number;
+  cutoff_date_exclusive: string;
 };
 
 type PerformanceResponse = {
@@ -350,6 +374,10 @@ export default function TennisApp() {
   const [projectionLoading, setProjectionLoading] = useState(false);
   const [projectionError, setProjectionError] = useState("");
   const [projectionResult, setProjectionResult] = useState<ProjectionResponse | null>(null);
+  const [matchSnapshot, setMatchSnapshot] = useState<MatchSnapshotResponse["snapshot"]>(null);
+  const [candidateProjection, setCandidateProjection] = useState<CandidateProjectionResponse | null>(null);
+  const [matchProjectionLoading, setMatchProjectionLoading] = useState(false);
+  const [matchProjectionMessage, setMatchProjectionMessage] = useState("");
   const [settlementLoading, setSettlementLoading] = useState(false);
   const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
   const [performanceError, setPerformanceError] = useState("");
@@ -443,6 +471,7 @@ export default function TennisApp() {
         { method: "POST" },
       );
       setProjectionResult(result);
+      setMatchSnapshot(result.snapshot || null);
       await loadPerformance();
     } catch (err) {
       setProjectionError(err instanceof Error ? err.message : "No se pudo guardar la proyección.");
@@ -461,6 +490,7 @@ export default function TennisApp() {
         { method: "POST" },
       );
       setProjectionResult(result);
+      setMatchSnapshot(result.snapshot || null);
       await loadPerformance();
     } catch (err) {
       setProjectionError(err instanceof Error ? err.message : "No se pudo liquidar la proyección.");
@@ -531,6 +561,65 @@ export default function TennisApp() {
       setProfileLoading(false);
     }
   }, [date, league]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const selected = matches.find((item) => item.match_id === selectedMatchId);
+    setMatchSnapshot(null);
+    setCandidateProjection(null);
+    setMatchProjectionMessage("");
+    if (!selected || !selected.match_id) return;
+
+    const loadProjectionForSelectedMatch = async () => {
+      setMatchProjectionLoading(true);
+      try {
+        const snapshotResponse = await request<MatchSnapshotResponse>(
+          `${API}/matches/${encodeURIComponent(selected.match_id)}/snapshot?league=${league}`,
+        );
+        if (cancelled) return;
+        if (snapshotResponse.snapshot) {
+          setMatchSnapshot(snapshotResponse.snapshot);
+          setMatchProjectionMessage("Pronóstico original capturado antes del inicio. Se muestran sus probabilidades inmutables.");
+          return;
+        }
+
+        const startAt = selected.start_time ? new Date(selected.start_time).getTime() : Number.NaN;
+        const alreadyStarted = selected.completed || selected.status === "in" || selected.status === "post"
+          || !Number.isFinite(startAt) || startAt <= Date.now();
+        if (alreadyStarted) {
+          setMatchProjectionMessage("No existe un pronóstico prepartido guardado para este encuentro. No calculamos uno después del inicio.");
+          return;
+        }
+
+        const player1 = selected.player1?.name?.trim();
+        const player2 = selected.player2?.name?.trim();
+        if (!player1 || !player2) {
+          setMatchProjectionMessage("La fuente no identificó a ambos tenistas para calcular la proyección.");
+          return;
+        }
+        const params = new URLSearchParams({
+          player1,
+          player2,
+          league,
+          cutoff_date: selected.start_time?.slice(0, 10) || date,
+          warmup_years: "3",
+          k_factor: "32",
+        });
+        const preview = await request<CandidateProjectionResponse>(
+          `${API}/projection?${params.toString()}`,
+        );
+        if (cancelled) return;
+        setCandidateProjection(preview);
+        setMatchProjectionMessage("Estimación candidata de Elo general. Es una vista previa y todavía no está guardada como snapshot.");
+      } catch (err) {
+        if (!cancelled) setMatchProjectionMessage(err instanceof Error ? err.message : "No se pudo consultar el pronóstico del encuentro.");
+      } finally {
+        if (!cancelled) setMatchProjectionLoading(false);
+      }
+    };
+    void loadProjectionForSelectedMatch();
+    return () => { cancelled = true; };
+  }, [selectedMatchId, matches, league, date]);
 
   // La aplicación usa un tema oscuro global; los paneles de tenis deben
   // conservar contraste y no depender de variables CSS que no estén definidas.
@@ -1091,6 +1180,28 @@ export default function TennisApp() {
               </div>
               <button type="button" onClick={() => setSelectedMatchId(null)} style={secondaryButtonStyle}>Cerrar ficha</button>
             </div>
+            <div style={{ margin: "14px 0", padding: 12, borderRadius: 10, border: "1px solid #2dd4bf", background: "#102b32" }}>
+              <strong style={{ display: "block", marginBottom: 8 }}>Probabilidad de victoria · Tenis</strong>
+              {matchProjectionLoading ? <p role="status" style={{ margin: 0, color: "#b7c8d8" }}>Consultando registro y estimación prepartido…</p> : null}
+              {matchSnapshot ? (
+                <>
+                  <div className="percentage-signal-grid">
+                    <div><PercentageSignal label={matchSnapshot.player1_name} value={matchSnapshot.player1_probability} /><small style={{ display: "block", marginTop: 5, color: "#b7c8d8" }}>Elo {matchSnapshot.player1_rating}</small></div>
+                    <div><PercentageSignal label={matchSnapshot.player2_name} value={matchSnapshot.player2_probability} /><small style={{ display: "block", marginTop: 5, color: "#b7c8d8" }}>Elo {matchSnapshot.player2_rating}</small></div>
+                  </div>
+                  <p style={{ margin: "8px 0 0", fontSize: 11, color: "#b7c8d8" }}>Modelo {matchSnapshot.model_version} · {matchSnapshot.result_status} · Capturado {formatDate(matchSnapshot.created_at)}</p>
+                </>
+              ) : candidateProjection ? (
+                <>
+                  <div className="percentage-signal-grid">
+                    <div><PercentageSignal label={candidateProjection.player1.name} value={candidateProjection.player1.win_probability} /><small style={{ display: "block", marginTop: 5, color: "#b7c8d8" }}>Elo {candidateProjection.player1.rating}</small></div>
+                    <div><PercentageSignal label={candidateProjection.player2.name} value={candidateProjection.player2.win_probability} /><small style={{ display: "block", marginTop: 5, color: "#b7c8d8" }}>Elo {candidateProjection.player2.rating}</small></div>
+                  </div>
+                  <p style={{ margin: "8px 0 0", fontSize: 11, color: "#b7c8d8" }}>Modelo {candidateProjection.model_version} · {candidateProjection.historical_matches_used} partidos históricos usados · Vista previa no guardada</p>
+                </>
+              ) : null}
+              {matchProjectionMessage ? <p style={{ margin: "8px 0 0", color: "#b7c8d8", fontSize: 11, lineHeight: 1.45 }}>{matchProjectionMessage}</p> : null}
+            </div>
             <div style={{ margin: "14px 0", padding: 12, borderRadius: 8, border: "1px solid #ca8a04", background: "#2b2414", color: "#f8e6b0", lineHeight: 1.5 }}>
               <strong>Estado del modelo: candidato, no oficial.</strong> La proyección usa Elo general y datos históricos anteriores a la fecha del partido. Se guardará una sola vez por partido y versión; las probabilidades originales no se sobrescriben. La superficie y otros factores todavía no están incluidos. Para guardar/liquidar registros, la migración de snapshots de tenis debe estar aplicada en Supabase.
             </div>
@@ -1235,6 +1346,25 @@ export default function TennisApp() {
                               <strong style={{ display: "block", fontSize: 15, marginTop: 4, overflowWrap: "anywhere" }}>{metric.value}</strong>
                             </div>
                           ))}
+                        </div>
+                        <div style={{ marginTop: 12, border: "1px solid #29445b", borderRadius: 8, padding: 10, background: "#0b1b2c" }}>
+                          <strong style={{ fontSize: 12 }}>Últimos partidos · muestra cronológica</strong>
+                          {profile.recent_matches.length ? (
+                            <div style={{ overflowX: "auto", marginTop: 7 }}>
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 360 }}>
+                                <thead><tr style={{ color: "#b7c8d8", textAlign: "left" }}><th style={{ padding: 5 }}>Fecha</th><th style={{ padding: 5 }}>Rival</th><th style={{ padding: 5 }}>Resultado</th><th style={{ padding: 5 }}>Marcador</th><th style={{ padding: 5 }}>Pista</th></tr></thead>
+                                <tbody>{profile.recent_matches.map((item, index) => (
+                                  <tr key={`${item.date}-${item.opponent}-${index}`} style={{ borderTop: "1px solid #29445b" }}>
+                                    <td style={{ padding: 5, whiteSpace: "nowrap" }}>{item.date}</td>
+                                    <td style={{ padding: 5 }}>{item.opponent}</td>
+                                    <td style={{ padding: 5, color: item.result === "W" ? "#5eead4" : "#fca5a5", fontWeight: 800 }}>{item.result === "W" ? "Victoria" : "Derrota"}</td>
+                                    <td style={{ padding: 5, whiteSpace: "nowrap" }}>{item.score || "—"}</td>
+                                    <td style={{ padding: 5 }}>{item.surface || "—"}</td>
+                                  </tr>
+                                ))}</tbody>
+                              </table>
+                            </div>
+                          ) : <p style={{ margin: "6px 0 0", color: "#b7c8d8", fontSize: 11 }}>No hay partidos individuales disponibles en esta ventana histórica.</p>}
                         </div>
                         <p style={{ fontSize: 11, color: "#b7c8d8", lineHeight: 1.5, marginBottom: 0 }}>{profile.data_quality.warning}</p>
                       </article>
