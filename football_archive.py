@@ -803,7 +803,7 @@ def archive_head_to_head(
     if scope not in {"all", "competition"}:
         raise HTTPException(status_code=400, detail="scope debe ser 'all' o 'competition'.")
     if code not in ARCHIVE_COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     client = _client_or_503()
     home_key, home_resolution = _resolve_team_identity(client, code, home_team)
     away_key, away_resolution = _resolve_team_identity(client, code, away_team)
@@ -1092,7 +1092,7 @@ def archive_season_comparison(
     code = competition.strip().upper()
     selected_season = season.strip()
     if code not in ARCHIVE_COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     if not selected_season.isdigit():
         raise HTTPException(status_code=400, detail="La temporada debe usar el código de cuatro dígitos, por ejemplo 2526.")
 
@@ -1160,7 +1160,7 @@ def archive_market_patterns(
     """Compare recent league goal-market frequencies with each team's own recent sample."""
     code = competition.strip().upper()
     if code not in ARCHIVE_COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     if not kickoff_at:
         raise HTTPException(status_code=400, detail="kickoff_at es obligatorio para excluir resultados posteriores al partido.")
     try:
@@ -1262,7 +1262,7 @@ def archive_team_recent_form(
     """Compare both teams' last 5/10/15 completed league matches from our archive."""
     code = competition.strip().upper()
     if code not in ARCHIVE_COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     if not kickoff_at:
         raise HTTPException(status_code=400, detail="kickoff_at es obligatorio para evitar incluir resultados posteriores al partido.")
     try:
@@ -1336,7 +1336,7 @@ def archive_competition_matches(
 ):
     code = competition.strip().upper()
     if code not in ARCHIVE_COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     if season and not re.fullmatch(r"\d{4}", season):
         raise HTTPException(status_code=400, detail="season debe tener formato de cuatro dígitos, por ejemplo 2526.")
     client = _client_or_503()
@@ -1381,7 +1381,7 @@ def archive_research_backtest(
     """Run read-only chronological model research using only our owned archive."""
     code = competition.strip().upper()
     if code not in ARCHIVE_COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
 
     try:
         client = _client_or_503()
