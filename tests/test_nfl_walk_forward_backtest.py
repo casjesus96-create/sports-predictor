@@ -56,3 +56,38 @@ def test_candidate_vector_distinguishes_missing_metrics_from_real_zero():
     )
     # Value differences, then home availability, then away availability.
     assert vector == [0.0, 2.0, 0.0, 1.0, 1.0, 0.0]
+
+
+
+def test_metric_map_does_not_treat_missing_turnover_component_as_zero():
+    completed = {
+        "g1": {
+            "game_id": "g1",
+            "kickoff": "2025-09-01T17:00:00+00:00",
+            "home": "BUF",
+            "away": "MIA",
+            "home_score": 20,
+            "away_score": 10,
+        }
+    }
+    team_rows = [
+        {
+            "game_id": "g1",
+            "team": "BUF",
+            "passing_epa": "1.2",
+            "rushing_epa": "0.4",
+            "passing_interceptions": "1",
+            "rushing_fumbles_lost": "",
+        },
+        {
+            "game_id": "g1",
+            "team": "MIA",
+            "passing_epa": "0.1",
+            "rushing_epa": "-0.2",
+            "passing_interceptions": "0",
+            "rushing_fumbles_lost": "0",
+        },
+    ]
+    metrics, _ = backtest._metric_map(team_rows, [], completed)
+    assert "turnovers" not in metrics[("BUF", "g1")]
+    assert metrics[("MIA", "g1")]["turnovers"] == 0.0
