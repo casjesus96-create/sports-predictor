@@ -997,7 +997,7 @@ export default function NBAApp() {
                                                   })}
                                                 </div>
                                                 <div className="panel" style={{ marginTop: 8, padding: 9, minWidth: 0 }}>
-                                                  <b>Cobertura estadística individual · últimos 15 boxscores disponibles</b>
+                                                  <b>Cobertura estadística individual · últimos 30 boxscores disponibles</b>
                                                   <p className="muted">N indica en cuántos partidos se capturó un valor válido para esa estadística. El porcentaje usa como denominador los partidos del jugador con al menos una estadística válida; no representa minutos jugados ni confirma participación en todos los encuentros.</p>
                                                   {["points", "assists", "rebounds", "blocks", "steals"].map((stat: string) => {
                                                     const statNames: Record<string, string> = { points: "PTS", assists: "AST", rebounds: "REB", blocks: "BLK", steals: "STL" };
@@ -1013,7 +1013,7 @@ export default function NBAApp() {
                                                   })}
                                                   <div style={{ borderTop: "1px solid var(--border)", marginTop: 8, paddingTop: 8 }}>
                                                     <b style={{ fontSize: 11 }}>Cobertura de los 9 mercados · misma aparición</b>
-                                                    <p className="muted">Cada mercado combinado cuenta únicamente partidos donde están disponibles todos sus componentes en el mismo boxscore. El denominador son las apariciones con al menos una estadística válida dentro de los últimos 15 boxscores disponibles; no equivale a minutos ni confirma participación.</p>
+                                                    <p className="muted">Cada mercado combinado cuenta únicamente partidos donde están disponibles todos sus componentes en el mismo boxscore. El denominador son las apariciones con al menos una estadística válida dentro de los últimos 30 boxscores disponibles; no equivale a minutos ni confirma participación.</p>
                                                     {["PTS", "REB", "AST", "PRA", "PR", "PA", "RA", "BLK", "STL"].map((market: string) => {
                                                       const numerator = Number(player.games_sampled_by_market?.[market]) || 0;
                                                       const denominator = Number(player.market_coverage_denominator) || 0;
@@ -1089,7 +1089,7 @@ export default function NBAApp() {
                                                                 <small className="muted" style={{ display: "block", marginTop: 3 }}>Compara líneas calculadas con los 5, 10 y 15 partidos previos. Cada evaluación usa solo partidos anteriores al que se mide; no hay fuga de información.</small>
                                                                 {backtest && (
                                                                   <>
-                                                                    <div className="score-row"><span>Historial válido disponible</span><b>{backtest.availableHistory}/20</b></div>
+                                                                    <div className="score-row"><span>Historial válido disponible</span><b>{backtest.availableHistory}/30</b></div>
                                                                     <div className="score-row"><span>Muestra común para comparar ventanas</span><b>{backtest.comparisonSample}</b></div>
                                                                     <div style={{ overflowX: "auto", marginTop: 6 }}>
                                                                       <table>

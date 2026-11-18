@@ -54,7 +54,7 @@ def _parse_datetime(value):
         return None
 
 
-def aggregate_player_projections(game_reports, team_histories, max_games=20):
+def aggregate_player_projections(game_reports, team_histories, max_games=30):
     """Aggregate per-appearance player averages from already completed game reports."""
     team_meta = {}
     for team_id, games in (team_histories or {}).items():
@@ -187,7 +187,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=20):
                 "market_history": market_history_window,
             }
             # Preserve the existing projection contract: projected_* remains the
-            # mean of the latest five available appearances, not the expanded 20-game market-history pool.
+            # mean of the latest five available appearances, not the expanded 30-game market-history pool.
             for key, output_key in PROJECTION_KEYS.items():
                 sample = [record["value"] for record in ordered_stats[key][:5]]
                 row[output_key] = round(sum(sample) / len(sample), 1) if sample else None
@@ -211,7 +211,7 @@ def aggregate_player_projections(game_reports, team_histories, max_games=20):
     }
 
 
-def project_players_from_recent_games(team_histories, cutoff, max_games=20):
+def project_players_from_recent_games(team_histories, cutoff, max_games=30):
     """Fetch recent completed boxscores, strictly before cutoff, and average each player's stats."""
     cutoff_dt = _parse_datetime(cutoff)
     if cutoff_dt is None:
