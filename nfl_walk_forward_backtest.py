@@ -211,9 +211,17 @@ def _candidate_vector(home_values, away_values, home_coverage, away_coverage, ex
     Missing metrics remain zero-filled only alongside explicit availability flags.
     The optional exclusion supports same-sample walk-forward ablation tests.
     """
+    lengths = (len(home_values), len(away_values), len(home_coverage), len(away_coverage))
+    if len(set(lengths)) != 1:
+        raise ValueError("Los vectores de valores y cobertura deben tener la misma longitud.")
+    if lengths[0] > len(FEATURES):
+        raise ValueError("El vector contiene más posiciones que las variables definidas.")
+    if excluded_feature is not None and excluded_feature not in FEATURES:
+        raise ValueError(f"Variable no reconocida para ablación: {excluded_feature}")
+
     selected = [
-        index for index, feature in enumerate(FEATURES)
-        if feature != excluded_feature
+        index for index in range(lengths[0])
+        if FEATURES[index] != excluded_feature
     ]
     differences = [home_values[index] - away_values[index] for index in selected]
     home_available = [1.0 if home_coverage[index] > 0 else 0.0 for index in selected]
