@@ -1135,3 +1135,9 @@ button:disabled{cursor:not-allowed;opacity:.55}
   .nba-temporal-card { padding: 12px; }
   .nba-temporal-cut { display: grid; gap: 6px; }
 }
+
+/* Keep large NBA player-market cards responsive on mobile scroll. */
+.player-lab-card{
+  content-visibility:auto;
+  contain-intrinsic-size:1px 1100px;
+}
