@@ -205,16 +205,19 @@ def _baseline(game, season_games):
 
 
 
-def _candidate_vector(home_values, away_values, home_coverage, away_coverage):
-    """Encode feature differences and per-team availability indicators.
+def _candidate_vector(home_values, away_values, home_coverage, away_coverage, excluded_feature=None):
+    """Encode team differences and availability, optionally excluding one feature.
 
-    Missing metrics are still represented as zero in the value component, but
-    explicit availability flags let the experimental model distinguish a true
-    zero from a metric that was not observed in that team's prior games.
+    Missing metrics remain zero-filled only alongside explicit availability flags.
+    The optional exclusion supports same-sample walk-forward ablation tests.
     """
-    differences = [home - away for home, away in zip(home_values, away_values)]
-    home_available = [1.0 if count > 0 else 0.0 for count in home_coverage]
-    away_available = [1.0 if count > 0 else 0.0 for count in away_coverage]
+    selected = [
+        index for index, feature in enumerate(FEATURES)
+        if feature != excluded_feature
+    ]
+    differences = [home_values[index] - away_values[index] for index in selected]
+    home_available = [1.0 if home_coverage[index] > 0 else 0.0 for index in selected]
+    away_available = [1.0 if away_coverage[index] > 0 else 0.0 for index in selected]
     return differences + home_available + away_available
 
 def _fit_logistic(rows, dimensions):
@@ -313,7 +316,10 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2025, min_traini
                 all_games.append(game)
     all_games.sort(key=lambda g: _time(g["kickoff"]))
     training = []
+    ablation_training = {feature: [] for feature in FEATURES}
+    ablation_probabilities = {feature: [] for feature in FEATURES}
     baseline_probs, candidate_probs, outcomes = [], [], []
+    ablation_outcomes = {feature: [] for feature in FEATURES}
     skipped = {"no_result": 0, "insufficient_training": 0, "tie": 0, "unavailable_features": 0}
     evaluated = []
     coverage_denominator = 0
@@ -325,7 +331,22 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2025, min_traini
         home_vec, home_n, home_coverage = _team_features(target["home"], cutoff, season_history, metrics)
         away_vec, away_n, away_coverage = _team_features(target["away"], cutoff, season_history, metrics)
         features = _candidate_vector(home_vec, away_vec, home_coverage, away_coverage)
+        ablation_vectors = {
+            feature: _candidate_vector(
+                home_vec, away_vec, home_coverage, away_coverage,
+                excluded_feature=feature,
+            )
+            for feature in FEATURES
+        }
         model = _fit_logistic(training, len(features)) if len(training) >= min_training_games else None
+        ablation_models = {
+            feature: (
+                _fit_logistic(ablation_training[feature], len(vector))
+                if len(ablation_training[feature]) >= min_training_games
+                else None
+            )
+            for feature, vector in ablation_vectors.items()
+        }
         if home_score is None or away_score is None:
             skipped["no_result"] += 1
             continue
@@ -363,6 +384,12 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2025, min_traini
             candidate_probs.append(p_candidate)
             outcomes.append(y)
             evaluated.append({"game_id": str(target["game_id"]), "season": int(target["season"]), "home_probability_official": round(p_base, 6), "home_probability_experimental": round(p_candidate, 6), "actual_home_win": bool(y), "prior_training_games": len(training), "home_history_games": home_n, "away_history_games": away_n})
+            for feature, ablation_model in ablation_models.items():
+                if ablation_model is not None:
+                    ablation_probabilities[feature].append(
+                        _predict_logistic(ablation_model, ablation_vectors[feature])
+                    )
+                    ablation_outcomes[feature].append(y)
         # Add this game's labeled feature vector only after scoring/skipping it.
         if (
             has_usable_features
@@ -370,9 +397,39 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2025, min_traini
             and away_score is not None
             and home_score != away_score
         ):
-            training.append((features, 1 if home_score > away_score else 0))
+            label = 1 if home_score > away_score else 0
+            training.append((features, label))
+            for feature, vector in ablation_vectors.items():
+                ablation_training[feature].append((vector, label))
     base_score = _score(baseline_probs, outcomes)
     candidate_score = _score(candidate_probs, outcomes)
+    ablation_results = {}
+    for feature in FEATURES:
+        ablated_score = _score(
+            ablation_probabilities[feature],
+            ablation_outcomes[feature],
+        )
+        ablation_results[feature] = {
+            "excluded_feature": feature,
+            "sample_size": ablated_score["sample_size"],
+            "brier_score": ablated_score["brier_score"],
+            "log_loss": ablated_score["log_loss"],
+            "accuracy_pct": ablated_score["accuracy_pct"],
+            "brier_delta_vs_full": (
+                round(ablated_score["brier_score"] - candidate_score["brier_score"], 6)
+                if ablated_score["sample_size"] == candidate_score["sample_size"]
+                and ablated_score["sample_size"] > 0 else None
+            ),
+            "log_loss_delta_vs_full": (
+                round(ablated_score["log_loss"] - candidate_score["log_loss"], 6)
+                if ablated_score["sample_size"] == candidate_score["sample_size"]
+                and ablated_score["sample_size"] > 0 else None
+            ),
+            "same_sample_as_full_candidate": (
+                ablated_score["sample_size"] == candidate_score["sample_size"]
+                and ablated_score["sample_size"] > 0
+            ),
+        }
 
     # Stratified reporting uses the exact same chronological out-of-sample
     # predictions already scored above; no refitting or leakage is introduced.
@@ -435,6 +492,11 @@ def run_nfl_walk_forward_backtest(start_season=2023, end_season=2025, min_traini
         ],
         "feature_coverage_denominator": coverage_denominator,
         "official": base_score, "experimental": candidate_score,
+        "feature_ablation": {
+            "method": "walk-forward refit with one feature and its availability flags excluded; compared against full candidate on identical scored targets",
+            "read_only": True,
+            "results": ablation_results,
+        },
         "by_season": stratified_by_season,
         "by_confidence": stratified_by_confidence,
         "comparison": {"brier_improvement": round(base_score["brier_score"] - candidate_score["brier_score"], 6) if outcomes else None, "log_loss_improvement": round(base_score["log_loss"] - candidate_score["log_loss"], 6) if outcomes else None, "accuracy_delta_percentage_points": round(candidate_score["accuracy_pct"] - base_score["accuracy_pct"], 2) if outcomes else None},
