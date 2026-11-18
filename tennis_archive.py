@@ -28,6 +28,7 @@ TABLE = "tennis_match_archive"
 UPSERT_BATCH_SIZE = 500
 MIN_YEAR = 2021
 SUPPORTED_LEAGUES = {"ATP", "WTA"}
+ELIGIBLE_CATEGORIES = {"main tour", "masters", "grand chelem", "grand slam"}
 
 
 class TennisArchiveImportError(RuntimeError):
@@ -84,7 +85,8 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
         return None
 
     tournament = str(row.get("tournoi") or "").strip()
-    if not tournament:
+    category = str(row.get("categorie") or "").strip() or "Unknown"
+    if not tournament or category.casefold() not in ELIGIBLE_CATEGORIES:
         return None
 
     surface_detail = str(row.get("surface") or "").strip() or None
@@ -111,7 +113,7 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
         "match_datetime_utc": _utc_timestamp(row.get("date")),
         "tournament": tournament,
         "tournament_id": str(row.get("tournoi_id") or "").strip() or None,
-        "category": str(row.get("categorie") or "").strip() or "Unknown",
+        "category": category,
         "surface": surface,
         "surface_detail": surface_detail,
         "round_code": _optional_nonnegative_int(row.get("tour")),
@@ -292,10 +294,9 @@ def get_player_archive_profile(
     for row in first + second:
         unique[str(row.get("source_match_id") or "")] = row
     rows = list(unique.values())
-    eligible = {"main tour", "masters", "grand chelem", "grand slam"}
     rows = [
         row for row in rows
-        if str(row.get("category") or "").strip().casefold() in eligible
+        if str(row.get("category") or "").strip().casefold() in ELIGIBLE_CATEGORIES
     ]
     if not rows:
         return None
