@@ -411,6 +411,55 @@ function evaluateMarketLine(records: MarketHistoryRecord[] | undefined, market: 
   };
 }
 
+
+/**
+ * Memoización de análisis descriptivos por referencia del historial del jugador.
+ * Los historiales recibidos desde la API son snapshots inmutables: al cambiar,
+ * la nueva referencia invalida automáticamente la caché mediante WeakMap.
+ * El límite por jugador evita acumular líneas manuales indefinidamente.
+ */
+const playerMarketAnalysisCache = new WeakMap<MarketHistoryRecord[], Map<string, unknown>>();
+
+function cachedPlayerMarketValue<T>(
+  records: MarketHistoryRecord[] | undefined,
+  key: string,
+  compute: () => T,
+): T {
+  if (!Array.isArray(records)) return compute();
+  let cache = playerMarketAnalysisCache.get(records);
+  if (!cache) {
+    cache = new Map<string, unknown>();
+    playerMarketAnalysisCache.set(records, cache);
+  }
+  if (cache.has(key)) return cache.get(key) as T;
+  const value = compute();
+  if (cache.size >= 64) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey !== undefined) cache.delete(oldestKey);
+  }
+  cache.set(key, value);
+  return value;
+}
+
+function cachedRecommendedMarketLine(records: MarketHistoryRecord[] | undefined, market: string) {
+  return cachedPlayerMarketValue(records, "recommended:" + market, () => recommendedMarketLine(records, market));
+}
+
+function cachedRecommendedLineBacktest(records: MarketHistoryRecord[] | undefined, market: string) {
+  return cachedPlayerMarketValue(records, "backtest:" + market, () => evaluateRecommendedLineBacktest(records, market));
+}
+
+function cachedMarketLineEvaluation(records: MarketHistoryRecord[] | undefined, market: string, rawLine: string) {
+  return cachedPlayerMarketValue(records, "line:" + market + ":" + rawLine, () => evaluateMarketLine(records, market, rawLine));
+}
+
+function cachedPlayerStatTrace(records: MarketHistoryRecord[] | undefined, stat: string) {
+  return cachedPlayerMarketValue(records, "trace:" + stat, () => (records || [])
+    .filter((record) => record.completed === true && record.game_id && record.kickoff && typeof (record as any)[stat] === "number" && Number.isFinite((record as any)[stat]))
+    .sort((a, b) => Date.parse(b.kickoff || "") - Date.parse(a.kickoff || ""))
+    .slice(0, 5));
+}
+
 const statLabel = (value: unknown, percent = false) =>
   typeof value === "number" && Number.isFinite(value)
     ? `${value.toFixed(1)}${percent ? "%" : ""}`
@@ -1041,10 +1090,7 @@ export default function NBAApp() {
                                                   <p className="muted">Cada promedio se calcula con las últimas apariciones disponibles de esa estadística. Una ausencia en un boxscore no se convierte en cero; por eso el número de partidos puede variar entre PTS, AST, REB, BLK y STL.</p>
                                                   {["points", "assists", "rebounds", "blocks", "steals"].map((stat: string) => {
                                                     const statNames: Record<string, string> = { points: "PTS", assists: "AST", rebounds: "REB", blocks: "BLK", steals: "STL" };
-                                                    const sourceGames = (player.market_history || [])
-                                                      .filter((record: any) => record.completed === true && record.game_id && record.kickoff && typeof record[stat] === "number" && Number.isFinite(record[stat]))
-                                                      .sort((a: any, b: any) => Date.parse(b.kickoff) - Date.parse(a.kickoff))
-                                                      .slice(0, 5);
+                                                    const sourceGames = cachedPlayerStatTrace(player.market_history, stat);
                                                     const average = sourceGames.length
                                                       ? sourceGames.reduce((sum: number, record: any) => sum + record[stat], 0) / sourceGames.length
                                                       : null;
@@ -1077,8 +1123,8 @@ export default function NBAApp() {
                                                   {["PTS", "REB", "AST", "PRA", "PR", "PA", "RA", "BLK", "STL"].map((market) => {
                                                     const lineKey = String(player.player_id || player.name) + ":" + market;
                                                     const line = marketLines[lineKey] || "";
-                                                    const recommendation = recommendedMarketLine(player.market_history, market);
-                                                    const evaluation = evaluateMarketLine(player.market_history, market, line);
+                                                    const recommendation = cachedRecommendedMarketLine(player.market_history, market);
+                                                    const evaluation = cachedMarketLineEvaluation(player.market_history, market, line);
                                                     return (
                                                       <section key={market} className="panel nba-market-card" style={{ padding: 10, minWidth: 0, width: "100%", boxSizing: "border-box", overflow: "hidden" }}>
                                                         <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0 }}><b style={{ flex: "0 0 auto" }}>{market}</b><small className="muted" style={{ minWidth: 0, flex: "1 1 130px", overflowWrap: "anywhere", textAlign: "right" }}>{PLAYER_MARKET_DESCRIPTIONS[market]}</small></div>
@@ -1086,7 +1132,7 @@ export default function NBAApp() {
                                                           <div className="score-row"><span>Línea de referencia sugerida</span><b>{recommendation ? numberLabel(recommendation.line) : "No disponible"}</b></div>
                                                           <small className="muted">{recommendation ? "Promedio últimos 5: " + numberLabel(recommendation.average) + " · N=" + recommendation.sample + ". Redondeo al medio punto más cercano." : "Se requieren 5 partidos válidos con todas las estadísticas de este mercado."}</small>
                                                           {(() => {
-                                                            const backtest = evaluateRecommendedLineBacktest(player.market_history, market);
+                                                            const backtest = cachedRecommendedLineBacktest(player.market_history, market);
                                                             return (
                                                               <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
                                                                 <b style={{ fontSize: 11 }}>Estabilidad cronológica por ventana</b>
