@@ -267,6 +267,9 @@ def get_player_profile(
             player_matches.append((played_on, row, "loser"))
 
     if len(matching_names) > 1:
+        if archived_profile:
+            logger.warning("Legacy tennis name match is ambiguous; retaining exact-ID archive form")
+            return archived_profile
         raise ValueError("El nombre coincide con más de una variante histórica; se necesita identificar al jugador con mayor precisión.")
 
     filtered = [
