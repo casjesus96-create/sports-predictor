@@ -546,12 +546,12 @@ def test_season_comparison_queries_selected_season_across_leagues_and_adjacent_s
     result = football_archive.archive_season_comparison(competition="PL", season="2526")
     assert result["provider_calls"] == 0
     assert result["model_changed"] is False
-    assert len(result["cross_competition"]) == 5
+    assert len(result["cross_competition"]) == 9
     assert [item["season"] for item in result["season_trend"]] == ["2425", "2526", "2627"]
     assert ("PL", "2526") in captured
     assert ("PL", "2425") in captured
     assert ("PL", "2627") in captured
-    assert len(captured) == 8
+    assert len(captured) == 12
 
 
 def test_archive_research_backtest_uses_only_owned_archive_and_excludes_same_day(monkeypatch):
