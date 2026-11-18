@@ -146,7 +146,12 @@ def _sum_available(values: list[int | None]) -> int | None:
 
 
 def _aggregate_service_stats(matches: list[tuple[dict[str, str], str]]) -> dict[str, Any]:
-    stats = [_match_stats(row, side) for row, side in matches]
+    # Only matches with a valid service-points denominator count as played
+    # observations for service coverage and per-match averages.
+    stats = [
+        item for item in (_match_stats(row, side) for row, side in matches)
+        if item["svpt"] is not None and item["svpt"] > 0
+    ]
     aces = _sum_available([item["ace"] for item in stats])
     double_faults = _sum_available([item["df"] for item in stats])
     serve_points = _sum_available([item["svpt"] for item in stats])
@@ -155,7 +160,6 @@ def _aggregate_service_stats(matches: list[tuple[dict[str, str], str]]) -> dict[
     second_won = _sum_available([item["2ndWon"] for item in stats])
     bp_saved = _sum_available([item["bpSaved"] for item in stats])
     bp_faced = _sum_available([item["bpFaced"] for item in stats])
-    first_outcomes = _sum_available([item["1stIn"] for item in stats])
     second_attempts = (
         sum(item["svpt"] - item["1stIn"] for item in stats if item["svpt"] is not None and item["1stIn"] is not None)
         if any(item["svpt"] is not None and item["1stIn"] is not None for item in stats)
@@ -248,6 +252,8 @@ def get_player_profile(
         opponent = row.get("loser_name") if side == "winner" else row.get("winner_name")
         recent_matches.append({
             "date": played_on.isoformat(),
+            "date_precision": "tournament_start_date",
+            "is_walkover": bool(re.search(r"\bW\s*/?\s*O\b|\bWALKOVER\b", str(row.get("score") or ""), re.IGNORECASE)),
             "tournament": row.get("tourney_name") or None,
             "opponent": str(opponent or "Desconocido"),
             "result": "W" if side == "winner" else "L",
@@ -299,9 +305,7 @@ def get_player_profile(
         "data_quality": {
             "annual_files_available": years_available,
             "matches_found": len(player_matches),
-            "matches_with_service_stats": sum(
-                1 for row, side in recent_service if _integer(row.get(("w_" if side == "winner" else "l_") + "svpt")) is not None
-            ),
+            "matches_with_service_stats": _aggregate_service_stats(recent_service)["matches_with_service_stats"],
             "source": f"Jeff Sackmann {league} historical match CSVs",
             "source_url": SOURCE_REPOSITORY_URLS[league],
             "upstream_provenance_url": UPSTREAM_PROVENANCE_URLS[league],
