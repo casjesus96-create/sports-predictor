@@ -303,11 +303,10 @@ def get_player_archive_profile(
     unique: dict[str, dict[str, Any]] = {}
     for row in first + second:
         unique[str(row.get("source_match_id") or "")] = row
+    # The importer enforces competition-tier eligibility before persistence.
+    # Do not re-filter persisted rows here: source labels can vary in casing or
+    # spelling across annual files, while the archive table is already scoped.
     rows = list(unique.values())
-    rows = [
-        row for row in rows
-        if str(row.get("category") or "").strip().casefold() in ELIGIBLE_CATEGORIES
-    ]
     if not rows:
         return None
 
