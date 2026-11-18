@@ -220,17 +220,23 @@ function evaluateRecommendedLineBacktest(records: MarketHistoryRecord[] | undefi
     }))
     .sort((a, b) => Date.parse(a.kickoff) - Date.parse(b.kickoff));
 
-  // Walk-forward comparison: each window uses only games strictly before
-  // the evaluated game. The current feed supplies at most 15 games.
+  // Native walk-forward metrics retain every eligible target game for each window.
+  // Fair comparison metrics use the exact same target games for all windows:
+  // only indexes with at least 15 prior games can be evaluated by every window.
+  type LineEvaluation = { game_id: string; kickoff: string; line: number; actual: number; error: number; absoluteError: number };
   const windowComparisons: Record<string, {
     window: number;
     sample: number;
     mae: number | null;
     bias: number | null;
-    evaluations: Array<{ game_id: string; kickoff: string; line: number; actual: number; error: number; absoluteError: number }>;
+    comparisonSample: number;
+    comparisonMae: number | null;
+    comparisonBias: number | null;
+    comparisonRmse: number | null;
+    evaluations: LineEvaluation[];
   }> = {};
   for (const window of [5, 10, 15]) {
-    const evaluations: Array<{ game_id: string; kickoff: string; line: number; actual: number; error: number; absoluteError: number }> = [];
+    const evaluations: LineEvaluation[] = [];
     for (let index = window; index < orderedGames.length; index += 1) {
       const priorGames = orderedGames.slice(index - window, index);
       const average = priorGames.reduce((sum, game) => sum + game.value, 0) / priorGames.length;
@@ -245,17 +251,47 @@ function evaluateRecommendedLineBacktest(records: MarketHistoryRecord[] | undefi
         absoluteError: Math.abs(actual.value - line),
       });
     }
+
+    const comparableEvaluations: LineEvaluation[] = [];
+    for (let index = 15; index < orderedGames.length; index += 1) {
+      const priorGames = orderedGames.slice(index - window, index);
+      const average = priorGames.reduce((sum, game) => sum + game.value, 0) / priorGames.length;
+      const line = Math.max(0, Math.round(average * 2) / 2);
+      const actual = orderedGames[index];
+      comparableEvaluations.push({
+        game_id: actual.game_id,
+        kickoff: actual.kickoff,
+        line,
+        actual: actual.value,
+        error: actual.value - line,
+        absoluteError: Math.abs(actual.value - line),
+      });
+    }
+
     const mae = evaluations.length
       ? evaluations.reduce((sum, item) => sum + item.absoluteError, 0) / evaluations.length
       : null;
     const bias = evaluations.length
       ? evaluations.reduce((sum, item) => sum + item.error, 0) / evaluations.length
       : null;
+    const comparisonMae = comparableEvaluations.length
+      ? comparableEvaluations.reduce((sum, item) => sum + item.absoluteError, 0) / comparableEvaluations.length
+      : null;
+    const comparisonBias = comparableEvaluations.length
+      ? comparableEvaluations.reduce((sum, item) => sum + item.error, 0) / comparableEvaluations.length
+      : null;
+    const comparisonRmse = comparableEvaluations.length
+      ? Math.sqrt(comparableEvaluations.reduce((sum, item) => sum + item.error * item.error, 0) / comparableEvaluations.length)
+      : null;
     windowComparisons[String(window)] = {
       window,
       sample: evaluations.length,
       mae: evaluations.length >= 5 ? mae : null,
       bias: evaluations.length >= 5 ? bias : null,
+      comparisonSample: comparableEvaluations.length,
+      comparisonMae: comparableEvaluations.length >= 5 ? comparisonMae : null,
+      comparisonBias: comparableEvaluations.length >= 5 ? comparisonBias : null,
+      comparisonRmse: comparableEvaluations.length >= 5 ? comparisonRmse : null,
       evaluations,
     };
   }
@@ -268,6 +304,7 @@ function evaluateRecommendedLineBacktest(records: MarketHistoryRecord[] | undefi
     bias: primary.bias,
     evaluations: primary.evaluations,
     windowComparisons,
+    comparisonSample: Math.max(0, orderedGames.length - 15),
     availableHistory: orderedGames.length,
   };
 }
@@ -1043,24 +1080,26 @@ export default function NBAApp() {
                                                                 <small className="muted" style={{ display: "block", marginTop: 3 }}>Compara líneas calculadas con los 5, 10 y 15 partidos previos. Cada evaluación usa solo partidos anteriores al que se mide; no hay fuga de información.</small>
                                                                 {backtest && (
                                                                   <>
-                                                                    <div className="score-row"><span>Historial válido disponible</span><b>{backtest.availableHistory}/15</b></div>
+                                                                    <div className="score-row"><span>Historial válido disponible</span><b>{backtest.availableHistory}/20</b></div>
+                                                                    <div className="score-row"><span>Muestra común para comparar ventanas</span><b>{backtest.comparisonSample}</b></div>
                                                                     <div style={{ overflowX: "auto", marginTop: 6 }}>
                                                                       <table>
-                                                                        <thead><tr><th>Ventana</th><th>Evaluaciones</th><th>MAE</th><th>Sesgo</th></tr></thead>
+                                                                        <thead><tr><th>Ventana</th><th>Eval. propias</th><th>MAE común</th><th>Sesgo común</th><th>RMSE común</th></tr></thead>
                                                                         <tbody>
                                                                           {[5, 10, 15].map((windowSize) => {
                                                                             const comparison = backtest.windowComparisons[String(windowSize)];
                                                                             return <tr key={windowSize}>
                                                                               <td>Últimos {windowSize}</td>
                                                                               <td>{comparison.sample}</td>
-                                                                              <td>{comparison.mae == null ? "—" : numberLabel(comparison.mae)}</td>
-                                                                              <td>{comparison.bias == null ? "—" : numberLabel(comparison.bias)}</td>
+                                                                              <td>{comparison.comparisonMae == null ? "—" : numberLabel(comparison.comparisonMae)}</td>
+                                                                              <td>{comparison.comparisonBias == null ? "—" : numberLabel(comparison.comparisonBias)}</td>
+                                                                              <td>{comparison.comparisonRmse == null ? "—" : numberLabel(comparison.comparisonRmse)}</td>
                                                                             </tr>;
                                                                           })}
                                                                         </tbody>
                                                                       </table>
                                                                     </div>
-                                                                    <small className="muted" style={{ display: "block", marginTop: 5 }}>MAE y sesgo se muestran solo con al menos 5 evaluaciones. La ventana de 15 requiere 16+ partidos válidos; el historial actual está limitado a 15, por lo que todavía no es evaluable.</small>
+                                                                    <small className="muted" style={{ display: "block", marginTop: 5 }}>Las métricas MAE, sesgo y RMSE usan exactamente los mismos partidos evaluados para las tres ventanas, y solo aparecen con al menos 5 casos comparables. “Eval. propias” muestra cuántas evaluaciones cronológicas tiene cada ventana en total. Se necesitan 16 partidos válidos para empezar a comparar las tres ventanas; con 20, la muestra común es de 5.</small>
                                                                   </>
                                                                 )}
                                                                 {backtest && backtest.evaluations.length > 0 && (
