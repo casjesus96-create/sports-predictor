@@ -534,6 +534,8 @@ export default function TennisApp() {
     const player1 = match.player1?.name?.trim();
     const player2 = match.player2?.name?.trim();
     if (!player1 || !player2) {
+      setHistoricalProfiles([]);
+      setProfileLoading(false);
       setProfileError("La fuente del calendario no proporcionó los nombres de ambos jugadores.");
       return;
     }
@@ -573,7 +575,9 @@ export default function TennisApp() {
     setProjectionError("");
     setMatchProjectionMessage("");
     if (!selected || !selected.match_id) {
+      profileRequestId.current += 1;
       setMatchProjectionLoading(false);
+      setProfileLoading(false);
       return;
     }
     void loadHistoricalProfiles(selected);
