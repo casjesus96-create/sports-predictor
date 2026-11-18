@@ -3,7 +3,7 @@
 -- retained on every row. This table is not a prediction or snapshot table.
 create table if not exists tennis_match_archive (
     id uuid primary key default gen_random_uuid(),
-    source_match_id text not null unique,
+    source_match_id text not null,
     source text not null default 'Valuebetennis',
     source_url text not null,
     source_license text not null default 'CC BY 4.0',
@@ -27,6 +27,7 @@ create table if not exists tennis_match_archive (
     score text,
     duration_minutes integer check (duration_minutes is null or duration_minutes >= 0),
     imported_at timestamptz not null default now(),
+    constraint tennis_archive_source_match_unique unique (league, source_match_id),
     constraint tennis_archive_distinct_players check (player1_id <> player2_id),
     constraint tennis_archive_winner_is_participant check (winner_id in (player1_id, player2_id))
 );
