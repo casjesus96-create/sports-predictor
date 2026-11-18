@@ -91,7 +91,7 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
 
     surface_detail = str(row.get("surface") or "").strip() or None
     surface_key = (surface_detail or "").casefold().replace(".", "").strip()
-    if surface_key in {"hard", "indoor hard", "i hard"}:
+    if surface_key in {"hard", "indoor hard", "i hard", "ihard"}:
         surface = "Hard"
     elif surface_key == "clay":
         surface = "Clay"
