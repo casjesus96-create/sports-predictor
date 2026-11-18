@@ -233,19 +233,25 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
             if yards is not None:
                 bucket["yards_sum"] += yards
                 bucket["yards_n"] += 1
+            bucket["plays_n"] += 1
             if pass_td is not None:
                 bucket["pass_td_n"] += 1
+                bucket["pass_td_total"] += int(pass_td > 0)
                 bucket["td_data_n"] += 1
             if rush_td is not None:
                 bucket["rush_td_n"] += 1
+                bucket["rush_td_total"] += int(rush_td > 0)
                 bucket["td_data_n"] += 1
             if sack is not None:
                 bucket["sacks_n"] += 1
+                bucket["sacks_total"] += int(sack > 0)
             if interception is not None:
                 bucket["interceptions_n"] += 1
+                bucket["interceptions_total"] += int(interception > 0)
                 bucket["turnover_data_n"] += 1
             if fumble_lost is not None:
                 bucket["fumbles_lost_n"] += 1
+                bucket["fumbles_lost_total"] += int(fumble_lost > 0)
                 bucket["turnover_data_n"] += 1
         
 
@@ -384,6 +390,21 @@ def audit_nfl_pregame_feature_coverage(season=2026, session=requests):
                     if item.get("turnover_data_n", 0) else None for item in defense_rows
                 ]),
                 "offensive_plays_sampled": sum(item["plays_n"] for item in offense_rows),
+                "defensive_plays_sampled": sum(item["plays_n"] for item in defense_rows),
+                "offensive_epa_plays_sampled": off_epa_n,
+                "offensive_success_plays_sampled": success_n,
+                "offensive_yards_plays_sampled": yards_n,
+                "defensive_epa_plays_sampled": def_epa_n,
+                "defensive_success_plays_sampled": sum(item["success_n"] for item in defense_rows),
+                "defensive_yards_plays_sampled": def_yards_n,
+                "defensive_touchdowns_games_sampled": sum(item["td_data_n"] > 0 for item in defense_rows),
+                "defensive_sacks_games_sampled": sum(item["sacks_n"] > 0 for item in defense_rows),
+                "defensive_sacks_plays_sampled": sum(item["sacks_n"] for item in defense_rows),
+                "defensive_interceptions_games_sampled": sum(item["interceptions_n"] > 0 for item in defense_rows),
+                "defensive_interceptions_plays_sampled": sum(item["interceptions_n"] for item in defense_rows),
+                "defensive_fumbles_games_sampled": sum(item["fumbles_lost_n"] > 0 for item in defense_rows),
+                "defensive_fumbles_plays_sampled": sum(item["fumbles_lost_n"] for item in defense_rows),
+                "defensive_turnovers_games_sampled": sum(item["turnover_data_n"] > 0 for item in defense_rows),
                 "third_down_attempts": third_n,
                 "fourth_down_attempts": fourth_n,
             }

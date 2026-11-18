@@ -20,6 +20,14 @@ function pct(value: any) {
   return Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : "—";
 }
 
+function sampledMetric(value: any, sample: any, unit = "jugadas") {
+  if (value === null || value === undefined || value === "—") return "— · sin muestra";
+  const count = Number(sample);
+  return Number.isFinite(count) && count >= 0
+    ? `${value} · ${count} ${unit}`
+    : String(value);
+}
+
 function calibrationSampleLabel(sampleSize: any) {
   const n = Number(sampleSize);
   if (!Number.isFinite(n) || n <= 0) return "Muestra no disponible";
@@ -1761,7 +1769,11 @@ export default function NFLApp() {
                 {[{ name: advancedProfile.away, stats: advancedAway }, { name: advancedProfile.home, stats: advancedHome }].map((team: AnyRecord) => (
                   <div className="panel" key={team.name}>
                     <h3>{team.name}</h3>
-                    <div className="muted">Partidos utilizados: {team.stats.games_sampled ?? 0}/5</div>
+                    <div className="muted">
+                  Partidos utilizados: {team.stats.games_sampled ?? 0}/5 ·
+                  Jugadas: ataque {team.stats.offensive_plays_sampled ?? 0} /
+                  defensa {team.stats.defensive_plays_sampled ?? 0}
+                </div>
                     <h4 className="detail-heading">Ataque</h4>
                     <div className="factor-grid">
                       <TeamFactor label="Yardas aéreas / partido" value={number(team.stats.passing_yards_per_game, 1)} />
@@ -1775,22 +1787,22 @@ export default function NFLApp() {
                       <TeamFactor label="Sacks sufridos / partido" value={number(team.stats.sacks_suffered_per_game, 2)} />
                       <TeamFactor label="EPA de pase / partido" value={number(team.stats.passing_epa_per_game, 2)} />
                       <TeamFactor label="EPA terrestre / partido" value={number(team.stats.rushing_epa_per_game, 2)} />
-                      <TeamFactor label="EPA ofensivo / jugada" value={number(team.stats.offensive_epa_per_play, 3)} />
-                      <TeamFactor label="Eficiencia ofensiva" value={pct(team.stats.offensive_success_rate)} />
-                      <TeamFactor label="Yardas ofensivas / jugada" value={number(team.stats.offensive_yards_per_play, 2)} />
+                      <TeamFactor label="EPA ofensivo / jugada" value={sampledMetric(number(team.stats.offensive_epa_per_play, 3), team.stats.offensive_epa_plays_sampled)} />
+                      <TeamFactor label="Eficiencia ofensiva" value={sampledMetric(pct(team.stats.offensive_success_rate), team.stats.offensive_success_plays_sampled)} />
+                      <TeamFactor label="Yardas ofensivas / jugada" value={sampledMetric(number(team.stats.offensive_yards_per_play, 2), team.stats.offensive_yards_plays_sampled)} />
                       <TeamFactor label="3.ª oportunidad" value={team.stats.third_down_conversion_rate == null ? "—" : pct(team.stats.third_down_conversion_rate) + " · " + team.stats.third_down_attempts + " intentos"} />
                       <TeamFactor label="4.ª oportunidad" value={team.stats.fourth_down_conversion_rate == null ? "—" : pct(team.stats.fourth_down_conversion_rate) + " · " + team.stats.fourth_down_attempts + " intentos"} />
                     </div>
                     <h4 className="detail-heading">Defensa</h4>
                     <div className="factor-grid">
-                      <TeamFactor label="EPA permitido / jugada" value={number(team.stats.defensive_epa_allowed_per_play, 3)} />
-                      <TeamFactor label="Eficiencia permitida al rival" value={pct(team.stats.defensive_success_rate_allowed)} />
-                      <TeamFactor label="Yardas permitidas / jugada" value={number(team.stats.defensive_yards_allowed_per_play, 2)} />
-                      <TeamFactor label="TD permitidos / partido" value={number(team.stats.defensive_touchdowns_allowed_per_game, 2)} />
-                      <TeamFactor label="Sacks defensivos / partido" value={number(team.stats.defensive_sacks_per_game, 2)} />
-                      <TeamFactor label="Intercepciones defensivas / partido" value={number(team.stats.defensive_interceptions_per_game, 2)} />
-                      <TeamFactor label="Fumbles recuperados / partido" value={number(team.stats.defensive_fumbles_recovered_per_game, 2)} />
-                      <TeamFactor label="Turnovers defensivos / partido" value={number(team.stats.defensive_turnovers_per_game, 2)} />
+                      <TeamFactor label="EPA permitido / jugada" value={sampledMetric(number(team.stats.defensive_epa_allowed_per_play, 3), team.stats.defensive_epa_plays_sampled)} />
+                      <TeamFactor label="Eficiencia permitida al rival" value={sampledMetric(pct(team.stats.defensive_success_rate_allowed), team.stats.defensive_success_plays_sampled)} />
+                      <TeamFactor label="Yardas permitidas / jugada" value={sampledMetric(number(team.stats.defensive_yards_allowed_per_play, 2), team.stats.defensive_yards_plays_sampled)} />
+                      <TeamFactor label="TD permitidos / partido" value={sampledMetric(number(team.stats.defensive_touchdowns_allowed_per_game, 2), team.stats.defensive_touchdowns_games_sampled, "partidos")} />
+                      <TeamFactor label="Sacks defensivos / partido" value={sampledMetric(number(team.stats.defensive_sacks_per_game, 2), team.stats.defensive_sacks_games_sampled, "partidos")} />
+                      <TeamFactor label="Intercepciones defensivas / partido" value={sampledMetric(number(team.stats.defensive_interceptions_per_game, 2), team.stats.defensive_interceptions_games_sampled, "partidos")} />
+                      <TeamFactor label="Fumbles recuperados / partido" value={sampledMetric(number(team.stats.defensive_fumbles_recovered_per_game, 2), team.stats.defensive_fumbles_games_sampled, "partidos")} />
+                      <TeamFactor label="Turnovers defensivos / partido" value={sampledMetric(number(team.stats.defensive_turnovers_per_game, 2), team.stats.defensive_turnovers_games_sampled, "partidos")} />
                     </div>
                   </div>
                 ))}
