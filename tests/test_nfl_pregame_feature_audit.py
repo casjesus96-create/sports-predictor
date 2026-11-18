@@ -174,7 +174,7 @@ def test_pregame_audit_reports_unexpected_stats_source_failure(monkeypatch):
 def test_download_rows_streams_and_aggregates_without_returning_raw_rows():
     payload = io.BytesIO()
     with gzip.GzipFile(fileobj=payload, mode="wb") as zipped:
-        zipped.write(b"game_id,posteam,epa\\ng1,BUF,0.5\\ng2,MIA,-0.2\\n")
+        zipped.write(b"game_id,posteam,epa\ng1,BUF,0.5\ng2,MIA,-0.2\n")
     compressed = payload.getvalue()
 
     class FakeResponse:
