@@ -1,7 +1,7 @@
 """Read-only NBA player boxscore parsing from ESPN's public summary endpoint."""
 from __future__ import annotations
 
-import requests
+import math\nimport requests
 
 ESPN_SUMMARY_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
 TIMEOUT = 15
@@ -19,10 +19,13 @@ PLAYER_STAT_ALIASES = {
 def _as_number(value):
     try:
         number = float(str(value).replace(",", "").strip())
+        # Boxscore statistics and period scores cannot be negative or non-finite.
+        if not math.isfinite(number) or number < 0:
+            return None
         if number.is_integer():
             return int(number)
         return number
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
