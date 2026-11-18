@@ -22,6 +22,8 @@ from typing import Any
 
 import requests
 
+from tennis_archive import get_player_archive_profile
+
 logger = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 20
 MAX_PROFILE_LOOKBACK_DAYS = 730
@@ -201,22 +203,44 @@ def get_player_profile(
     if selected_surface and selected_surface not in {"Hard", "Clay", "Grass", "Carpet"}:
         raise ValueError("surface debe ser Hard, Clay, Grass o Carpet.")
 
+    # Prefer the persistent CC BY 4.0 archive for recent form, while retaining
+    # the legacy source as a separate provider of serve statistics/rankings.
+    archived_profile = None
+    try:
+        archived_profile = get_player_archive_profile(
+            player_name=player_name,
+            league=league,
+            cutoff_date=cutoff,
+            lookback_days=int(lookback_days),
+            surface=selected_surface,
+        )
+        if archived_profile and archived_profile.get("identity_ambiguous"):
+            archived_profile = None
+    except Exception as exc:
+        logger.warning("Persistent tennis archive unavailable; using legacy source: %s", exc)
+
     # Include enough recent seasons to cover the lookback window. The profile
     # uses event dates strictly earlier than cutoff to prevent target leakage.
     first_year = (cutoff - timedelta(days=int(lookback_days))).year
     rows: list[tuple[date, dict[str, str]]] = []
     years_available: list[int] = []
     source_dates: list[date] = []
-    for year in range(first_year, cutoff.year + 1):
-        annual_rows = load_year(league, year)
-        if annual_rows:
-            years_available.append(year)
-        for row in annual_rows:
-            played_on = _match_date(row)
-            if played_on and played_on < cutoff:
-                source_dates.append(played_on)
-            if played_on and cutoff - timedelta(days=int(lookback_days)) <= played_on < cutoff:
-                rows.append((played_on, row))
+    try:
+        for year in range(first_year, cutoff.year + 1):
+            annual_rows = load_year(league, year)
+            if annual_rows:
+                years_available.append(year)
+            for row in annual_rows:
+                played_on = _match_date(row)
+                if played_on and played_on < cutoff:
+                    source_dates.append(played_on)
+                if played_on and cutoff - timedelta(days=int(lookback_days)) <= played_on < cutoff:
+                    rows.append((played_on, row))
+    except Exception as exc:
+        if archived_profile:
+            logger.warning("Legacy tennis serve-stat source unavailable; retaining current archive profile: %s", exc)
+            return archived_profile
+        raise
     rows.sort(key=lambda item: (item[0], str(item[1].get("tourney_id") or ""), str(item[1].get("match_num") or "")))
     latest_source_match_date = max(source_dates) if source_dates else None
     source_data_age_days = (cutoff - latest_source_match_date).days if latest_source_match_date else None
@@ -243,6 +267,9 @@ def get_player_profile(
             player_matches.append((played_on, row, "loser"))
 
     if len(matching_names) > 1:
+        if archived_profile:
+            logger.warning("Legacy tennis name match is ambiguous; retaining exact-ID archive form")
+            return archived_profile
         raise ValueError("El nombre coincide con más de una variante histórica; se necesita identificar al jugador con mayor precisión.")
 
     filtered = [
@@ -280,7 +307,7 @@ def get_player_profile(
         if rank:
             rankings.append(rank)
 
-    return {
+    legacy_profile = {
         "success": True,
         "league": league,
         "player_name": next(iter(matching_names), player_name),
@@ -338,3 +365,27 @@ def get_player_profile(
             ),
         },
     }
+
+    if archived_profile:
+        archive_quality = dict(archived_profile.get("data_quality") or {})
+        legacy_quality = legacy_profile.get("data_quality") or {}
+        legacy_service = legacy_profile.get("service_return_stats_last_10_matches") or {}
+        archive_quality.update({
+            "legacy_service_stats_source": legacy_quality.get("source"),
+            "legacy_service_stats_source_url": legacy_quality.get("source_url"),
+            "legacy_service_stats_latest_match_date": legacy_quality.get("latest_match_date_in_source"),
+            "legacy_service_stats_age_days": legacy_quality.get("source_data_age_days"),
+            "legacy_service_stats_window_matches": (legacy_profile.get("last_10") or {}).get("matches", 0),
+            "matches_with_service_stats": legacy_quality.get("matches_with_service_stats", 0),
+        })
+        archive_quality["warning"] = (
+            str(archive_quality.get("warning") or "")
+            + " Las estadísticas de saque y el ranking se conservan desde el archivo histórico anterior; "
+            "su muestra no está alineada partido a partido con los resultados exactos de la fuente nueva."
+        )
+        archived_profile["data_quality"] = archive_quality
+        archived_profile["service_return_stats_last_10_matches"] = legacy_service
+        archived_profile["ranking_latest_in_window"] = legacy_profile.get("ranking_latest_in_window")
+        return archived_profile
+
+    return legacy_profile
