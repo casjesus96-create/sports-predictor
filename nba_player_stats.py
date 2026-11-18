@@ -71,9 +71,9 @@ def fetch_player_boxscore(game_id: str) -> dict:
     response.raise_for_status()
     report = parse_player_boxscore(response.json(), normalized_id)
 
-    # Cache only usable boxscores. Missing/incomplete provider responses are retried
-    # on the next analysis rather than being frozen as empty historical observations.
-    if report.get("available"):
+    # Cache only usable FINAL boxscores. The same endpoint also serves current games,
+    # so caching an in-progress report could freeze partial player statistics.
+    if report.get("available") and report.get("completed") is True:
         with _PLAYER_BOXSCORE_CACHE_LOCK:
             expired = [
                 key for key, (expires_at, _) in _PLAYER_BOXSCORE_CACHE.items()
@@ -134,6 +134,12 @@ def _parse_period_scores(payload: dict) -> dict:
 
 def parse_player_boxscore(payload: dict, game_id: str) -> dict:
     """Normalize ESPN summary player stats and actual quarter scores without inventing values."""
+    header = payload.get("header") or {}
+    competitions = header.get("competitions") or []
+    competition = competitions[0] if competitions else {}
+    status = competition.get("status") or {}
+    status_type = status.get("type") or {}
+    completed = status_type.get("completed") is True
     boxscore = payload.get("boxscore") or {}
     quarter_scores = _parse_period_scores(payload)
     teams = []
@@ -196,6 +202,7 @@ def parse_player_boxscore(payload: dict, game_id: str) -> dict:
         "success": True,
         "sport": "NBA",
         "game_id": str(game_id),
+        "completed": completed,
         "source": "ESPN public summary boxscore",
         "quarter_scores": quarter_scores,
         "teams": teams,
