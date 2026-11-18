@@ -164,6 +164,7 @@ class FakeClient:
 def archive_row(match_id, match_date, p1_id, p1_name, p2_id, p2_name, winner_id, surface="Hard"):
     return {
         "source_match_id": match_id,
+        "league": "ATP",
         "match_date": match_date,
         "match_datetime_utc": f"{match_date}T12:00:00+00:00",
         "tournament": "Test Open",
