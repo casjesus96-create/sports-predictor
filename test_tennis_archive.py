@@ -89,3 +89,134 @@ def test_indoor_hard_is_grouped_as_hard_but_raw_label_is_preserved():
     )
     assert payload["surface"] == "Hard"
     assert payload["surface_detail"] == "I.hard"
+
+
+
+class FakeResponse:
+    def __init__(self, data):
+        self.data = data
+
+
+class FakeQuery:
+    def __init__(self, rows):
+        self.rows = rows
+        self.filters = []
+
+    def select(self, _columns):
+        return self
+
+    def eq(self, key, value):
+        self.filters.append(("eq", key, value))
+        return self
+
+    def gte(self, key, value):
+        self.filters.append(("gte", key, value))
+        return self
+
+    def lt(self, key, value):
+        self.filters.append(("lt", key, value))
+        return self
+
+    def order(self, _key, desc=False):
+        return self
+
+    def limit(self, _count):
+        return self
+
+    def execute(self):
+        data = list(self.rows)
+        for operator, key, value in self.filters:
+            if operator == "eq":
+                data = [row for row in data if row.get(key) == value]
+            elif operator == "gte":
+                data = [row for row in data if str(row.get(key) or "") >= value]
+            elif operator == "lt":
+                data = [row for row in data if str(row.get(key) or "") < value]
+        if any(key == "match_date" for _, key, _ in self.filters) and len(data) > 0:
+            data.sort(key=lambda row: str(row.get("match_date") or ""))
+        if len(data) == 0 and self.filters == []:
+            return FakeResponse([])
+        if any(key == "league" for _, key, _ in self.filters) and any(key == "player1_name_key" for _, key, _ in self.filters):
+            return FakeResponse(data)
+        if any(key == "league" for _, key, _ in self.filters) and any(key == "player2_name_key" for _, key, _ in self.filters):
+            return FakeResponse(data)
+        if any(key == "league" for _, key, _ in self.filters):
+            return FakeResponse(data[-1:] if data else [])
+        return FakeResponse(data)
+
+
+class FakeTable:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def select(self, columns):
+        return FakeQuery(self.rows).select(columns)
+
+
+class FakeClient:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def table(self, _name):
+        return FakeTable(self.rows)
+
+
+def archive_row(match_id, match_date, p1_id, p1_name, p2_id, p2_name, winner_id, surface="Hard"):
+    return {
+        "source_match_id": match_id,
+        "match_date": match_date,
+        "match_datetime_utc": f"{match_date}T12:00:00+00:00",
+        "tournament": "Test Open",
+        "category": "Main tour",
+        "surface": surface,
+        "round_code": 12,
+        "player1_id": p1_id,
+        "player1_name": p1_name,
+        "player1_name_key": archive.normalize_player_name(p1_name),
+        "player2_id": p2_id,
+        "player2_name": p2_name,
+        "player2_name_key": archive.normalize_player_name(p2_name),
+        "winner_id": winner_id,
+        "score": "6-4 6-3",
+    }
+
+
+def test_persisted_profile_uses_exact_match_dates_and_stable_player_id(monkeypatch):
+    from datetime import date
+
+    rows = [
+        archive_row("m1", "2026-11-10", "303", "Player Three", "101", "Player One", "303", "Clay"),
+        archive_row("m2", "2026-11-17", "101", "Player One", "202", "Player Two", "101", "Hard"),
+    ]
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: FakeClient(rows))
+
+    profile = archive.get_player_archive_profile(
+        "Player One", "ATP", date(2026, 11, 18), 365
+    )
+
+    assert profile["matches_in_window"] == 2
+    assert profile["wins_in_window"] == 1
+    assert profile["losses_in_window"] == 1
+    assert profile["days_since_last_match"] == 1
+    assert profile["recent_matches"][0]["date"] == "2026-11-17"
+    assert profile["recent_matches"][0]["date_precision"] == "exact_match_date"
+    assert profile["recent_matches"][0]["opponent"] == "Player Two"
+    assert profile["surface_window"]["matches"] == 2
+    assert profile["service_return_stats_last_10_matches"]["aces_per_match"] is None
+    assert profile["data_quality"]["source_data_age_days"] == 1
+
+
+def test_persisted_profile_refuses_ambiguous_name_to_player_id(monkeypatch):
+    from datetime import date
+
+    rows = [
+        archive_row("m1", "2026-11-10", "101", "Player One", "202", "Player Two", "101"),
+        archive_row("m2", "2026-11-17", "999", "Player One", "303", "Player Three", "999"),
+    ]
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: FakeClient(rows))
+
+    profile = archive.get_player_archive_profile(
+        "Player One", "ATP", date(2026, 11, 18), 365
+    )
+
+    assert profile == {"identity_ambiguous": True}
