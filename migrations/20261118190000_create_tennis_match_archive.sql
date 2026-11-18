@@ -15,6 +15,7 @@ create table if not exists tennis_match_archive (
     tournament_id text,
     category text not null default 'Unknown',
     surface text check (surface in ('Hard', 'Clay', 'Grass', 'Carpet', 'Other')),
+    surface_detail text,
     round_code smallint check (round_code is null or round_code >= 0),
     player1_id text not null,
     player1_name text not null,
