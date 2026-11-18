@@ -504,6 +504,20 @@ type PlayerMarketLabProps = { player: any };
  */
 const PlayerMarketLab = memo(function PlayerMarketLab({ player }: PlayerMarketLabProps) {
   const [marketLines, setMarketLines] = useState<Record<string, string>>({});
+  const [seasonScope, setSeasonScope] = useState<"all" | "regular" | "playoffs">("all");
+  const scopedMarketHistory = useMemo(() => {
+    const records = Array.isArray(player.market_history) ? player.market_history as MarketHistoryRecord[] : [];
+    if (seasonScope === "all") return records;
+    return records.filter((record) => {
+      const typeName = String(record.season_type_name || "").toLowerCase();
+      const type = String(record.season_type ?? "");
+      const isPlayoffs = type === "3" || typeName.includes("playoff");
+      const isRegular = type === "2" || typeName.includes("regular");
+      return seasonScope === "playoffs" ? isPlayoffs : isRegular;
+    });
+  }, [player.market_history, seasonScope]);
+  const regularSample = (player.market_history || []).filter((record: MarketHistoryRecord) => String(record.season_type) === "2" || String(record.season_type_name || "").toLowerCase().includes("regular")).length;
+  const playoffsSample = (player.market_history || []).filter((record: MarketHistoryRecord) => String(record.season_type) === "3" || String(record.season_type_name || "").toLowerCase().includes("playoff")).length;
   return (
     <details className="nba-market-accordion">
       <summary className="nba-market-accordion-summary">
@@ -512,12 +526,23 @@ const PlayerMarketLab = memo(function PlayerMarketLab({ player }: PlayerMarketLa
       </summary>
       <div className="nba-market-accordion-content">
         <p className="muted" style={{ margin: "4px 0 12px" }}>Introduce una línea manual. La evaluación usa los mismos partidos que puedes auditar debajo.</p>
+        <div className="panel" style={{ padding: 9, marginBottom: 10, minWidth: 0 }}>
+          <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <span><b>Separar muestra por fase</b><small className="muted" style={{ display: "block" }}>Regular: {regularSample} · Playoffs: {playoffsSample}</small></span>
+            <select aria-label="Filtrar historial por fase de temporada" value={seasonScope} onChange={(event) => setSeasonScope(event.target.value as "all" | "regular" | "playoffs")} style={{ maxWidth: "100%", minWidth: 0 }}>
+              <option value="all">Todas las fases ({player.market_history?.length || 0})</option>
+              <option value="regular">Temporada regular ({regularSample})</option>
+              <option value="playoffs">Playoffs ({playoffsSample})</option>
+            </select>
+          </label>
+          <small className="muted" style={{ display: "block", marginTop: 6 }}>Muestra activa: {scopedMarketHistory.length}/30. Las líneas sugeridas, conteos Over/Under/Push y backtests usan únicamente esta selección. Los registros sin fase identificada solo aparecen en “Todas las fases”.</small>
+        </div>
         <div className="nba-market-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))", gap: 9, minWidth: 0, width: "100%" }}>
                                                   {["PTS", "REB", "AST", "PRA", "PR", "PA", "RA", "BLK", "STL"].map((market) => {
                                                     const lineKey = String(player.player_id || player.name) + ":" + market;
                                                     const line = marketLines[lineKey] || "";
-                                                    const recommendation = cachedRecommendedMarketLine(player.market_history, market);
-                                                    const evaluation = cachedMarketLineEvaluation(player.market_history, market, line);
+                                                    const recommendation = cachedRecommendedMarketLine(scopedMarketHistory, market);
+                                                    const evaluation = cachedMarketLineEvaluation(scopedMarketHistory, market, line);
                                                     return (
                                                       <section key={market} className="panel nba-market-card" style={{ padding: 10, minWidth: 0, width: "100%", boxSizing: "border-box", overflow: "hidden" }}>
                                                         <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0 }}><b style={{ flex: "0 0 auto" }}>{market}</b><small className="muted" style={{ minWidth: 0, flex: "1 1 130px", overflowWrap: "anywhere", textAlign: "right" }}>{PLAYER_MARKET_DESCRIPTIONS[market]}</small></div>
@@ -525,7 +550,7 @@ const PlayerMarketLab = memo(function PlayerMarketLab({ player }: PlayerMarketLa
                                                           <div className="score-row"><span>Línea de referencia sugerida</span><b>{recommendation ? numberLabel(recommendation.line) : "No disponible"}</b></div>
                                                           <small className="muted">{recommendation ? "Promedio últimos 5: " + numberLabel(recommendation.average) + " · N=" + recommendation.sample + ". Redondeo al medio punto más cercano." : "Se requieren 5 partidos válidos con todas las estadísticas de este mercado."}</small>
                                                           {(() => {
-                                                            const backtest = cachedRecommendedLineBacktest(player.market_history, market);
+                                                            const backtest = cachedRecommendedLineBacktest(scopedMarketHistory, market);
                                                             return (
                                                               <div className="panel" style={{ marginTop: 8, padding: 8, minWidth: 0 }}>
                                                                 <b style={{ fontSize: 11 }}>Estabilidad cronológica por ventana</b>
