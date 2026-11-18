@@ -43,6 +43,7 @@ type HistoricalProfile = {
     latest_match_date_in_source: string | null;
     source_data_age_days: number | null;
     source_freshness_status: "current" | "delayed" | "stale" | "unknown";
+    source_freshness_thresholds_days: { current_max: number; delayed_max: number };
     source: string;
     source_url: string;
     warning: string;
@@ -1389,7 +1390,7 @@ export default function TennisApp() {
                             Último resultado disponible: <strong style={{ color: "#fff" }}>{profile.data_quality.latest_match_date_in_source || "Sin fecha verificable"}</strong>
                             {" · "}Antigüedad de la fuente: <strong style={{ color: sourceFreshnessColor }}>{profile.data_quality.source_data_age_days === null ? "No calculable" : `${profile.data_quality.source_data_age_days} días`}</strong>
                           </div>
-                          <p style={{ margin: "5px 0 0", color: "#b7c8d8", fontSize: 10 }}>Este indicador mide la fecha más reciente de los resultados del archivo consultado; es independiente de los días sin competir de este jugador.</p>
+                          <p style={{ margin: "5px 0 0", color: "#b7c8d8", fontSize: 10 }}>Este indicador mide la fecha más reciente de los resultados del archivo consultado; es independiente de los días sin competir de este jugador. Criterio: reciente ≤{profile.data_quality.source_freshness_thresholds_days.current_max} días; con retraso hasta {profile.data_quality.source_freshness_thresholds_days.delayed_max}; después, desactualizado.</p>
                         </div>
                         <div style={{ marginTop: 12, border: "1px solid #29445b", borderRadius: 8, padding: 10, background: "#0b1b2c" }}>
                           <strong style={{ fontSize: 12 }}>Últimos encuentros · ordenados por fecha del torneo</strong>
