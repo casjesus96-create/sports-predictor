@@ -90,7 +90,8 @@ def evaluate_surface_rows(
 
     by_date: dict[date, list[dict[str, str]]] = defaultdict(list)
     rows_seen = rows_without_date = excluded_invalid = excluded_walkover = 0
-    ignored_after_end = 0
+    ignored_after_end = duplicate_matches = 0
+    seen_matches = set()
     for row in rows:
         rows_seen += 1
         played_on = _match_date(row)
@@ -107,6 +108,23 @@ def evaluate_surface_rows(
         if not _valid_match(row):
             excluded_invalid += 1
             continue
+
+        # Annual archives can contain the same match more than once after
+        # combining sources. Remove exact match duplicates before Elo updates
+        # and evaluation so a repeated row cannot inflate player ratings or N.
+        identity = (
+            played_on.isoformat(),
+            str(row.get("tourney_id") or row.get("tourney_name") or "").strip().casefold(),
+            str(row.get("match_num") or row.get("round") or "").strip().casefold(),
+            str(row.get("winner_id") or row.get("winner_name") or "").strip().casefold(),
+            str(row.get("loser_id") or row.get("loser_name") or "").strip().casefold(),
+            score,
+            str(row.get("surface") or "").strip().casefold(),
+        )
+        if identity in seen_matches:
+            duplicate_matches += 1
+            continue
+        seen_matches.add(identity)
         by_date[played_on].append(row)
 
     general_ratings: dict[str, float] = {}
@@ -303,6 +321,7 @@ def evaluate_surface_rows(
             "matches_excluded_invalid": excluded_invalid,
             "rows_without_valid_date": rows_without_date,
             "rows_after_end_date_ignored": ignored_after_end,
+            "duplicate_matches_excluded": duplicate_matches,
             "matches_evaluated": len(general_eval),
         },
         "configuration": {
