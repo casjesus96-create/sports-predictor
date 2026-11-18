@@ -222,3 +222,27 @@ def test_evaluate_player_market_does_not_emit_probability_for_small_history():
     assert result["available"] is False
     assert result["reason"] == "INSUFFICIENT_SAMPLE"
     assert "over" not in result
+
+
+
+def test_boolean_observations_are_excluded_instead_of_counted_as_zero_or_one():
+    result = evaluate_over_under([True, False, 10, 11, 12, 13, 14], 10)
+    assert result["available"] is True
+    assert result["sample_size"] == 5
+    assert result["over"]["count"] == 4
+    assert result["under"]["count"] == 0
+    assert result["push"]["count"] == 1
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_boolean_minimum_sample_is_rejected(value):
+    result = evaluate_over_under([10, 11, 12, 13, 14], 10, min_sample=value)
+    assert result["available"] is False
+    assert result["reason"] == "INVALID_LINE_OR_MINIMUM"
+
+
+@pytest.mark.parametrize("line", [True, False])
+def test_boolean_line_is_rejected(line):
+    result = evaluate_over_under([10, 11, 12, 13, 14], line)
+    assert result["available"] is False
+    assert result["reason"] == "INVALID_LINE_OR_MINIMUM"
