@@ -87,10 +87,10 @@ COMPETITIONS = {
 # signed app-finalized fixtures; Openfootball imports use their own adapter.
 ARCHIVE_COMPETITIONS = {
     **COMPETITIONS,
-    "PT1": {"name": "Primeira Liga", "country": "Portugal"},
-    "NL1": {"name": "Eredivisie", "country": "Netherlands"},
-    "UCL": {"name": "UEFA Champions League", "country": "Europe"},
-    "BR1": {"name": "Brasileirão Série A", "country": "Brazil"},
+    "PPL": {"name": "Primeira Liga", "country": "Portugal"},
+    "DED": {"name": "Eredivisie", "country": "Netherlands"},
+    "CL": {"name": "UEFA Champions League", "country": "Europe"},
+    "BSA": {"name": "Brasileirão Série A", "country": "Brazil"},
 }
 
 
