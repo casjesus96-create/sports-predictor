@@ -145,7 +145,7 @@ def parse_year_rows(
         if date.fromisoformat(payload["match_date"]).year != year:
             rejected += 1
             continue
-        key = payload["source_match_id"]
+        key = f"{payload['league']}:{payload['source_match_id']}"
         existing = unique.get(key)
         if existing is not None:
             comparable_existing = {k: v for k, v in existing.items() if k != "imported_at"}
@@ -214,7 +214,7 @@ def sync_tennis_archive(
                 batch = payloads[offset:offset + UPSERT_BATCH_SIZE]
                 if batch:
                     client.table(TABLE).upsert(
-                        batch, on_conflict="source_match_id"
+                        batch, on_conflict="league,source_match_id"
                     ).execute()
                     totals["upserted_rows"] += len(batch)
             result["status"] = "imported"
