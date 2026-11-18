@@ -18,8 +18,10 @@ create table if not exists tennis_match_archive (
     round_code smallint check (round_code is null or round_code >= 0),
     player1_id text not null,
     player1_name text not null,
+    player1_name_key text not null,
     player2_id text not null,
     player2_name text not null,
+    player2_name_key text not null,
     winner_id text not null,
     score text,
     duration_minutes integer check (duration_minutes is null or duration_minutes >= 0),
@@ -40,3 +42,8 @@ create index if not exists idx_tennis_archive_tournament_date
 -- The backend sync uses the Supabase service role; no public client policy is
 -- added. Keep the archive inaccessible to anonymous direct table reads.
 alter table tennis_match_archive enable row level security;
+
+create index if not exists idx_tennis_archive_player1_name_key_date
+    on tennis_match_archive (league, player1_name_key, match_date desc);
+create index if not exists idx_tennis_archive_player2_name_key_date
+    on tennis_match_archive (league, player2_name_key, match_date desc);
