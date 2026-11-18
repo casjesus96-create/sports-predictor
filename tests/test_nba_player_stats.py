@@ -161,3 +161,47 @@ def test_parse_player_boxscore_rejects_non_finite_and_negative_stats(raw_value):
     player = report["teams"][0]["players"][0]
     assert player["points"] is None
     assert player["rebounds"] == 0
+
+
+
+def test_fetch_player_boxscore_reuses_only_successful_cached_reports(monkeypatch):
+    import nba_player_stats as module
+
+    with module._PLAYER_BOXSCORE_CACHE_LOCK:
+        module._PLAYER_BOXSCORE_CACHE.clear()
+
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "boxscore": {
+                    "players": [{
+                        "team": {"id": "1", "displayName": "Home"},
+                        "statistics": [{
+                            "names": ["PTS"],
+                            "athletes": [{
+                                "athlete": {"id": "10", "displayName": "Player"},
+                                "stats": ["21"],
+                            }],
+                        }],
+                    }],
+                },
+            }
+
+    def fake_get(*args, **kwargs):
+        calls.append(kwargs["params"]["event"])
+        return FakeResponse()
+
+    monkeypatch.setattr(module.requests, "get", fake_get)
+
+    first = module.fetch_player_boxscore("123")
+    first["teams"][0]["players"][0]["points"] = 999
+    second = module.fetch_player_boxscore("123")
+
+    assert calls == ["123"]
+    assert second["teams"][0]["players"][0]["points"] == 21
+    assert second["available"] is True
