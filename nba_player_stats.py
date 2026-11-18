@@ -1,11 +1,19 @@
 """Read-only NBA player boxscore parsing from ESPN's public summary endpoint."""
 from __future__ import annotations
 
+import copy
 import math
+import threading
+import time
+
 import requests
 
 ESPN_SUMMARY_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
 TIMEOUT = 15
+PLAYER_BOXSCORE_CACHE_TTL_SECONDS = 6 * 60 * 60
+PLAYER_BOXSCORE_CACHE_MAX_ENTRIES = 512
+_PLAYER_BOXSCORE_CACHE = {}
+_PLAYER_BOXSCORE_CACHE_LOCK = threading.Lock()
 
 
 PLAYER_STAT_ALIASES = {
@@ -40,10 +48,20 @@ def _stat_value(names, values, aliases):
 
 
 def fetch_player_boxscore(game_id: str) -> dict:
-    """Fetch one game's current boxscore from ESPN; never writes to prediction history."""
+    """Fetch a final historical boxscore, reusing successful results briefly across analyses."""
     normalized_id = str(game_id).strip()
     if not normalized_id.isdigit():
         raise ValueError("game_id NBA debe ser numérico.")
+
+    now = time.monotonic()
+    with _PLAYER_BOXSCORE_CACHE_LOCK:
+        cached = _PLAYER_BOXSCORE_CACHE.get(normalized_id)
+        if cached:
+            expires_at, report = cached
+            if expires_at > now:
+                return copy.deepcopy(report)
+            _PLAYER_BOXSCORE_CACHE.pop(normalized_id, None)
+
     response = requests.get(
         ESPN_SUMMARY_URL,
         params={"event": normalized_id},
@@ -51,7 +69,26 @@ def fetch_player_boxscore(game_id: str) -> dict:
         headers={"User-Agent": "Sports-Predictor-NBA/1.0.0", "Accept": "application/json"},
     )
     response.raise_for_status()
-    return parse_player_boxscore(response.json(), normalized_id)
+    report = parse_player_boxscore(response.json(), normalized_id)
+
+    # Cache only usable boxscores. Missing/incomplete provider responses are retried
+    # on the next analysis rather than being frozen as empty historical observations.
+    if report.get("available"):
+        with _PLAYER_BOXSCORE_CACHE_LOCK:
+            expired = [
+                key for key, (expires_at, _) in _PLAYER_BOXSCORE_CACHE.items()
+                if expires_at <= now
+            ]
+            for key in expired:
+                _PLAYER_BOXSCORE_CACHE.pop(key, None)
+            while len(_PLAYER_BOXSCORE_CACHE) >= PLAYER_BOXSCORE_CACHE_MAX_ENTRIES:
+                oldest_key = next(iter(_PLAYER_BOXSCORE_CACHE))
+                _PLAYER_BOXSCORE_CACHE.pop(oldest_key, None)
+            _PLAYER_BOXSCORE_CACHE[normalized_id] = (
+                now + PLAYER_BOXSCORE_CACHE_TTL_SECONDS,
+                copy.deepcopy(report),
+            )
+    return report
 
 
 def _parse_period_scores(payload: dict) -> dict:
