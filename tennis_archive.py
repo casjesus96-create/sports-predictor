@@ -254,7 +254,8 @@ def normalize_player_name(value: Any) -> str:
     """Normalize names conservatively for exact-key lookup, never fuzzy-match."""
     normalized = unicodedata.normalize("NFKD", str(value or ""))
     ascii_name = "".join(char for char in normalized if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", " ", ascii_name.casefold()).strip()
+    ascii_name = ascii_name.casefold().replace("&", " and ")
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", ascii_name).split())
 
 
 def get_player_archive_profile(
