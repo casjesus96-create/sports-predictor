@@ -536,7 +536,7 @@ const PlayerMarketLab = memo(function PlayerMarketLab({ player }: PlayerMarketLa
                                                                           ? `Comparación iniciada con ${backtest.comparisonSample} objetivo(s) común(es). Faltan ${5 - backtest.comparisonSample} para alcanzar N=5; hacen falta ${Math.max(0, 20 - backtest.availableHistory)} partido(s) válido(s) adicional(es).`
                                                                           : `Comparación común disponible: N=${backtest.comparisonSample}. Mantén presente que sigue siendo una muestra descriptiva.`}
                                                                     </small>
-                                                                    <div style={{ overflowX: "auto", marginTop: 6 }}>
+                                                                    <div className="nba-market-table-scroll" style={{ overflowX: "auto", marginTop: 6 }}>
                                                                       <table>
                                                                         <thead><tr><th>Ventana</th><th>Eval. propias</th><th>MAE común</th><th>Sesgo común</th><th>RMSE común</th><th>O / U / Push común</th></tr></thead>
                                                                         <tbody>
@@ -827,7 +827,7 @@ export default function NBAApp() {
   const summary = performance?.summary || {};
 
   return (
-    <main className="app-shell">
+    <main className="app-shell nba-app">
       <header className="topbar">
         <div>
           <div className="eyebrow">SPORTS PREDICTOR / BALONCESTO</div>
