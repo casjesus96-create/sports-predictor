@@ -1,3 +1,4 @@
+import pytest
 from nba_player_stats import parse_player_boxscore
 
 
@@ -137,3 +138,26 @@ def test_parse_player_boxscore_merges_non_conflicting_partial_stat_groups():
     assert player["blocks"] == 1
     assert player["steals"] == 2
     assert player["stat_conflicts"] == []
+
+
+@pytest.mark.parametrize("raw_value", ["NaN", "Infinity", "-Infinity", "-1", "-0.5"])
+def test_parse_player_boxscore_rejects_non_finite_and_negative_stats(raw_value):
+    payload = {
+        "boxscore": {
+            "players": [{
+                "team": {"id": "1", "displayName": "Home Team"},
+                "statistics": [{
+                    "names": ["PTS", "REB"],
+                    "athletes": [{
+                        "athlete": {"id": "10", "displayName": "Player One"},
+                        "stats": [raw_value, "0"],
+                    }],
+                }],
+            }],
+        },
+    }
+
+    report = parse_player_boxscore(payload, "123")
+    player = report["teams"][0]["players"][0]
+    assert player["points"] is None
+    assert player["rebounds"] == 0
