@@ -243,6 +243,18 @@ def get_player_profile(
     wins = sum(side == "winner" for _, _, side in player_matches)
     surface_wins = sum(side == "winner" for _, _, side in filtered)
     recent_service = [(row, side) for _, row, side in player_matches[-10:]]
+    recent_matches = []
+    for played_on, row, side in reversed(player_matches[-10:]):
+        opponent = row.get("loser_name") if side == "winner" else row.get("winner_name")
+        recent_matches.append({
+            "date": played_on.isoformat(),
+            "tournament": row.get("tourney_name") or None,
+            "opponent": str(opponent or "Desconocido"),
+            "result": "W" if side == "winner" else "L",
+            "score": str(row.get("score") or "").strip() or None,
+            "surface": str(row.get("surface") or "").strip() or None,
+            "round": str(row.get("round") or "").strip() or None,
+        })
     rankings = []
     for _, row, side in player_matches:
         rank = _integer(row.get("winner_rank" if side == "winner" else "loser_rank"))
@@ -272,6 +284,7 @@ def get_player_profile(
             "losses": sum(side == "loser" for _, _, side in last_10),
             "win_rate": round(sum(side == "winner" for _, _, side in last_10) / len(last_10), 4) if last_10 else None,
         },
+        "recent_matches": recent_matches,
         "surface_window": {
             "matches": len(filtered),
             "wins": surface_wins,
