@@ -22,6 +22,8 @@ from typing import Any
 
 import requests
 
+from tennis_archive import get_player_archive_profile
+
 logger = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 20
 MAX_PROFILE_LOOKBACK_DAYS = 730
@@ -200,6 +202,22 @@ def get_player_profile(
     selected_surface = str(surface or "").strip().title() or None
     if selected_surface and selected_surface not in {"Hard", "Clay", "Grass", "Carpet"}:
         raise ValueError("surface debe ser Hard, Clay, Grass o Carpet.")
+
+    # Prefer the persistent CC BY 4.0 archive when it is populated. This gives
+    # exact match dates and current coverage; the legacy source remains a safe
+    # fallback until the migration and initial import have completed.
+    try:
+        archived_profile = get_player_archive_profile(
+            player_name=player_name,
+            league=league,
+            cutoff_date=cutoff,
+            lookback_days=int(lookback_days),
+            surface=selected_surface,
+        )
+        if archived_profile and not archived_profile.get("identity_ambiguous"):
+            return archived_profile
+    except Exception as exc:
+        logger.warning("Persistent tennis archive unavailable; using legacy source: %s", exc)
 
     # Include enough recent seasons to cover the lookback window. The profile
     # uses event dates strictly earlier than cutoff to prevent target leakage.
