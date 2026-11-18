@@ -82,6 +82,17 @@ COMPETITIONS = {
     "FL1": {"name": "Ligue 1", "country": "France", "source_code": "F1", "timezone": "Europe/Paris"},
 }
 
+# Competitions readable from the unified Supabase archive. The original
+# COMPETITIONS map remains restricted to Football-Data.co.uk ingestion and
+# signed app-finalized fixtures; Openfootball imports use their own adapter.
+ARCHIVE_COMPETITIONS = {
+    **COMPETITIONS,
+    "PPL": {"name": "Primeira Liga", "country": "Portugal"},
+    "DED": {"name": "Eredivisie", "country": "Netherlands"},
+    "CL": {"name": "UEFA Champions League", "country": "Europe"},
+    "BSA": {"name": "Brasileirão Série A", "country": "Brazil"},
+}
+
 
 TEAM_ALIASES = {
     "man utd": "manchester united",
@@ -544,7 +555,7 @@ def archive_team_lookup(
 ):
     """Search the owned archive for a user-confirmable canonical team."""
     code = competition.strip().upper()
-    if code not in COMPETITIONS:
+    if code not in ARCHIVE_COMPETITIONS:
         raise HTTPException(status_code=400, detail="Competición no admitida.")
     search_text = _safe_team_search(query)
     if len(search_text) < 2:
@@ -586,7 +597,7 @@ def archive_team_lookup(
 def archive_confirm_team_alias(payload: TeamAliasRequest):
     """Persist an alias only after explicit user selection of a real archive team."""
     code = payload.competition_code.strip().upper()
-    if code not in COMPETITIONS:
+    if code not in ARCHIVE_COMPETITIONS:
         raise HTTPException(status_code=400, detail="Competición no admitida.")
     alias_key = normalize_team_key(payload.alias_name)
     target_key = str(payload.canonical_team_key).strip()
@@ -663,7 +674,7 @@ def archive_competitions():
     client = _client_or_503()
     result = []
     try:
-        for code, config in COMPETITIONS.items():
+        for code, config in ARCHIVE_COMPETITIONS.items():
             count_result = client.table("football_match_archive").select(
                 "source_key", count="exact"
             ).eq("competition_code", code).limit(1).execute()
@@ -696,7 +707,7 @@ def archive_competitions():
     except Exception as exc:
         logger.exception("Could not read football archive competition coverage")
         raise HTTPException(status_code=503, detail="No se pudo consultar la cobertura del histórico propio.") from exc
-    return {"success": True, "source": SOURCE_NAME, "provider_calls": 0, "competitions": result}
+    return {"success": True, "source": "Sports Predictor · Supabase archive", "provider_calls": 0, "competitions": result}
 
 
 
@@ -791,8 +802,8 @@ def archive_head_to_head(
     scope = scope.strip().lower()
     if scope not in {"all", "competition"}:
         raise HTTPException(status_code=400, detail="scope debe ser 'all' o 'competition'.")
-    if code not in COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+    if code not in ARCHIVE_COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     client = _client_or_503()
     home_key, home_resolution = _resolve_team_identity(client, code, home_team)
     away_key, away_resolution = _resolve_team_identity(client, code, away_team)
@@ -837,9 +848,9 @@ def archive_head_to_head(
         "source": SOURCE_NAME,
         "competition": code,
         "history_scope": (
-            f"Solo {COMPETITIONS[code]['name']}."
+            f"Solo {ARCHIVE_COMPETITIONS[code]['name']}."
             if scope == "competition"
-            else "Todas las competiciones disponibles en el archivo propio de cinco ligas; no representa necesariamente todos los torneos ni todos los partidos disputados."
+            else "Todas las competiciones disponibles en el archivo propio; no representa necesariamente todos los torneos ni todos los partidos disputados."
         ),
         "scope": scope,
         "availability": "available" if count else "no_data",
@@ -1080,17 +1091,23 @@ def archive_season_comparison(
     """Compare one archived season across leagues and adjacent seasons in one league."""
     code = competition.strip().upper()
     selected_season = season.strip()
-    if code not in COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+    if code not in ARCHIVE_COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     if not selected_season.isdigit():
         raise HTTPException(status_code=400, detail="La temporada debe usar el código de cuatro dígitos, por ejemplo 2526.")
 
-    start_short = int(selected_season[:2])
-    start_year = 2000 + start_short if start_short < 90 else 1900 + start_short
-    season_codes = [
-        f"{(start_year + offset) % 100:02d}{(start_year + offset + 1) % 100:02d}"
-        for offset in (-1, 0, 1)
-    ]
+    season_number = int(selected_season)
+    if 1900 <= season_number <= 2100:
+        # Calendar-year competitions such as Brasileirão store YYYY.
+        season_codes = [str(season_number + offset) for offset in (-1, 0, 1)]
+    else:
+        # European seasons retain the existing YYZZ convention (e.g. 2526).
+        start_short = int(selected_season[:2])
+        start_year = 2000 + start_short if start_short < 90 else 1900 + start_short
+        season_codes = [
+            f"{(start_year + offset) % 100:02d}{(start_year + offset + 1) % 100:02d}"
+            for offset in (-1, 0, 1)
+        ]
     client = _client_or_503()
     try:
         def read_sample(competition_code: str, season_code: str) -> list[dict[str, Any]]:
@@ -1105,7 +1122,7 @@ def archive_season_comparison(
             ]
 
         cross_competition = []
-        for competition_code, config in COMPETITIONS.items():
+        for competition_code, config in ARCHIVE_COMPETITIONS.items():
             rows = read_sample(competition_code, selected_season)
             cross_competition.append({
                 "competition": competition_code, "competition_name": config["name"],
@@ -1115,7 +1132,7 @@ def archive_season_comparison(
         for season_code in season_codes:
             rows = read_sample(code, season_code)
             season_trend.append({
-                "competition": code, "competition_name": COMPETITIONS[code]["name"],
+                "competition": code, "competition_name": ARCHIVE_COMPETITIONS[code]["name"],
                 "season": season_code, **_summarize_season_results(rows),
             })
     except Exception as exc:
@@ -1124,7 +1141,7 @@ def archive_season_comparison(
 
     return {
         "success": True, "selected_competition": code,
-        "selected_competition_name": COMPETITIONS[code]["name"],
+        "selected_competition_name": ARCHIVE_COMPETITIONS[code]["name"],
         "selected_season": selected_season,
         "cross_competition": cross_competition, "season_trend": season_trend,
         "source": "Sports Predictor · Supabase archive", "provider_calls": 0,
@@ -1142,8 +1159,8 @@ def archive_market_patterns(
 ):
     """Compare recent league goal-market frequencies with each team's own recent sample."""
     code = competition.strip().upper()
-    if code not in COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+    if code not in ARCHIVE_COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     if not kickoff_at:
         raise HTTPException(status_code=400, detail="kickoff_at es obligatorio para excluir resultados posteriores al partido.")
     try:
@@ -1210,7 +1227,7 @@ def archive_market_patterns(
         "provider": "Sports Predictor · Supabase archive",
         "source": SOURCE_NAME,
         "competition": code,
-        "competition_name": COMPETITIONS[code]["name"],
+        "competition_name": ARCHIVE_COMPETITIONS[code]["name"],
         "history_scope": "Muestra de hasta 1.000 partidos finalizados más recientes de esta competición; para cada equipo se consultan hasta 100 partidos previos y se calculan ventanas generales y específicas de localía de 5, 10 y 15 partidos.",
         "cutoff_date_exclusive": cutoff,
         "competition_sample": {
@@ -1244,8 +1261,8 @@ def archive_team_recent_form(
 ):
     """Compare both teams' last 5/10/15 completed league matches from our archive."""
     code = competition.strip().upper()
-    if code not in COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+    if code not in ARCHIVE_COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     if not kickoff_at:
         raise HTTPException(status_code=400, detail="kickoff_at es obligatorio para evitar incluir resultados posteriores al partido.")
     try:
@@ -1300,7 +1317,7 @@ def archive_team_recent_form(
         "provider": "Sports Predictor · Supabase archive",
         "source": SOURCE_NAME,
         "competition": code,
-        "competition_name": COMPETITIONS[code]["name"],
+        "competition_name": ARCHIVE_COMPETITIONS[code]["name"],
         "history_scope": "Solo partidos finalizados de esta competición almacenados en el archivo propio.",
         "cutoff_date_exclusive": cutoff,
         "teams": teams,
@@ -1318,8 +1335,8 @@ def archive_competition_matches(
     limit: int = Query(100, ge=1, le=500),
 ):
     code = competition.strip().upper()
-    if code not in COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+    if code not in ARCHIVE_COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
     if season and not re.fullmatch(r"\d{4}", season):
         raise HTTPException(status_code=400, detail="season debe tener formato de cuatro dígitos, por ejemplo 2526.")
     client = _client_or_503()
@@ -1342,7 +1359,7 @@ def archive_competition_matches(
         "provider": "Sports Predictor · Supabase archive",
         "source": SOURCE_NAME,
         "competition": code,
-        "competition_name": COMPETITIONS[code]["name"],
+        "competition_name": ARCHIVE_COMPETITIONS[code]["name"],
         "season": season,
         "sample_size": len(rows),
         "limit": limit,
@@ -1363,8 +1380,8 @@ def archive_research_backtest(
 ):
     """Run read-only chronological model research using only our owned archive."""
     code = competition.strip().upper()
-    if code not in COMPETITIONS:
-        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(COMPETITIONS)}.")
+    if code not in ARCHIVE_COMPETITIONS:
+        raise HTTPException(status_code=400, detail=f"Competición no admitida. Usa: {', '.join(ARCHIVE_COMPETITIONS)}.")
 
     try:
         client = _client_or_503()
@@ -1428,7 +1445,7 @@ def archive_research_backtest(
         "provider": "Sports Predictor · Supabase archive",
         "source": SOURCE_NAME,
         "competition": code,
-        "competition_name": COMPETITIONS[code]["name"],
+        "competition_name": ARCHIVE_COMPETITIONS[code]["name"],
         "sample_limit": limit,
         "input_sample_size": len(matches),
         "target_sample_size": evaluation.get("target_sample_size", 0),
