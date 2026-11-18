@@ -374,7 +374,7 @@ export default function TennisApp() {
   const [projectionLoading, setProjectionLoading] = useState(false);
   const [projectionError, setProjectionError] = useState("");
   const [projectionResult, setProjectionResult] = useState<ProjectionResponse | null>(null);
-  const [matchSnapshot, setMatchSnapshot] = useState<MatchSnapshotResponse["snapshot"]>(null);
+  const [matchSnapshot, setMatchSnapshot] = useState<NonNullable<MatchSnapshotResponse["snapshot"]> | null>(null);
   const [candidateProjection, setCandidateProjection] = useState<CandidateProjectionResponse | null>(null);
   const [matchProjectionLoading, setMatchProjectionLoading] = useState(false);
   const [matchProjectionMessage, setMatchProjectionMessage] = useState("");
@@ -572,6 +572,7 @@ export default function TennisApp() {
       setMatchProjectionLoading(false);
       return;
     }
+    void loadHistoricalProfiles(selected);
 
     const loadProjectionForSelectedMatch = async () => {
       setMatchProjectionLoading(true);
@@ -631,7 +632,7 @@ export default function TennisApp() {
     };
     void loadProjectionForSelectedMatch();
     return () => { cancelled = true; };
-  }, [selectedMatchId, matches, league, date]);
+  }, [selectedMatchId, matches, league, date, loadHistoricalProfiles]);
 
   // La aplicación usa un tema oscuro global; los paneles de tenis deben
   // conservar contraste y no depender de variables CSS que no estén definidas.
