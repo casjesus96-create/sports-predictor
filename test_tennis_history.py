@@ -10,6 +10,29 @@ from tennis_history import (
 )
 
 
+@pytest.fixture(autouse=True)
+def disable_persistent_archive_by_default(monkeypatch):
+    monkeypatch.setattr("tennis_history.get_player_archive_profile", lambda **kwargs: None)
+
+
+def test_profile_prefers_persistent_archive_without_fetching_legacy_csv(monkeypatch):
+    archived = {
+        "success": True,
+        "source": "Valuebetennis",
+        "recent_matches": [{"date": "2026-11-17", "date_precision": "exact_match_date"}],
+    }
+    monkeypatch.setattr("tennis_history.get_player_archive_profile", lambda **kwargs: archived)
+    monkeypatch.setattr(
+        "tennis_history.load_year",
+        lambda *args: (_ for _ in ()).throw(AssertionError("legacy source should not be read")),
+    )
+
+    profile = get_player_profile("Player One", "ATP", "2026-11-18", lookback_days=365)
+
+    assert profile is archived
+    assert profile["recent_matches"][0]["date_precision"] == "exact_match_date"
+
+
 def test_normalize_player_name_ignores_accents_and_punctuation():
     assert normalize_player_name("João Fonseca") == "joao fonseca"
     assert normalize_player_name("  O'Connell, Chris ") == "o connell chris"
