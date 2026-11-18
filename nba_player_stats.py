@@ -1,7 +1,8 @@
 """Read-only NBA player boxscore parsing from ESPN's public summary endpoint."""
 from __future__ import annotations
 
-import math\nimport requests
+import math
+import requests
 
 ESPN_SUMMARY_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
 TIMEOUT = 15
