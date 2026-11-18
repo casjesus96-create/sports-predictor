@@ -171,9 +171,19 @@ def evaluate_over_under(
 
     try:
         numeric_line = float(line)
-        minimum = max(1, int(min_sample))
+        minimum_value = float(min_sample)
     except (TypeError, ValueError, OverflowError):
         return {"available": False, "reason": "INVALID_LINE_OR_MINIMUM"}
+
+    # A sample threshold must be a finite, positive whole number. Do not
+    # silently truncate values such as 5.9 to 5 or coerce booleans to 1/0.
+    if (
+        not math.isfinite(minimum_value)
+        or minimum_value < 1
+        or not minimum_value.is_integer()
+    ):
+        return {"available": False, "reason": "INVALID_LINE_OR_MINIMUM"}
+    minimum = int(minimum_value)
 
     if not math.isfinite(numeric_line) or numeric_line < 0:
         return {"available": False, "reason": "INVALID_LINE_OR_MINIMUM"}
