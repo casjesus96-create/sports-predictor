@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timezone
 
 from football_archive import sync_football_archive
+from football_open_data_archive import sync_openfootball_archive
 
 
 def resolve_year_range(start_year=None, end_year=None, current_year=None):
@@ -22,7 +23,12 @@ if __name__ == "__main__":
         os.getenv("FOOTBALL_ARCHIVE_START_YEAR"),
         os.getenv("FOOTBALL_ARCHIVE_END_YEAR"),
     )
-    result = sync_football_archive(start_year=start_year, end_year=end_year)
-    print(result)
-    if not result["success"]:
+    football_data_result = sync_football_archive(start_year=start_year, end_year=end_year)
+    openfootball_result = sync_openfootball_archive(start_year=start_year, end_year=end_year)
+    combined = {
+        "success": football_data_result["success"] and openfootball_result["success"],
+        "sources": [football_data_result, openfootball_result],
+    }
+    print(combined)
+    if not combined["success"]:
         raise SystemExit(1)
