@@ -622,7 +622,7 @@ def test_archive_research_backtest_rejects_unsupported_competition():
 def test_archive_registry_includes_openfootball_competitions_without_expanding_app_finalized_allowlist():
     from football_archive import ARCHIVE_COMPETITIONS, COMPETITIONS
 
-    assert {"PT1", "NL1", "UCL", "BR1"}.issubset(ARCHIVE_COMPETITIONS)
+    assert {"PPL", "DED", "CL", "BSA"}.issubset(ARCHIVE_COMPETITIONS)
     assert set(COMPETITIONS) == {"PL", "PD", "SA", "BL1", "FL1"}
 
 
@@ -645,7 +645,7 @@ def test_calendar_year_season_comparison_uses_calendar_neighbors(monkeypatch):
         def table(self, _name): return Query()
 
     monkeypatch.setattr(football_archive, "_client_or_503", lambda: Client())
-    result = football_archive.archive_season_comparison(competition="BR1", season="2024")
+    result = football_archive.archive_season_comparison(competition="BSA", season="2024")
 
     assert result["selected_competition_name"] == "Brasileirão Série A"
     assert {"2023", "2024", "2025"}.issubset(set(captured))
