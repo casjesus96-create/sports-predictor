@@ -87,9 +87,18 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
     if not tournament:
         return None
 
-    surface = str(row.get("surface") or "").strip().title() or None
-    if surface not in {None, "Hard", "Clay", "Grass", "Carpet"}:
-        surface = "Other"
+    surface_detail = str(row.get("surface") or "").strip() or None
+    surface_key = (surface_detail or "").casefold().replace(".", "").strip()
+    if surface_key in {"hard", "indoor hard", "i hard"}:
+        surface = "Hard"
+    elif surface_key == "clay":
+        surface = "Clay"
+    elif surface_key == "grass":
+        surface = "Grass"
+    elif surface_key == "carpet":
+        surface = "Carpet"
+    else:
+        surface = "Other" if surface_detail else None
 
     return {
         "source_match_id": source_match_id,
@@ -104,6 +113,7 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
         "tournament_id": str(row.get("tournoi_id") or "").strip() or None,
         "category": str(row.get("categorie") or "").strip() or "Unknown",
         "surface": surface,
+        "surface_detail": surface_detail,
         "round_code": _optional_nonnegative_int(row.get("tour")),
         "player1_id": player1_id,
         "player1_name": player1_name,
