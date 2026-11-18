@@ -72,6 +72,9 @@ def test_profile_filters_out_matches_on_or_after_cutoff(monkeypatch):
     assert profile["surface_window"]["matches"] == 1
     assert profile["surface_window"]["win_rate"] == 1.0
     assert profile["days_since_last_match"] == 5
+    assert profile["data_quality"]["latest_match_date_in_source"] == "2026-10-10"
+    assert profile["data_quality"]["source_data_age_days"] == 5
+    assert profile["data_quality"]["source_freshness_status"] == "current"
     assert profile["ranking_latest_in_window"] == 11
     assert profile["data_quality"]["matches_with_service_stats"] == 2
     assert [item["date"] for item in profile["recent_matches"]] == ["2026-10-10", "2026-10-01"]
@@ -120,6 +123,23 @@ def test_walkover_counts_for_result_but_not_service_statistics(monkeypatch):
     walkover = next(item for item in profile["recent_matches"] if item["is_walkover"])
     assert walkover["result"] == "W"
     assert walkover["score"] == "W/O"
+
+
+def test_profile_reports_stale_source_separately_from_player_inactivity(monkeypatch):
+    rows = (
+        {"tourney_date": "20260525", "winner_name": "Player One", "loser_name": "Player Two", "surface": "Clay"},
+        {"tourney_date": "20260520", "winner_name": "Player Three", "loser_name": "Player One", "surface": "Clay"},
+    )
+    monkeypatch.setattr("tennis_history.load_year", lambda league, year: rows if year == 2026 else ())
+
+    profile = get_player_profile("Player One", "ATP", "2026-11-18", lookback_days=365)
+
+    assert profile["days_since_last_match"] == 177
+    assert profile["data_quality"]["latest_match_date_in_source"] == "2026-05-25"
+    assert profile["data_quality"]["source_data_age_days"] == 177
+    assert profile["data_quality"]["source_freshness_status"] == "stale"
+    assert "cobertura histórica está desactualizada" in profile["data_quality"]["warning"]
+
 
 def test_profile_rejects_invalid_surface_and_league():
     with pytest.raises(ValueError, match="surface"):
