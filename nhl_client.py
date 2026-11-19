@@ -127,6 +127,50 @@ def get_games(game_date: str | date | None = None) -> list[dict[str, Any]]:
     ]
 
 
+
+def get_team_season_schedule(team: str, season: str | int) -> dict[str, Any]:
+    """Fetch one team's season schedule for historical coverage discovery.
+
+    This is intentionally read-only: it does not persist results or feed a
+    prediction model. The upstream NHL web endpoint is undocumented.
+    """
+    selected_team = str(team or "").strip().upper()
+    selected_season = str(season or "").strip()
+    if not re.fullmatch(r"[A-Z0-9]{2,4}", selected_team):
+        raise ValueError("team NHL debe ser una abreviatura de 2 a 4 caracteres.")
+    match = re.fullmatch(r"(\\d{4})(\\d{4})", selected_season)
+    if not match or int(match.group(2)) != int(match.group(1)) + 1:
+        raise ValueError("season debe usar el formato YYYY YYYY de temporadas consecutivas, por ejemplo 20252026.")
+
+    try:
+        response = requests.get(
+            f"{BASE_URL}/club-schedule-season/{selected_team}/{selected_season}",
+            headers=HEADERS,
+            timeout=TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise NHLDataError("No fue posible consultar el calendario histórico público de NHL.") from exc
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("games"), list):
+        raise NHLDataError("La respuesta del calendario NHL no contiene una lista de partidos.")
+
+    games = [
+        normalized
+        for row in payload["games"]
+        if (normalized := normalize_game(row)) is not None
+    ]
+    games.sort(key=lambda game: (game["game_date"], game["game_id"]))
+    return {
+        "success": True,
+        "team": selected_team,
+        "season": selected_season,
+        "source": "NHL public club season schedule",
+        "total": len(games),
+        "games": games,
+    }
+
 def _player_name(value: Any) -> str | None:
     return _localized(value)
 
