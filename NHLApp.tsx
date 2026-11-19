@@ -41,6 +41,9 @@ type Player = {
 type Boxscore = {
   game_id: string;
   source?: string;
+  stats_available?: boolean;
+  game_state?: string;
+  limited_scoring?: boolean;
   teams: {
     home: { skaters: Player[]; goalies: Player[] };
     away: { skaters: Player[]; goalies: Player[] };
@@ -199,7 +202,15 @@ export default function NHLApp() {
                   <div className="nhl-boxscore">
                     {detailLoading ? <p className="muted">Cargando boxscore…</p> :
                       detailError ? <div className="message error">{detailError}</div> :
-                      boxscore ? (
+                      boxscore && boxscore.stats_available === false ? (
+                        <p className="muted">
+                          {["FUT", "UN", "PRE"].includes(String(boxscore.game_state || "").toUpperCase())
+                            ? "Las estadísticas individuales estarán disponibles cuando comience el partido."
+                            : boxscore.limited_scoring
+                              ? "La NHL informa que este partido tiene estadísticas individuales limitadas."
+                              : "La fuente NHL todavía no ha publicado estadísticas individuales para este partido."}
+                        </p>
+                      ) : boxscore ? (
                         <>
                           <div className="section-kicker">ESTADÍSTICAS INDIVIDUALES · DATOS DE LA FUENTE</div>
                           {(["away", "home"] as const).map(side => {

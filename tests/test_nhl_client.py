@@ -85,3 +85,39 @@ def test_boxscore_rejects_invalid_game_id_and_malformed_payload():
         nhl_client.get_boxscore("bad-id")
     with pytest.raises(nhl_client.NHLDataError, match="no contiene"):
         nhl_client.normalize_boxscore({}, "2026020123")
+
+
+
+def test_boxscore_without_player_stats_is_available_but_not_ready_yet():
+    result = nhl_client.normalize_boxscore({
+        "id": 2026020123,
+        "gameState": "FUT",
+        "limitedScoring": False,
+    }, "2026020123")
+
+    assert result["success"] is True
+    assert result["stats_available"] is False
+    assert result["game_state"] == "FUT"
+    assert result["teams"]["home"] == {"skaters": [], "goalies": []}
+    assert result["teams"]["away"] == {"skaters": [], "goalies": []}
+
+
+def test_boxscore_reads_nhl_sog_field_as_player_shots():
+    result = nhl_client.normalize_boxscore({
+        "gameState": "OFF",
+        "playerByGameStats": {
+            "homeTeam": {
+                "forwards": [{
+                    "playerId": 10,
+                    "name": {"default": "Player One"},
+                    "sog": 5,
+                }],
+                "defense": [],
+                "goalies": [],
+            },
+            "awayTeam": {"forwards": [], "defense": [], "goalies": []},
+        },
+    }, "2026020123")
+
+    assert result["stats_available"] is True
+    assert result["teams"]["home"]["skaters"][0]["shots"] == 5
