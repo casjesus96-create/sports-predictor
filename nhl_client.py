@@ -138,7 +138,7 @@ def get_team_season_schedule(team: str, season: str | int) -> dict[str, Any]:
     selected_season = str(season or "").strip()
     if not re.fullmatch(r"[A-Z0-9]{2,4}", selected_team):
         raise ValueError("team NHL debe ser una abreviatura de 2 a 4 caracteres.")
-    match = re.fullmatch(r"(\\d{4})(\\d{4})", selected_season)
+    match = re.fullmatch(r"(\d{4})(\d{4})", selected_season)
     if not match or int(match.group(2)) != int(match.group(1)) + 1:
         raise ValueError("season debe usar el formato YYYY YYYY de temporadas consecutivas, por ejemplo 20252026.")
 
