@@ -272,10 +272,10 @@ def test_csv_reader_normalizes_bom_and_header_whitespace():
     from tennis_external_source import _read_csv
 
     csv_text = (
-        "\\ufeffmatch_id ; date ; tournoi ; categorie ; genre ; surface ; tour ; "
-        "joueur1 ; joueur1_id ; joueur2 ; joueur2_id ; vainqueur_id\\n"
+        "\ufeffmatch_id ; date ; tournoi ; categorie ; genre ; surface ; tour ; "
+        "joueur1 ; joueur1_id ; joueur2 ; joueur2_id ; vainqueur_id\n"
         "m-1;2026-11-17T12:00:00+00:00;Test Open;Main tour;ATP;Hard;12;"
-        "Player One;101;Player Two;202;101\\n"
+        "Player One;101;Player Two;202;101\n"
     )
     parsed = _read_csv(csv_text)
     assert len(parsed) == 1
