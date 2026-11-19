@@ -1402,15 +1402,16 @@ export default function TennisApp() {
                           {profile.data_quality.source_attribution ? <p style={{ margin: "5px 0 0", color: "#8fa8bd", fontSize: 9 }}>Atribución: {profile.data_quality.source_attribution}</p> : null}
                         </div>
                         <div style={{ marginTop: 12, border: "1px solid #29445b", borderRadius: 8, padding: 10, background: "#0b1b2c" }}>
-                          <strong style={{ fontSize: 12 }}>Últimos encuentros · {hasExactMatchDates ? "ordenados por fecha exacta del partido" : "ordenados por fecha del torneo"}</strong>
+                          <strong style={{ fontSize: 12 }}>Últimos encuentros · {hasExactMatchDates ? "fecha exacta del partido" : "fecha de inicio del torneo"}{isValuebetennisArchive ? " · Main Tour + Challenger; ITF excluido" : ""}</strong>
                           <p style={{ margin: "5px 0", color: "#b7c8d8", fontSize: 10 }}>{hasExactMatchDates ? "Las fechas corresponden al día real del partido (UTC). Esta fuente no publica estadísticas de saque; no se estiman ni se completan artificialmente." : "La fuente histórica solo proporciona la fecha de inicio del torneo, no el día exacto de cada partido."} Los walkovers cuentan en el balance, pero no en las estadísticas de saque.</p>
                           {profile.recent_matches.length ? (
                             <div style={{ overflowX: "auto", marginTop: 7 }}>
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 360 }}>
-                                <thead><tr style={{ color: "#b7c8d8", textAlign: "left" }}><th style={{ padding: 5 }}>{hasExactMatchDates ? "Fecha del partido (UTC)" : "Inicio del torneo"}</th><th style={{ padding: 5 }}>Rival</th><th style={{ padding: 5 }}>Resultado</th><th style={{ padding: 5 }}>Marcador</th><th style={{ padding: 5 }}>Pista</th></tr></thead>
+                                <thead><tr style={{ color: "#b7c8d8", textAlign: "left" }}><th style={{ padding: 5 }}>{hasExactMatchDates ? "Fecha del partido (UTC)" : "Inicio del torneo"}</th><th style={{ padding: 5 }}>Categoría</th><th style={{ padding: 5 }}>Rival</th><th style={{ padding: 5 }}>Resultado</th><th style={{ padding: 5 }}>Marcador</th><th style={{ padding: 5 }}>Pista</th></tr></thead>
                                 <tbody>{profile.recent_matches.map((item, index) => (
                                   <tr key={`${item.date}-${item.opponent}-${index}`} style={{ borderTop: "1px solid #29445b" }}>
                                     <td style={{ padding: 5, whiteSpace: "nowrap" }}>{item.date}</td>
+                                    <td style={{ padding: 5 }}>{item.category || "—"}</td>
                                     <td style={{ padding: 5 }}>{item.opponent}</td>
                                     <td style={{ padding: 5, color: item.result === "W" ? "#5eead4" : "#fca5a5", fontWeight: 800 }}>{item.result === "W" ? (item.is_walkover ? "Victoria · W/O" : "Victoria") : (item.is_walkover ? "Derrota · W/O" : "Derrota")}</td>
                                     <td style={{ padding: 5, whiteSpace: "nowrap" }}>{item.score || "—"}</td>
