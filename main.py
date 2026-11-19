@@ -322,6 +322,7 @@ def health():
             "NFL",
             "NBA",
             "Tennis",
+            "NHL",
         ],
     }
 
