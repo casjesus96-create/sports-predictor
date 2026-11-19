@@ -218,7 +218,8 @@ def auth_mfa_enroll(request: Request, response: Response):
         user = validate_access_token(token) if token else None
         if not user:
             raise HTTPException(status_code=401, detail="Inicia sesión nuevamente.")
-        existing = [            factor for factor in (user.get("factors") or [])
+        existing = [
+            factor for factor in (user.get("factors") or [])
             if factor.get("factor_type") == "totp" and factor.get("status") == "verified"
         ]
         if existing:
@@ -439,6 +440,7 @@ def get_mlb_games(
                     "home",
                     {}
                 )
+
                 away = teams.get(
                     "away",
                     {}
@@ -658,7 +660,8 @@ def analyze_mlb_day(
         skipped = []
         failed = []
 
-        analyzed_count = 0        skipped_count = 0
+        analyzed_count = 0
+        skipped_count = 0
         failed_count = 0
 
         supabase = get_supabase_client()
@@ -877,6 +880,7 @@ def analyze_mlb_day(
                             prediction.get(
                                 "data_quality"
                             ),
+
                         "model_version":
                             analysis.get(
                                 "model_version",
@@ -1096,7 +1100,8 @@ def settle_game(
 
             if (
                 str(
-                    game.get(                        "gamePk"
+                    game.get(
+                        "gamePk"
                     )
                 )
                 == event_id
@@ -1315,6 +1320,7 @@ def settle_game(
                 "success": False,
                 "event_id": event_id,
                 "status": "Final",
+
                 "home":
                     home_team,
 
@@ -1535,6 +1541,7 @@ def reconcile(
             detail={
                 "error":
                     "RECONCILE_ERROR",
+
                 "message": (
                     "No fue posible "
                     "reconciliar el resultado."
