@@ -176,14 +176,14 @@ class FakeClient:
         return FakeTable(self.rows)
 
 
-def archive_row(match_id, match_date, p1_id, p1_name, p2_id, p2_name, winner_id, surface="Hard"):
+def archive_row(match_id, match_date, p1_id, p1_name, p2_id, p2_name, winner_id, surface="Hard", category="Main tour"):
     return {
         "source_match_id": match_id,
         "league": "ATP",
         "match_date": match_date,
         "match_datetime_utc": f"{match_date}T12:00:00+00:00",
         "tournament": "Test Open",
-        "category": "Main tour",
+        "category": category,
         "surface": surface,
         "round_code": 12,
         "player1_id": p1_id,
@@ -222,6 +222,27 @@ def test_persisted_profile_uses_exact_match_dates_and_stable_player_id(monkeypat
     assert profile["data_quality"]["source_data_age_days"] == 1
 
 
+def test_persisted_profile_exposes_challenger_category_without_merging_player_identity(monkeypatch):
+    from datetime import date
+
+    rows = [
+        archive_row("main-1", "2026-11-10", "101", "Player One", "202", "Player Two", "101"),
+        archive_row(
+            "challenger-1", "2026-11-17", "101", "Player One", "303", "Player Three", "303",
+            category="Challenger",
+        ),
+    ]
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: FakeClient(rows))
+
+    profile = archive.get_player_archive_profile(
+        "Player One", "ATP", date(2026, 11, 18), 365
+    )
+
+    assert profile["matches_in_window"] == 2
+    assert {item["category"] for item in profile["recent_matches"]} == {"Main tour", "Challenger"}
+    assert "no alimenta las proyecciones ni los backtests Elo" in profile["data_quality"]["warning"]
+
+
 def test_persisted_profile_refuses_ambiguous_name_to_player_id(monkeypatch):
     from datetime import date
 
@@ -252,14 +273,27 @@ def test_same_source_match_id_can_exist_in_both_tours():
     assert parsed["league_counts"]["WTA"]["eligible_matches"] == 1
 
 
-def test_import_excludes_non_model_competition_categories_explicitly():
+@pytest.mark.parametrize("league", ["ATP", "WTA"])
+def test_import_includes_challenger_for_both_tours_but_excludes_itf(league):
+    challenger = row(
+        genre=league,
+        categorie="Challenger",
+        joueur1_id="501",
+        joueur2_id="502",
+        vainqueur_id="501",
+        match_id=f"{league.lower()}-challenger-2026",
+    )
     parsed = archive.parse_year_rows(
-        (row(categorie="Challenger"), row(categorie="ITF")),
+        (challenger, row(genre=league, categorie="ITF", match_id=f"{league.lower()}-itf-2026")),
         2026,
         "2026-11-18T00:00:00+00:00",
     )
-    assert parsed["rows"] == []
-    assert parsed["rows_excluded_category"] == 2
+    assert len(parsed["rows"]) == 1
+    assert parsed["rows"][0]["league"] == league
+    assert parsed["rows"][0]["category"] == "Challenger"
+    assert parsed["league_counts"][league]["category_counts"]["challenger"] == 1
+    assert parsed["league_counts"][league]["category_counts"]["itf"] == 1
+    assert parsed["rows_excluded_category"] == 1
     assert parsed["rows_rejected"] == 0
 
 
@@ -272,7 +306,7 @@ def test_parse_year_rows_reports_category_and_validation_diagnostics():
     parsed = archive.parse_year_rows(
         (
             row(categorie="Main tour", joueur1_id="", joueur2_id="202"),
-            row(categorie="Challenger"),
+            row(categorie="Challenger", match_id="valid-challenger"),
             row(categorie="Grand Chelem", match_id="valid-grand-chelem"),
         ),
         2026,
@@ -284,7 +318,8 @@ def test_parse_year_rows_reports_category_and_validation_diagnostics():
         "main tour": 1,
     }
     assert parsed["rejection_reasons"] == {"missing_player_id": 1}
-    assert len(parsed["rows"]) == 1
+    assert len(parsed["rows"]) == 2
+    assert {item["category"] for item in parsed["rows"]} == {"Challenger", "Grand Chelem"}
 
 
 def test_csv_reader_normalizes_bom_and_header_whitespace():
@@ -314,7 +349,7 @@ def test_sync_does_not_report_success_when_no_eligible_matches(monkeypatch):
             return EmptyWriteQuery()
 
     monkeypatch.setattr(archive, "get_supabase_client", lambda: EmptyWriteClient())
-    monkeypatch.setattr(archive, "load_external_year", lambda _year: (row(categorie="Challenger"),))
+    monkeypatch.setattr(archive, "load_external_year", lambda _year: (row(categorie="ITF"),))
 
     result = archive.sync_tennis_archive(start_year=2026, end_year=2026)
 
