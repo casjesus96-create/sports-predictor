@@ -67,17 +67,17 @@ def _match_day(value: str) -> date | None:
 def _read_csv(text: str) -> list[dict[str, str]]:
     sample = text[:8192]
     try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;\\t")
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
     except csv.Error:
         dialect = csv.excel
-    reader = csv.DictReader(io.StringIO(text.lstrip("\\ufeff")), dialect=dialect)
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")), dialect=dialect)
     if not reader.fieldnames:
         raise ExternalTennisSourceError("El CSV externo no contiene encabezados.")
     # Normalize headers before DictReader builds row dictionaries. Previously
     # validation normalized only a temporary set, while row.get() still used
     # the raw header spelling (BOM, casing or surrounding whitespace included).
     reader.fieldnames = [
-        str(key or "").strip().lstrip("\\ufeff").casefold()
+        str(key or "").strip().lstrip("\ufeff").casefold()
         for key in reader.fieldnames
     ]
     rows = [dict(row) for row in reader]
