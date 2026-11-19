@@ -306,7 +306,7 @@ def test_parse_year_rows_reports_category_and_validation_diagnostics():
     parsed = archive.parse_year_rows(
         (
             row(categorie="Main tour", joueur1_id="", joueur2_id="202"),
-            row(categorie="Challenger"),
+            row(categorie="Challenger", match_id="valid-challenger"),
             row(categorie="Grand Chelem", match_id="valid-grand-chelem"),
         ),
         2026,
@@ -318,7 +318,8 @@ def test_parse_year_rows_reports_category_and_validation_diagnostics():
         "main tour": 1,
     }
     assert parsed["rejection_reasons"] == {"missing_player_id": 1}
-    assert len(parsed["rows"]) == 1
+    assert len(parsed["rows"]) == 2
+    assert {item["category"] for item in parsed["rows"]} == {"Challenger", "Grand Chelem"}
 
 
 def test_csv_reader_normalizes_bom_and_header_whitespace():
@@ -348,7 +349,7 @@ def test_sync_does_not_report_success_when_no_eligible_matches(monkeypatch):
             return EmptyWriteQuery()
 
     monkeypatch.setattr(archive, "get_supabase_client", lambda: EmptyWriteClient())
-    monkeypatch.setattr(archive, "load_external_year", lambda _year: (row(categorie="Challenger"),))
+    monkeypatch.setattr(archive, "load_external_year", lambda _year: (row(categorie="ITF"),))
 
     result = archive.sync_tennis_archive(start_year=2026, end_year=2026)
 
