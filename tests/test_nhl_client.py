@@ -23,6 +23,26 @@ def test_normalize_game_keeps_missing_scores_as_none():
     assert result["completed"] is False
 
 
+def test_normalize_game_preserves_live_score_shots_and_period():
+    result = nhl_client.normalize_game({
+        "id": 2026020123,
+        "gameDate": "2026-11-18",
+        "gameState": "LIVE",
+        "periodDescriptor": {"number": 2, "periodType": "REG"},
+        "homeTeam": {"id": 1, "abbrev": "FLA", "score": 2, "sog": 21},
+        "awayTeam": {"id": 2, "abbrev": "BOS", "score": 1, "sog": 17},
+    })
+
+    assert result["completed"] is False
+    assert result["game_state"] == "LIVE"
+    assert result["period"] == 2
+    assert result["period_type"] == "REG"
+    assert result["home"]["score"] == 2
+    assert result["away"]["score"] == 1
+    assert result["home"]["sog"] == 21
+    assert result["away"]["sog"] == 17
+
+
 def test_normalize_game_rejects_missing_identity_or_invalid_date():
     assert nhl_client.normalize_game({"gameDate": "2026-11-18"}) is None
     assert nhl_client.normalize_game({"id": 2026020123, "gameDate": "18/11/2026"}) is None

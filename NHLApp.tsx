@@ -15,6 +15,8 @@ type Game = {
   game_state: string;
   completed: boolean;
   game_type?: number | null;
+  period?: number | null;
+  period_type?: string | null;
   venue?: string | null;
   home: Team;
   away: Team;
@@ -61,8 +63,8 @@ const number = (value: number | null | undefined, digits = 0) =>
 const stateLabel = (state: string) => {
   const value = String(state || "").toUpperCase();
   if (["OFF", "FINAL"].includes(value)) return "Finalizado";
-  if (["LIVE", "CRIT", "PRE"].includes(value)) return "En juego";
-  if (["FUT", "UN"].includes(value)) return "Programado";
+  if (["LIVE", "CRIT"].includes(value)) return "En juego";
+  if (["PRE", "FUT", "UN"].includes(value)) return "Programado";
   return value || "Estado no disponible";
 };
 
@@ -135,7 +137,8 @@ export default function NHLApp() {
 
   const totals = useMemo(() => ({
     games: games.length,
-    live: games.filter(g => !g.completed && ["LIVE", "CRIT", "PRE"].includes(String(g.game_state).toUpperCase())).length,
+    live: games.filter(g => !g.completed && ["LIVE", "CRIT"].includes(String(g.game_state).toUpperCase())).length,
+    scheduled: games.filter(g => !g.completed && ["PRE", "FUT", "UN"].includes(String(g.game_state).toUpperCase())).length,
     completed: games.filter(g => g.completed).length,
   }), [games]);
 
@@ -164,7 +167,7 @@ export default function NHLApp() {
 
       <section className="metrics-grid nhl-metrics">
         <article className="panel metric"><span>Partidos del día</span><strong>{totals.games}</strong><small>Según el feed NHL</small></article>
-        <article className="panel metric"><span>En curso / próximos</span><strong>{totals.live}</strong><small>Estado informado por la fuente</small></article>
+        <article className="panel metric"><span>En curso</span><strong>{totals.live}</strong><small>{totals.scheduled} programados</small></article>
         <article className="panel metric"><span>Finalizados</span><strong>{totals.completed}</strong><small>Con resultado final reportado</small></article>
         <article className="panel metric"><span>Modelo</span><strong>—</strong><small>No hay pronósticos activos</small></article>
       </section>
@@ -184,19 +187,20 @@ export default function NHLApp() {
               <article className={`panel nhl-game ${opened ? "selected" : ""}`} key={game.game_id}>
                 <div className="nhl-game-meta">
                   <span className="status">{stateLabel(game.game_state)}</span>
+                  {game.period ? <span className="muted">Periodo {game.period}{game.period_type ? ` · ${game.period_type}` : ""}</span> : null}
                   <span className="muted">ID {game.game_id}</span>
                 </div>
                 <div className="nhl-matchup">
                   <div className="nhl-team">
                     <strong>{displayName(game.away)}</strong>
-                    <small>{game.away?.abbreviation || "Visitante"}</small>
+                    <small>{game.away?.abbreviation || "Visitante"}{game.away?.sog != null ? ` · Tiros ${number(game.away.sog)}` : ""}</small>
                   </div>
-                  <strong className="nhl-score">{game.completed ? number(game.away?.score) : "—"}</strong>
+                  <strong className="nhl-score">{number(game.away?.score)}</strong>
                   <span className="muted nhl-at">@</span>
-                  <strong className="nhl-score">{game.completed ? number(game.home?.score) : "—"}</strong>
+                  <strong className="nhl-score">{number(game.home?.score)}</strong>
                   <div className="nhl-team nhl-home">
                     <strong>{displayName(game.home)}</strong>
-                    <small>{game.home?.abbreviation || "Local"}</small>
+                    <small>{game.home?.abbreviation || "Local"}{game.home?.sog != null ? ` · Tiros ${number(game.home.sog)}` : ""}</small>
                   </div>
                 </div>
                 <div className="nhl-game-footer">
