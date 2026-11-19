@@ -246,3 +246,60 @@ def test_import_excludes_non_model_competition_categories_explicitly():
 
 def test_archive_player_name_key_matches_profile_normalization_rules():
     assert archive.normalize_player_name("João  &  Co.") == "joao and co"
+
+
+
+def test_parse_year_rows_reports_category_and_validation_diagnostics():
+    parsed = archive.parse_year_rows(
+        (
+            row(categorie="Main tour", joueur1_id="", joueur2_id="202"),
+            row(categorie="Challenger"),
+            row(categorie="Grand Chelem", match_id="valid-grand-chelem"),
+        ),
+        2026,
+        "2026-11-18T00:00:00+00:00",
+    )
+    assert parsed["category_counts"] == {
+        "challenger": 1,
+        "grand chelem": 1,
+        "main tour": 1,
+    }
+    assert parsed["rejection_reasons"] == {"missing_player_id": 1}
+    assert len(parsed["rows"]) == 1
+
+
+def test_csv_reader_normalizes_bom_and_header_whitespace():
+    from tennis_external_source import _read_csv
+
+    csv_text = (
+        "\ufeffmatch_id ; date ; tournoi ; categorie ; genre ; surface ; tour ; "
+        "joueur1 ; joueur1_id ; joueur2 ; joueur2_id ; vainqueur_id\n"
+        "m-1;2026-11-17T12:00:00+00:00;Test Open;Main tour;ATP;Hard;12;"
+        "Player One;101;Player Two;202;101\n"
+    )
+    parsed = _read_csv(csv_text)
+    assert len(parsed) == 1
+    assert parsed[0]["match_id"] == "m-1"
+    assert parsed[0]["categorie"] == "Main tour"
+    assert parsed[0]["genre"] == "ATP"
+
+
+
+def test_sync_does_not_report_success_when_no_eligible_matches(monkeypatch):
+    class EmptyWriteQuery:
+        def upsert(self, *_args, **_kwargs):
+            raise AssertionError("No rows should be written")
+
+    class EmptyWriteClient:
+        def table(self, _name):
+            return EmptyWriteQuery()
+
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: EmptyWriteClient())
+    monkeypatch.setattr(archive, "load_external_year", lambda _year: (row(categorie="Challenger"),))
+
+    result = archive.sync_tennis_archive(start_year=2026, end_year=2026)
+
+    assert result["success"] is False
+    assert result["status"] == "no_eligible_matches"
+    assert result["valid_matches"] == 0
+    assert result["by_year"][0]["status"] == "no_eligible_matches"

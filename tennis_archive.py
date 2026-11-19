@@ -130,6 +130,42 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
     }
 
 
+def _normalized_category(value: Any) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
+    plain = "".join(char for char in normalized if not unicodedata.combining(char))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", plain).split())
+
+
+def _rejection_reason(row: dict[str, Any], year: int) -> str:
+    """Return the first failed validation so source drift is diagnosable."""
+    if not str(row.get("match_id") or "").strip():
+        return "missing_match_id"
+    if str(row.get("genre") or "").strip().upper() not in SUPPORTED_LEAGUES:
+        return "unsupported_or_missing_league"
+    played_on = _match_day(str(row.get("date") or ""))
+    if played_on is None:
+        return "invalid_or_missing_date"
+    if played_on.year != year:
+        return "date_outside_requested_year"
+    p1 = str(row.get("joueur1_id") or "").strip()
+    p2 = str(row.get("joueur2_id") or "").strip()
+    if not p1 or not p2:
+        return "missing_player_id"
+    if p1 == p2:
+        return "same_player_id"
+    n1 = str(row.get("joueur1") or "").strip()
+    n2 = str(row.get("joueur2") or "").strip()
+    if not n1 or not n2:
+        return "missing_player_name"
+    if n1.casefold() == n2.casefold():
+        return "same_player_name"
+    if str(row.get("vainqueur_id") or "").strip() not in {p1, p2}:
+        return "winner_not_a_participant"
+    if not str(row.get("tournoi") or "").strip():
+        return "missing_tournament"
+    return "payload_validation_failed"
+
+
 def parse_year_rows(
     rows: tuple[dict[str, str], ...] | list[dict[str, str]],
     year: int,
@@ -140,17 +176,24 @@ def parse_year_rows(
     rejected = 0
     excluded_category = 0
     duplicates = 0
+    category_counts: dict[str, int] = {}
+    rejection_reasons: dict[str, int] = {}
     for row in rows:
-        category = str(row.get("categorie") or "").strip().casefold()
+        category_raw = str(row.get("categorie") or "").strip()
+        category = _normalized_category(category_raw)
+        category_counts[category or "<blank>"] = category_counts.get(category or "<blank>", 0) + 1
         if category not in ELIGIBLE_CATEGORIES:
             excluded_category += 1
             continue
         payload = build_match_payload(row, imported_at)
         if payload is None:
             rejected += 1
+            reason = _rejection_reason(row, year)
+            rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
             continue
         if date.fromisoformat(payload["match_date"]).year != year:
             rejected += 1
+            rejection_reasons["date_outside_requested_year"] = rejection_reasons.get("date_outside_requested_year", 0) + 1
             continue
         key = f"{payload['league']}:{payload['source_match_id']}"
         existing = unique.get(key)
@@ -170,6 +213,8 @@ def parse_year_rows(
         "rows_rejected": rejected,
         "rows_excluded_category": excluded_category,
         "duplicate_rows": duplicates,
+        "category_counts": dict(sorted(category_counts.items())),
+        "rejection_reasons": dict(sorted(rejection_reasons.items())),
     }
 
 
@@ -213,6 +258,8 @@ def sync_tennis_archive(
                 "rows_rejected": parsed["rows_rejected"],
                 "rows_excluded_category": parsed["rows_excluded_category"],
                 "duplicate_rows": parsed["duplicate_rows"],
+                "category_counts": parsed["category_counts"],
+                "rejection_reasons": parsed["rejection_reasons"],
             })
             totals["years_loaded"] += 1
             totals["rows_seen"] += parsed["rows_seen"]
@@ -228,7 +275,7 @@ def sync_tennis_archive(
                         batch, on_conflict="league,source_match_id"
                     ).execute()
                     totals["upserted_rows"] += len(batch)
-            result["status"] = "imported"
+            result["status"] = "imported" if payloads else "no_eligible_matches"
         except Exception as exc:
             totals["failed_years"] += 1
             result["status"] = "failed"
@@ -238,7 +285,12 @@ def sync_tennis_archive(
         by_year.append(result)
 
     return {
-        "success": totals["failed_years"] == 0,
+        "success": totals["failed_years"] == 0 and totals["valid_matches"] > 0,
+        "status": (
+            "completed" if totals["failed_years"] == 0 and totals["valid_matches"] > 0
+            else "no_eligible_matches" if totals["failed_years"] == 0
+            else "partial_or_failed"
+        ),
         "source": "Valuebetennis",
         "source_license": SOURCE_LICENSE,
         "source_attribution": SOURCE_ATTRIBUTION,
