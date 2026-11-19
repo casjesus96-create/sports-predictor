@@ -1,0 +1,87 @@
+from datetime import date
+
+import pytest
+
+import nhl_client
+
+
+def test_normalize_game_keeps_missing_scores_as_none():
+    result = nhl_client.normalize_game({
+        "id": 2026020123,
+        "gameDate": "2026-11-18",
+        "startTimeUTC": "2026-11-19T00:00:00Z",
+        "gameState": "FUT",
+        "gameType": 2,
+        "homeTeam": {"id": 1, "abbrev": "FLA", "commonName": {"default": "Panthers"}},
+        "awayTeam": {"id": 2, "abbrev": "BOS", "commonName": {"default": "Bruins"}},
+        "venue": {"default": "Amerant Bank Arena"},
+    })
+    assert result["game_id"] == "2026020123"
+    assert result["home"]["name"] == "Panthers"
+    assert result["away"]["abbreviation"] == "BOS"
+    assert result["home"]["score"] is None
+    assert result["completed"] is False
+
+
+def test_normalize_game_rejects_missing_identity_or_invalid_date():
+    assert nhl_client.normalize_game({"gameDate": "2026-11-18"}) is None
+    assert nhl_client.normalize_game({"id": 2026020123, "gameDate": "18/11/2026"}) is None
+
+
+def test_get_games_uses_date_scoped_public_scoreboard(monkeypatch):
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"games": [{
+                "id": 2026020123,
+                "gameDate": "2026-11-18",
+                "gameState": "OFF",
+                "homeTeam": {"id": 1, "abbrev": "FLA", "commonName": {"default": "Panthers"}, "score": 3, "sog": 30},
+                "awayTeam": {"id": 2, "abbrev": "BOS", "commonName": {"default": "Bruins"}, "score": 2, "sog": 25},
+            }]}
+
+    def fake_get(url, headers, timeout):
+        captured.update({"url": url, "timeout": timeout})
+        return Response()
+
+    monkeypatch.setattr(nhl_client.requests, "get", fake_get)
+    games = nhl_client.get_games(date(2026, 11, 18))
+    assert captured["url"] == "https://api-web.nhle.com/v1/score/2026-11-18"
+    assert games[0]["completed"] is True
+    assert games[0]["home"]["score"] == 3
+    assert games[0]["away"]["sog"] == 25
+
+
+def test_get_games_rejects_invalid_date():
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        nhl_client.get_games("18-11-2026")
+
+
+def test_boxscore_normalizes_skaters_and_goalies():
+    result = nhl_client.normalize_boxscore({
+        "playerByGameStats": {
+            "homeTeam": {
+                "forwards": [{"playerId": 10, "name": {"default": "Player One"}, "goals": 1, "assists": 2, "shots": 4, "toi": "18:32"}],
+                "defense": [{"playerId": 11, "name": {"default": "Player Two"}, "blockedShots": 3}],
+                "goalies": [{"playerId": 12, "name": {"default": "Goalie One"}, "saves": 28, "shotsAgainst": 30, "savePctg": 0.933}],
+            },
+            "awayTeam": {"forwards": [], "defense": [], "goalies": []},
+        }
+    }, "2026020123")
+    home = result["teams"]["home"]
+    assert len(home["skaters"]) == 2
+    assert home["skaters"][0]["points"] is None
+    assert home["skaters"][0]["time_on_ice"] == "18:32"
+    assert home["goalies"][0]["saves"] == 28
+    assert home["goalies"][0]["save_percentage"] == pytest.approx(0.933)
+
+
+def test_boxscore_rejects_invalid_game_id_and_malformed_payload():
+    with pytest.raises(ValueError, match="game_id"):
+        nhl_client.get_boxscore("bad-id")
+    with pytest.raises(nhl_client.NHLDataError, match="no contiene"):
+        nhl_client.normalize_boxscore({}, "2026020123")
