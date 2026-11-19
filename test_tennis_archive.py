@@ -246,6 +246,10 @@ def test_same_source_match_id_can_exist_in_both_tours():
     )
     assert len(parsed["rows"]) == 2
     assert {item["league"] for item in parsed["rows"]} == {"ATP", "WTA"}
+    assert parsed["league_counts"]["ATP"]["source_rows"] == 1
+    assert parsed["league_counts"]["ATP"]["eligible_matches"] == 1
+    assert parsed["league_counts"]["WTA"]["source_rows"] == 1
+    assert parsed["league_counts"]["WTA"]["eligible_matches"] == 1
 
 
 def test_import_excludes_non_model_competition_categories_explicitly():
@@ -318,3 +322,32 @@ def test_sync_does_not_report_success_when_no_eligible_matches(monkeypatch):
     assert result["status"] == "no_eligible_matches"
     assert result["valid_matches"] == 0
     assert result["by_year"][0]["status"] == "no_eligible_matches"
+
+def test_sync_reports_missing_wta_instead_of_success_when_only_atp_is_present(monkeypatch):
+    writes = []
+
+    class WriteQuery:
+        def upsert(self, payload, **_kwargs):
+            writes.extend(payload)
+            return self
+
+        def execute(self):
+            return None
+
+    class WriteClient:
+        def table(self, _name):
+            return WriteQuery()
+
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: WriteClient())
+    monkeypatch.setattr(archive, "load_external_year", lambda _year: (row(genre="ATP"),))
+
+    result = archive.sync_tennis_archive(start_year=2026, end_year=2026)
+
+    assert result["success"] is False
+    assert result["status"] == "missing_league_data"
+    assert result["missing_leagues"] == ["WTA"]
+    assert result["by_league"]["ATP"]["upserted_rows"] == 1
+    assert result["by_league"]["WTA"]["source_rows"] == 0
+    assert result["by_year"][0]["leagues"]["ATP"]["upserted_rows"] == 1
+    assert result["by_year"][0]["leagues"]["WTA"]["eligible_matches"] == 0
+    assert len(writes) == 1

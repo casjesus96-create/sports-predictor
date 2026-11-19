@@ -209,21 +209,38 @@ def parse_year_rows(
     duplicates = 0
     category_counts: dict[str, int] = {}
     rejection_reasons: dict[str, int] = {}
+    league_counts = {
+        league: {
+            "source_rows": 0,
+            "eligible_matches": 0,
+            "rows_rejected": 0,
+            "rows_excluded_category": 0,
+        }
+        for league in sorted(SUPPORTED_LEAGUES)
+    }
     for row in rows:
+        league = str(row.get("genre") or "").strip().upper()
+        if league in league_counts:
+            league_counts[league]["source_rows"] += 1
         category_raw = str(row.get("categorie") or "").strip()
         category = _normalized_category(category_raw)
         category_counts[category or "<blank>"] = category_counts.get(category or "<blank>", 0) + 1
         if category not in ELIGIBLE_CATEGORIES:
             excluded_category += 1
+            if league in league_counts:
+                league_counts[league]["rows_excluded_category"] += 1
             continue
         payload = build_match_payload(row, imported_at)
         if payload is None:
             rejected += 1
+            if league in league_counts:
+                league_counts[league]["rows_rejected"] += 1
             reason = _rejection_reason(row, year)
             rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
             continue
         if date.fromisoformat(payload["match_date"]).year != year:
             rejected += 1
+            league_counts[league]["rows_rejected"] += 1
             rejection_reasons["date_outside_requested_year"] = rejection_reasons.get("date_outside_requested_year", 0) + 1
             continue
         key = f"{payload['league']}:{payload['source_match_id']}"
@@ -238,8 +255,11 @@ def parse_year_rows(
             duplicates += 1
             continue
         unique[key] = payload
+    for payload in unique.values():
+        league_counts[payload["league"]]["eligible_matches"] += 1
     return {
         "rows": list(unique.values()),
+        "league_counts": league_counts,
         "rows_seen": len(rows),
         "rows_rejected": rejected,
         "rows_excluded_category": excluded_category,
@@ -277,6 +297,16 @@ def sync_tennis_archive(
         "duplicate_rows": 0,
         "upserted_rows": 0,
         "failed_years": 0,
+        "by_league": {
+            league: {
+                "source_rows": 0,
+                "eligible_matches": 0,
+                "rows_rejected": 0,
+                "rows_excluded_category": 0,
+                "upserted_rows": 0,
+            }
+            for league in sorted(SUPPORTED_LEAGUES)
+        },
     }
     by_year: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -297,6 +327,10 @@ def sync_tennis_archive(
                 "derived_match_ids": parsed["derived_match_ids"],
                 "category_counts": parsed["category_counts"],
                 "rejection_reasons": parsed["rejection_reasons"],
+                "leagues": {
+                    league: {**counts, "upserted_rows": 0}
+                    for league, counts in parsed["league_counts"].items()
+                },
             })
             totals["years_loaded"] += 1
             totals["rows_seen"] += parsed["rows_seen"]
@@ -305,14 +339,21 @@ def sync_tennis_archive(
             totals["rows_rejected"] += parsed["rows_rejected"]
             totals["rows_excluded_category"] += parsed["rows_excluded_category"]
             totals["duplicate_rows"] += parsed["duplicate_rows"]
+            for league, counts in parsed["league_counts"].items():
+                for metric in ("source_rows", "eligible_matches", "rows_rejected", "rows_excluded_category"):
+                    totals["by_league"][league][metric] += counts[metric]
 
-            for offset in range(0, len(payloads), UPSERT_BATCH_SIZE):
-                batch = payloads[offset:offset + UPSERT_BATCH_SIZE]
-                if batch:
-                    client.table(TABLE).upsert(
-                        batch, on_conflict="league,source_match_id"
-                    ).execute()
-                    totals["upserted_rows"] += len(batch)
+            for league in sorted(SUPPORTED_LEAGUES):
+                league_payloads = [item for item in payloads if item["league"] == league]
+                for offset in range(0, len(league_payloads), UPSERT_BATCH_SIZE):
+                    batch = league_payloads[offset:offset + UPSERT_BATCH_SIZE]
+                    if batch:
+                        client.table(TABLE).upsert(
+                            batch, on_conflict="league,source_match_id"
+                        ).execute()
+                        totals["upserted_rows"] += len(batch)
+                        totals["by_league"][league]["upserted_rows"] += len(batch)
+                        result["leagues"][league]["upserted_rows"] += len(batch)
             result["status"] = "imported" if payloads else "no_eligible_matches"
         except Exception as exc:
             totals["failed_years"] += 1
@@ -322,13 +363,24 @@ def sync_tennis_archive(
             logger.exception("Tennis archive import failed for %s", year)
         by_year.append(result)
 
+    missing_leagues = [
+        league for league, counts in totals["by_league"].items()
+        if counts["eligible_matches"] == 0
+    ]
+    successful = (
+        totals["failed_years"] == 0
+        and totals["valid_matches"] > 0
+        and not missing_leagues
+    )
     return {
-        "success": totals["failed_years"] == 0 and totals["valid_matches"] > 0,
+        "success": successful,
         "status": (
-            "completed" if totals["failed_years"] == 0 and totals["valid_matches"] > 0
-            else "no_eligible_matches" if totals["failed_years"] == 0
+            "completed" if successful
+            else "no_eligible_matches" if totals["valid_matches"] == 0 and totals["failed_years"] == 0
+            else "missing_league_data" if missing_leagues and totals["failed_years"] == 0
             else "partial_or_failed"
         ),
+        "missing_leagues": missing_leagues,
         "source": "Valuebetennis",
         "source_license": SOURCE_LICENSE,
         "source_attribution": SOURCE_ATTRIBUTION,
