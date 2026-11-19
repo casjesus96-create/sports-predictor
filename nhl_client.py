@@ -145,7 +145,7 @@ def _normalize_skater(row: dict[str, Any]) -> dict[str, Any]:
         "blocked_shots": _integer(row.get("blockedShots")),
         "plus_minus": row.get("plusMinus") if isinstance(row.get("plusMinus"), int) else None,
         "penalty_minutes": _integer(row.get("pim")),
-        "time_on_ice": _localized(row.get(" toi") or row.get("toi")),
+        "time_on_ice": _localized(row.get("toi")),
     }
 
 
