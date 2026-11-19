@@ -170,6 +170,8 @@ def normalize_boxscore(payload: dict[str, Any], game_id: str) -> dict[str, Any]:
     # Treat that as an unavailable-yet state, not as a malformed response.
     source = payload.get("playerByGameStats")
     if not isinstance(source, dict):
+        if not payload.get("gameState") and not payload.get("id"):
+            raise NHLDataError("La respuesta boxscore NHL no contiene identidad ni estado del partido.")
         return {
             "success": True,
             "game_id": str(game_id),
