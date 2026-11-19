@@ -271,6 +271,7 @@ def sync_tennis_archive(
         "years_loaded": 0,
         "rows_seen": 0,
         "valid_matches": 0,
+        "derived_match_ids": 0,
         "rows_rejected": 0,
         "rows_excluded_category": 0,
         "duplicate_rows": 0,
@@ -293,12 +294,14 @@ def sync_tennis_archive(
                 "rows_rejected": parsed["rows_rejected"],
                 "rows_excluded_category": parsed["rows_excluded_category"],
                 "duplicate_rows": parsed["duplicate_rows"],
+                "derived_match_ids": parsed["derived_match_ids"],
                 "category_counts": parsed["category_counts"],
                 "rejection_reasons": parsed["rejection_reasons"],
             })
             totals["years_loaded"] += 1
             totals["rows_seen"] += parsed["rows_seen"]
             totals["valid_matches"] += len(payloads)
+            totals["derived_match_ids"] += parsed["derived_match_ids"]
             totals["rows_rejected"] += parsed["rows_rejected"]
             totals["rows_excluded_category"] += parsed["rows_excluded_category"]
             totals["duplicate_rows"] += parsed["duplicate_rows"]
