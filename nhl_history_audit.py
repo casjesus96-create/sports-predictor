@@ -153,7 +153,7 @@ def render_markdown_summary(report: dict[str, Any]) -> str:
         values = report.get(key) or []
         if values:
             lines.extend(["", f"### {label}", "", json.dumps(values, ensure_ascii=False, indent=2)])
-    return "\\n".join(lines) + "\\n"
+    return chr(10).join(lines) + chr(10)
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Audita cobertura histórica NHL sin escribir en Supabase.")
@@ -163,7 +163,7 @@ def main() -> int:
     args = parser.parse_args()
     teams = [item.strip().upper() for item in args.teams.split(",") if item.strip()]
     report = audit_nhl_season(args.season, teams)
-    rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\\n"
+    rendered = json.dumps(report, ensure_ascii=False, indent=2) + chr(10)
     with open(args.output, "w", encoding="utf-8") as output_file:
         output_file.write(rendered)
     print(rendered)
