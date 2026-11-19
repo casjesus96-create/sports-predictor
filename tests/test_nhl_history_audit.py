@@ -74,3 +74,25 @@ def test_audit_continues_after_one_team_source_failure(monkeypatch):
     assert report["teams_failed"] == 1
     assert report["team_failures"] == {"BOS": "source unavailable"}
     assert report["success"] is False
+
+
+def test_report_fails_when_requested_team_response_is_missing():
+    report = audit.build_season_coverage_report(
+        "20252026",
+        ["TOR", "BOS"],
+        {"TOR": {"games": [_game()]}},
+    )
+    assert report["success"] is False
+    assert report["missing_team_responses"] == ["BOS"]
+
+
+def test_markdown_summary_exposes_coverage_and_read_only_scope():
+    report = audit.build_season_coverage_report(
+        "20252026",
+        ["TOR", "BOS"],
+        {"TOR": {"games": [_game()]}, "BOS": {"games": [_game()]}},
+    )
+    summary = audit.render_markdown_summary(report)
+    assert "NHL historical coverage" in summary
+    assert "Unique games" in summary
+    assert "read-only" in summary
