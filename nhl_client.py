@@ -127,7 +127,6 @@ def get_games(game_date: str | date | None = None) -> list[dict[str, Any]]:
     ]
 
 
-
 def get_team_season_schedule(team: str, season: str | int) -> dict[str, Any]:
     """Fetch one team's season schedule for historical coverage discovery.
 
@@ -140,7 +139,7 @@ def get_team_season_schedule(team: str, season: str | int) -> dict[str, Any]:
         raise ValueError("team NHL debe ser una abreviatura de 2 a 4 caracteres.")
     match = re.fullmatch(r"(\d{4})(\d{4})", selected_season)
     if not match or int(match.group(2)) != int(match.group(1)) + 1:
-        raise ValueError("season debe usar el formato YYYY YYYY de temporadas consecutivas, por ejemplo 20252026.")
+        raise ValueError("season debe usar el formato YYYYYYYY de temporadas consecutivas, por ejemplo 20252026.")
 
     try:
         response = requests.get(
@@ -170,6 +169,7 @@ def get_team_season_schedule(team: str, season: str | int) -> dict[str, Any]:
         "total": len(games),
         "games": games,
     }
+
 
 def _player_name(value: Any) -> str | None:
     return _localized(value)
