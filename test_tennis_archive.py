@@ -282,3 +282,24 @@ def test_csv_reader_normalizes_bom_and_header_whitespace():
     assert parsed[0]["match_id"] == "m-1"
     assert parsed[0]["categorie"] == "Main tour"
     assert parsed[0]["genre"] == "ATP"
+
+
+
+def test_sync_does_not_report_success_when_no_eligible_matches(monkeypatch):
+    class EmptyWriteQuery:
+        def upsert(self, *_args, **_kwargs):
+            raise AssertionError("No rows should be written")
+
+    class EmptyWriteClient:
+        def table(self, _name):
+            return EmptyWriteQuery()
+
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: EmptyWriteClient())
+    monkeypatch.setattr(archive, "load_external_year", lambda _year: (row(categorie="Challenger"),))
+
+    result = archive.sync_tennis_archive(start_year=2026, end_year=2026)
+
+    assert result["success"] is False
+    assert result["status"] == "no_eligible_matches"
+    assert result["valid_matches"] == 0
+    assert result["by_year"][0]["status"] == "no_eligible_matches"
