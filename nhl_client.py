@@ -158,7 +158,7 @@ def _normalize_goalie(row: dict[str, Any]) -> dict[str, Any]:
         "shots_against": _integer(row.get("shotsAgainst")),
         "save_percentage": _number(row.get("savePctg")),
         "goals_against": _integer(row.get("goalsAgainst")),
-        "time_on_ice": _localized(row.get(" toi") or row.get("toi")),
+        "time_on_ice": _localized(row.get("toi")),
     }
 
 
