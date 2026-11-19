@@ -79,14 +79,16 @@ def build_season_coverage_report(
     completed_games = sum(
         1 for entries in observations.values() if entries[0][1].get("completed")
     )
+    missing_team_responses = sorted(set(teams) - set(schedule_by_team) - set(failures))
     return {
-        "success": not failures and not conflicts and not completed_missing_score and not invalid_membership,
+        "success": not failures and not missing_team_responses and not conflicts and not completed_missing_score and not invalid_membership,
         "season": season,
         "source": "NHL public club season schedule",
         "persistence": "read_only_no_database_writes",
         "teams_requested": len(teams),
         "teams_succeeded": len(schedule_by_team),
         "teams_failed": len(failures),
+        "missing_team_responses": missing_team_responses,
         "team_failures": failures,
         "schedule_observations": sum(len(items) for items in observations.values()),
         "unique_games": unique_games,
@@ -116,14 +118,55 @@ def audit_nhl_season(season: str, teams: list[str] | None = None) -> dict[str, A
     return build_season_coverage_report(season, selected, schedules, failures)
 
 
+def render_markdown_summary(report: dict[str, Any]) -> str:
+    """Render a compact GitHub Actions summary without hiding audit failures."""
+    status = "PASS" if report.get("success") else "REVIEW REQUIRED"
+    rate = report.get("cross_team_confirmation_rate")
+    rate_text = f"{rate:.1%}" if isinstance(rate, (int, float)) else "N/A"
+    lines = [
+        f"## NHL historical coverage — {report.get('season', 'unknown season')}",
+        f"**Result:** {status}",
+        "",
+        "| Metric | Result |",
+        "|---|---:|",
+        f"| Teams requested / successful / failed | {report.get('teams_requested', 0)} / {report.get('teams_succeeded', 0)} / {report.get('teams_failed', 0)} |",
+        f"| Unique games | {report.get('unique_games', 0)} |",
+        f"| Completed games | {report.get('completed_games', 0)} |",
+        f"| Duplicate observations | {report.get('duplicate_observations', 0)} |",
+        f"| Games confirmed by multiple team schedules | {report.get('games_seen_from_multiple_team_schedules', 0)} |",
+        f"| Cross-team confirmation rate | {rate_text} |",
+        f"| Identity conflicts | {len(report.get('identity_conflicts', []))} |",
+        f"| Completed games missing score | {len(report.get('completed_games_missing_score', []))} |",
+        f"| Invalid team membership | {len(report.get('invalid_team_membership', []))} |",
+        "",
+        "**Coverage limitation:** " + str(report.get("coverage_note", "Not specified.")),
+        "",
+        "The report is read-only; it does not write to Supabase or affect predictions.",
+    ]
+    for key, label in (
+        ("team_failures", "Team source failures"),
+        ("missing_team_responses", "Missing team responses"),
+        ("identity_conflicts", "Identity conflicts"),
+        ("completed_games_missing_score", "Completed games missing score"),
+        ("invalid_team_membership", "Invalid team membership"),
+    ):
+        values = report.get(key) or []
+        if values:
+            lines.extend(["", f"### {label}", "", json.dumps(values, ensure_ascii=False, indent=2)])
+    return "\\n".join(lines) + "\\n"
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Audita cobertura histórica NHL sin escribir en Supabase.")
     parser.add_argument("--season", required=True, help="Temporada en formato YYYYYYYY, por ejemplo 20252026.")
     parser.add_argument("--teams", default=",".join(CURRENT_TEAM_ABBREVIATIONS), help="Abreviaturas separadas por coma.")
+    parser.add_argument("--output", default="nhl-season-coverage-report.json", help="Ruta del informe JSON descargable.")
     args = parser.parse_args()
     teams = [item.strip().upper() for item in args.teams.split(",") if item.strip()]
     report = audit_nhl_season(args.season, teams)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\\n"
+    with open(args.output, "w", encoding="utf-8") as output_file:
+        output_file.write(rendered)
+    print(rendered)
     return 0 if report["success"] else 1
 
 
