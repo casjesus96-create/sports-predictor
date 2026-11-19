@@ -60,12 +60,21 @@ def build_season_coverage_report(
 
     conflicts = []
     completed_missing_score = []
+    games_missing_game_type = []
+    game_type_counts: Counter[str] = Counter()
+    game_state_counts: Counter[str] = Counter()
     team_observation_counts: Counter[str] = Counter()
     for game_id, entries in observations.items():
         signatures = {_signature(game) for _, game in entries}
         if len(signatures) > 1:
             conflicts.append({"game_id": game_id, "teams": sorted({team for team, _ in entries})})
         canonical = entries[0][1]
+        game_type = canonical.get("game_type")
+        if game_type is None:
+            games_missing_game_type.append(game_id)
+        else:
+            game_type_counts[str(game_type)] += 1
+        game_state_counts[str(canonical.get("game_state") or "UNKNOWN")] += 1
         if canonical.get("completed") and (
             (canonical.get("home") or {}).get("score") is None
             or (canonical.get("away") or {}).get("score") is None
@@ -81,7 +90,7 @@ def build_season_coverage_report(
     )
     missing_team_responses = sorted(set(teams) - set(schedule_by_team) - set(failures))
     return {
-        "success": not failures and not missing_team_responses and not conflicts and not completed_missing_score and not invalid_membership,
+        "success": not failures and not missing_team_responses and not conflicts and not completed_missing_score and not games_missing_game_type and not invalid_membership,
         "season": season,
         "source": "NHL public club season schedule",
         "persistence": "read_only_no_database_writes",
@@ -96,6 +105,9 @@ def build_season_coverage_report(
         "games_seen_from_multiple_team_schedules": double_confirmed,
         "cross_team_confirmation_rate": round(double_confirmed / unique_games, 4) if unique_games else None,
         "completed_games": completed_games,
+        "game_type_counts": dict(sorted(game_type_counts.items())),
+        "game_state_counts": dict(sorted(game_state_counts.items())),
+        "games_missing_game_type": games_missing_game_type,
         "completed_games_missing_score": completed_missing_score,
         "identity_conflicts": conflicts,
         "invalid_team_membership": invalid_membership,
@@ -132,6 +144,9 @@ def render_markdown_summary(report: dict[str, Any]) -> str:
         f"| Teams requested / successful / failed | {report.get('teams_requested', 0)} / {report.get('teams_succeeded', 0)} / {report.get('teams_failed', 0)} |",
         f"| Unique games | {report.get('unique_games', 0)} |",
         f"| Completed games | {report.get('completed_games', 0)} |",
+        f"| Game types (raw NHL codes) | {json.dumps(report.get('game_type_counts', {}), sort_keys=True)} |",
+        f"| Game states | {json.dumps(report.get('game_state_counts', {}), sort_keys=True)} |",
+        f"| Games missing game type | {len(report.get('games_missing_game_type', []))} |",
         f"| Duplicate observations | {report.get('duplicate_observations', 0)} |",
         f"| Games confirmed by multiple team schedules | {report.get('games_seen_from_multiple_team_schedules', 0)} |",
         f"| Cross-team confirmation rate | {rate_text} |",
@@ -148,6 +163,7 @@ def render_markdown_summary(report: dict[str, Any]) -> str:
         ("missing_team_responses", "Missing team responses"),
         ("identity_conflicts", "Identity conflicts"),
         ("completed_games_missing_score", "Completed games missing score"),
+        ("games_missing_game_type", "Games missing game type"),
         ("invalid_team_membership", "Invalid team membership"),
     ):
         values = report.get(key) or []
