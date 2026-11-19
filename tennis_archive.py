@@ -215,6 +215,7 @@ def parse_year_rows(
             "eligible_matches": 0,
             "rows_rejected": 0,
             "rows_excluded_category": 0,
+            "category_counts": {},
         }
         for league in sorted(SUPPORTED_LEAGUES)
     }
@@ -225,6 +226,9 @@ def parse_year_rows(
         category_raw = str(row.get("categorie") or "").strip()
         category = _normalized_category(category_raw)
         category_counts[category or "<blank>"] = category_counts.get(category or "<blank>", 0) + 1
+        if league in league_counts:
+            league_categories = league_counts[league]["category_counts"]
+            league_categories[category or "<blank>"] = league_categories.get(category or "<blank>", 0) + 1
         if category not in ELIGIBLE_CATEGORIES:
             excluded_category += 1
             if league in league_counts:
@@ -303,6 +307,7 @@ def sync_tennis_archive(
                 "eligible_matches": 0,
                 "rows_rejected": 0,
                 "rows_excluded_category": 0,
+                "category_counts": {},
                 "upserted_rows": 0,
             }
             for league in sorted(SUPPORTED_LEAGUES)
@@ -342,6 +347,9 @@ def sync_tennis_archive(
             for league, counts in parsed["league_counts"].items():
                 for metric in ("source_rows", "eligible_matches", "rows_rejected", "rows_excluded_category"):
                     totals["by_league"][league][metric] += counts[metric]
+                for category, count in counts["category_counts"].items():
+                    aggregate = totals["by_league"][league]["category_counts"]
+                    aggregate[category] = aggregate.get(category, 0) + count
 
             for league in sorted(SUPPORTED_LEAGUES):
                 league_payloads = [item for item in payloads if item["league"] == league]
