@@ -140,7 +140,7 @@ def _normalize_skater(row: dict[str, Any]) -> dict[str, Any]:
         "goals": _integer(row.get("goals")),
         "assists": _integer(row.get("assists")),
         "points": _integer(row.get("points")),
-        "shots": _integer(row.get("shots")),
+        "shots": _integer(row.get("sog", row.get("shots"))),
         "hits": _integer(row.get("hits")),
         "blocked_shots": _integer(row.get("blockedShots")),
         "plus_minus": row.get("plusMinus") if isinstance(row.get("plusMinus"), int) else None,
@@ -165,9 +165,23 @@ def _normalize_goalie(row: dict[str, Any]) -> dict[str, Any]:
 def normalize_boxscore(payload: dict[str, Any], game_id: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise NHLDataError("La respuesta boxscore NHL no es un objeto válido.")
+
+    # NHL may omit playerByGameStats entirely until a game has started.
+    # Treat that as an unavailable-yet state, not as a malformed response.
     source = payload.get("playerByGameStats")
     if not isinstance(source, dict):
-        raise NHLDataError("El boxscore NHL no contiene estadísticas de jugadores.")
+        return {
+            "success": True,
+            "game_id": str(game_id),
+            "source": "NHL public GameCenter feed",
+            "game_state": str(payload.get("gameState") or "UNKNOWN").upper(),
+            "limited_scoring": bool(payload.get("limitedScoring", False)),
+            "stats_available": False,
+            "teams": {
+                "home": {"skaters": [], "goalies": []},
+                "away": {"skaters": [], "goalies": []},
+            },
+        }
 
     teams = {}
     for side, key in (("home", "homeTeam"), ("away", "awayTeam")):
@@ -186,10 +200,16 @@ def normalize_boxscore(payload: dict[str, Any], game_id: str) -> dict[str, Any]:
                 _normalize_goalie(item) for item in goalies if isinstance(item, dict)
             ] if isinstance(goalies, list) else [],
         }
+    stats_available = any(
+        team["skaters"] or team["goalies"] for team in teams.values()
+    )
     return {
         "success": True,
         "game_id": str(game_id),
         "source": "NHL public GameCenter feed",
+        "game_state": str(payload.get("gameState") or "UNKNOWN").upper(),
+        "limited_scoring": bool(payload.get("limitedScoring", False)),
+        "stats_available": stats_available,
         "teams": teams,
     }
 
