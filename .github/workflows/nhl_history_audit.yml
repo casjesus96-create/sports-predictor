@@ -1,0 +1,33 @@
+name: NHL Historical Coverage Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: "Temporada NHL (YYYYYYYY), por ejemplo 20252026"
+        required: true
+        default: "20252026"
+      teams:
+        description: "Abreviaturas separadas por coma; por defecto, franquicias actuales"
+        required: false
+        default: "ANA,BOS,BUF,CGY,CAR,CHI,COL,CBJ,DAL,DET,EDM,FLA,LAK,MIN,MTL,NSH,NJD,NYI,NYR,OTT,PHI,PIT,SJS,SEA,STL,TBL,TOR,UTA,VAN,VGK,WSH,WPG"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Audit NHL schedule coverage (read-only)
+        run: |
+          python nhl_history_audit.py --season "${{ inputs.season }}" --teams "${{ inputs.teams }}"
