@@ -1544,3 +1544,54 @@ button:disabled{cursor:not-allowed;opacity:.55}
     text-align: left;
   }
 }
+
+
+/* NHL — scoreboard and player boxscores */
+.nhl-app { min-width: 0; }
+.nhl-app .nhl-toolbar { align-items: end; }
+.nhl-app .nhl-toolbar input { min-height: 42px; }
+.nhl-app .nhl-metrics .metric { min-width: 0; }
+.nhl-app .nhl-games { display: grid; gap: 12px; }
+.nhl-app .nhl-game { min-width: 0; padding: 16px; }
+.nhl-app .nhl-game.selected { border-color: #547895; }
+.nhl-app .nhl-game-meta,
+.nhl-app .nhl-game-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.nhl-app .nhl-matchup { display: grid; grid-template-columns: minmax(0,1fr) 42px 20px 42px minmax(0,1fr); align-items: center; gap: 8px; padding: 18px 0; }
+.nhl-app .nhl-team { min-width: 0; display: grid; gap: 4px; }
+.nhl-app .nhl-team strong { overflow-wrap: anywhere; }
+.nhl-app .nhl-team small { color: #8299ae; }
+.nhl-app .nhl-home { text-align: right; }
+.nhl-app .nhl-score { text-align: center; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.nhl-app .nhl-at { text-align: center; }
+.nhl-app .nhl-boxscore { margin-top: 16px; padding-top: 16px; border-top: 1px solid #20384f; min-width: 0; }
+.nhl-app .nhl-team-stats { margin-top: 16px; min-width: 0; }
+.nhl-app .nhl-team-stats h3 { margin: 8px 0; }
+.nhl-app .nhl-team-stats h4 { margin: 14px 0 8px; }
+.nhl-app .nhl-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.nhl-app .nhl-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: .82rem; }
+.nhl-app .nhl-table th, .nhl-app .nhl-table td { padding: 9px 11px; text-align: left; border-bottom: 1px solid #20384f; white-space: nowrap; }
+.nhl-app .nhl-table th { color: #91a8bd; font-size: .72rem; }
+.nhl-app .nhl-table td:first-child { min-width: 145px; }
+.nhl-app .nhl-table td small { display: block; color: #8299ae; margin-top: 3px; }
+.nhl-app .nhl-empty { padding: 22px; color: #91a8bd; }
+.nhl-app .nhl-source-note, .nhl-app .nhl-disclaimer { margin-top: 14px; line-height: 1.5; }
+@media (max-width: 700px) {
+  .nhl-app .nhl-toolbar { align-items: stretch; }
+  .nhl-app .nhl-toolbar label { width: 100%; }
+  .nhl-app .nhl-toolbar .toolbar-actions { display: flex; width: 100%; }
+  .nhl-app .nhl-toolbar .toolbar-actions button { flex: 1; }
+}
+@media (max-width: 600px) {
+  .nhl-app { padding-left: 11px; padding-right: 11px; }
+  .nhl-app .nhl-metrics { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .nhl-app .nhl-game { padding: 12px; }
+  .nhl-app .nhl-matchup { grid-template-columns: minmax(0,1fr) 32px 14px 32px minmax(0,1fr); gap: 4px; }
+  .nhl-app .nhl-score { font-size: 1.15rem; }
+  .nhl-app .nhl-game-footer { align-items: flex-start; flex-direction: column; }
+  .nhl-app .nhl-game-footer button { width: 100%; }
+}
+@media (max-width: 380px) {
+  .nhl-app .nhl-matchup { grid-template-columns: minmax(0,1fr) 28px 12px 28px minmax(0,1fr); }
+  .nhl-app .nhl-team strong { font-size: .82rem; }
+  .nhl-app .nhl-score { font-size: 1rem; }
+}
