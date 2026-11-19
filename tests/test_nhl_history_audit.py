@@ -96,3 +96,32 @@ def test_markdown_summary_exposes_coverage_and_read_only_scope():
     assert "NHL historical coverage" in summary
     assert "Unique games" in summary
     assert "read-only" in summary
+
+
+def test_report_breaks_down_game_types_and_states_once_per_unique_game():
+    preseason = _game(game_id="2025010001")
+    preseason["game_type"] = 1
+    preseason["game_state"] = "OFF"
+    regular = _game(game_id="2025020002")
+    regular["game_type"] = 2
+    regular["game_state"] = "FUT"
+    report = audit.build_season_coverage_report(
+        "20252026",
+        ["TOR", "BOS"],
+        {
+            "TOR": {"games": [preseason, regular]},
+            "BOS": {"games": [preseason, regular]},
+        },
+    )
+    assert report["game_type_counts"] == {"1": 1, "2": 1}
+    assert report["game_state_counts"] == {"FUT": 1, "OFF": 1}
+
+
+def test_report_fails_closed_when_game_type_is_missing():
+    game = _game()
+    game["game_type"] = None
+    report = audit.build_season_coverage_report(
+        "20252026", ["TOR"], {"TOR": {"games": [game]}}
+    )
+    assert report["success"] is False
+    assert report["games_missing_game_type"] == ["2025020001"]
