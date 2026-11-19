@@ -30,7 +30,7 @@ TABLE = "tennis_match_archive"
 UPSERT_BATCH_SIZE = 500
 MIN_YEAR = 2021
 SUPPORTED_LEAGUES = {"ATP", "WTA"}
-ELIGIBLE_CATEGORIES = {"main tour", "masters", "grand chelem", "grand slam"}
+ELIGIBLE_CATEGORIES = {"main tour", "masters", "grand chelem", "grand slam", "challenger"}
 
 
 class TennisArchiveImportError(RuntimeError):
@@ -589,7 +589,10 @@ def get_player_archive_profile(
             "source_license": SOURCE_LICENSE,
             "source_attribution": SOURCE_ATTRIBUTION,
             "warning": (
-                "Perfil actualizado con fechas exactas y superficie desde Valuebetennis. "
+                "Perfil descriptivo con fechas exactas y superficie desde Valuebetennis. "
+                "Incluye Main Tour, Masters, Grand Slam y Challenger (ATP Challenger y WTA 125); "
+                "excluye ITF. Esta tabla no alimenta las proyecciones ni los backtests Elo, "
+                "que continúan usando su fuente histórica independiente. "
                 "Esta fuente no publica estadísticas de saque; no se estiman ni se rellenan."
             ),
         },
