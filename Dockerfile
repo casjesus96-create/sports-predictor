@@ -16,6 +16,7 @@ COPY PercentageSignal.tsx ./
 COPY NBAApp.tsx ./
 COPY TennisApp.tsx ./
 COPY FootballApp.tsx ./
+COPY NHLApp.tsx ./
 COPY DecisionCenter.tsx ./
 COPY BestPlays.tsx ./
 COPY MarketLab.tsx ./
