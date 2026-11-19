@@ -31,6 +31,7 @@ from football_learning import router as football_learning_router
 from analyzer import analyze_mlb_game
 from nfl_api import router as nfl_router
 from nba_api import router as nba_router
+from nhl_api import router as nhl_router
 from repository import (
     save_analysis,
     settle_prediction,
@@ -288,6 +289,7 @@ app.include_router(
 
 # NBA router: módulo independiente con modelo oficial NBA-1.0.0.
 app.include_router(nba_router)
+app.include_router(nhl_router)
 
 
 # =========================================================
@@ -321,6 +323,7 @@ def health():
             "NFL",
             "NBA",
             "Tennis",
+            "NHL",
         ],
     }
 
