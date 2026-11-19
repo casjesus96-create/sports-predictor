@@ -29,5 +29,26 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Audit NHL schedule coverage (read-only)
+        id: audit
+        continue-on-error: true
         run: |
-          python nhl_history_audit.py --season "${{ inputs.season }}" --teams "${{ inputs.teams }}"
+          python nhl_history_audit.py --season "${{ inputs.season }}" --teams "${{ inputs.teams }}" --output nhl-season-coverage-report.json
+      - name: Add readable report to workflow summary
+        if: always()
+        run: |
+          if [ -f nhl-season-coverage-report.json ]; then
+            python -c "import json; from nhl_history_audit import render_markdown_summary; report=json.load(open('nhl-season-coverage-report.json', encoding='utf-8')); print(render_markdown_summary(report))" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## NHL historical coverage" >> "$GITHUB_STEP_SUMMARY"
+            echo "No report was generated. Review the audit step logs." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload machine-readable audit report
+        if: always() && hashFiles('nhl-season-coverage-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: nhl-season-coverage-${{ inputs.season }}
+          path: nhl-season-coverage-report.json
+          if-no-files-found: error
+      - name: Fail workflow when audit finds incomplete coverage
+        if: steps.audit.outcome == 'failure'
+        run: exit 1
