@@ -48,10 +48,25 @@ def test_build_match_payload_preserves_exact_date_surface_and_provenance():
     {"joueur1_id": "202"},
     {"joueur1": " "},
     {"date": "not-a-date"},
-    {"match_id": ""},
 ])
 def test_invalid_rows_are_rejected_without_guessing(overrides):
     assert archive.build_match_payload(row(**overrides), "2026-11-18T00:00:00+00:00") is None
+
+
+
+def test_missing_publisher_match_id_uses_deterministic_namespaced_identity():
+    imported_at = "2026-11-18T00:00:00+00:00"
+    first = archive.build_match_payload(row(match_id=""), imported_at)
+    second = archive.build_match_payload(row(match_id=""), imported_at)
+    reversed_players = archive.build_match_payload(
+        row(match_id="", joueur1="Player Two", joueur1_id="202",
+            joueur2="Player One", joueur2_id="101"), imported_at
+    )
+
+    assert first is not None
+    assert first["source_match_id"].startswith("derived:")
+    assert first["source_match_id"] == second["source_match_id"]
+    assert first["source_match_id"] == reversed_players["source_match_id"]
 
 
 def test_parse_year_rows_deduplicates_identical_ids_and_rejects_conflicts():

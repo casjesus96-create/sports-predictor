@@ -8,6 +8,8 @@ model. The source attribution is stored on every imported row.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 import unicodedata
@@ -59,9 +61,40 @@ def _utc_timestamp(value: Any) -> str | None:
     return parsed.astimezone(timezone.utc).isoformat()
 
 
+def _stable_source_match_id(
+    row: dict[str, Any], league: str, match_date: date
+) -> tuple[str, bool]:
+    """Use the publisher ID, or a deterministic fingerprint of match facts.
+
+    The fallback is explicitly namespaced so it can never be mistaken for a
+    publisher-issued ID. It uses both player IDs, event, exact date/time,
+    round, score and winner; it does not use row position or import time.
+    """
+    supplied = str(row.get("match_id") or "").strip()
+    if supplied:
+        return supplied, False
+
+    identity = {
+        "league": league,
+        "match_date": match_date.isoformat(),
+        "match_datetime_utc": _utc_timestamp(row.get("date")) or "",
+        "tournament_id": str(row.get("tournoi_id") or "").strip(),
+        "tournament": " ".join(str(row.get("tournoi") or "").casefold().split()),
+        "round": str(row.get("tour") or "").strip(),
+        "players": sorted((
+            str(row.get("joueur1_id") or "").strip(),
+            str(row.get("joueur2_id") or "").strip(),
+        )),
+        "winner_id": str(row.get("vainqueur_id") or "").strip(),
+        "score": " ".join(str(row.get("score") or "").split()),
+    }
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return f"derived:{digest}", True
+
+
 def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any] | None:
     """Validate and normalize one source row; invalid rows are never guessed."""
-    source_match_id = str(row.get("match_id") or "").strip()
     league = str(row.get("genre") or "").strip().upper()
     player1_id = str(row.get("joueur1_id") or "").strip()
     player2_id = str(row.get("joueur2_id") or "").strip()
@@ -71,8 +104,7 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
     match_date = _match_day(str(row.get("date") or ""))
 
     if (
-        not source_match_id
-        or league not in SUPPORTED_LEAGUES
+        league not in SUPPORTED_LEAGUES
         or match_date is None
         or not player1_id
         or not player2_id
@@ -89,6 +121,7 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
     if not tournament or category.casefold() not in ELIGIBLE_CATEGORIES:
         return None
 
+    source_match_id, _derived_id = _stable_source_match_id(row, league, match_date)
     surface_detail = str(row.get("surface") or "").strip() or None
     surface_key = (surface_detail or "").casefold().replace(".", "").strip()
     if surface_key in {"hard", "indoor hard", "i hard", "ihard"}:
@@ -138,8 +171,6 @@ def _normalized_category(value: Any) -> str:
 
 def _rejection_reason(row: dict[str, Any], year: int) -> str:
     """Return the first failed validation so source drift is diagnosable."""
-    if not str(row.get("match_id") or "").strip():
-        return "missing_match_id"
     if str(row.get("genre") or "").strip().upper() not in SUPPORTED_LEAGUES:
         return "unsupported_or_missing_league"
     played_on = _match_day(str(row.get("date") or ""))
@@ -213,6 +244,10 @@ def parse_year_rows(
         "rows_rejected": rejected,
         "rows_excluded_category": excluded_category,
         "duplicate_rows": duplicates,
+        "derived_match_ids": sum(
+            str(item.get("source_match_id") or "").startswith("derived:")
+            for item in unique.values()
+        ),
         "category_counts": dict(sorted(category_counts.items())),
         "rejection_reasons": dict(sorted(rejection_reasons.items())),
     }
@@ -236,6 +271,7 @@ def sync_tennis_archive(
         "years_loaded": 0,
         "rows_seen": 0,
         "valid_matches": 0,
+        "derived_match_ids": 0,
         "rows_rejected": 0,
         "rows_excluded_category": 0,
         "duplicate_rows": 0,
@@ -258,12 +294,14 @@ def sync_tennis_archive(
                 "rows_rejected": parsed["rows_rejected"],
                 "rows_excluded_category": parsed["rows_excluded_category"],
                 "duplicate_rows": parsed["duplicate_rows"],
+                "derived_match_ids": parsed["derived_match_ids"],
                 "category_counts": parsed["category_counts"],
                 "rejection_reasons": parsed["rejection_reasons"],
             })
             totals["years_loaded"] += 1
             totals["rows_seen"] += parsed["rows_seen"]
             totals["valid_matches"] += len(payloads)
+            totals["derived_match_ids"] += parsed["derived_match_ids"]
             totals["rows_rejected"] += parsed["rows_rejected"]
             totals["rows_excluded_category"] += parsed["rows_excluded_category"]
             totals["duplicate_rows"] += parsed["duplicate_rows"]
