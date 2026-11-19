@@ -291,6 +291,8 @@ def test_import_includes_challenger_for_both_tours_but_excludes_itf(league):
     assert len(parsed["rows"]) == 1
     assert parsed["rows"][0]["league"] == league
     assert parsed["rows"][0]["category"] == "Challenger"
+    assert parsed["league_counts"][league]["category_counts"]["challenger"] == 1
+    assert parsed["league_counts"][league]["category_counts"]["itf"] == 1
     assert parsed["rows_excluded_category"] == 1
     assert parsed["rows_rejected"] == 0
 
