@@ -9,8 +9,9 @@ import BestPlays from "./BestPlays";
 import MarketLab from "./MarketLab";
 import ProbabilityDraws from "./ProbabilityDraws";
 import FootballApp from "./FootballApp";
+import NHLApp from "./NHLApp";
 
-type Sport = "MLB" | "NFL" | "NBA" | "TENNIS" | "DECISION" | "DRAWS" | "FOOTBALL" | "BEST_PLAYS" | "MARKET_LAB";
+type Sport = "MLB" | "NFL" | "NBA" | "TENNIS" | "DECISION" | "DRAWS" | "FOOTBALL" | "BEST_PLAYS" | "MARKET_LAB" | "NHL";
 
 export default function App() {
   const [sport, setSport] = useState<Sport>("NBA");
@@ -87,6 +88,15 @@ export default function App() {
 
         <button
           type="button"
+          aria-pressed={sport === "NHL"}
+          onClick={() => setSport("NHL")}
+          style={buttonStyle(sport === "NHL")}
+        >
+          🏒 NHL
+        </button>
+
+        <button
+          type="button"
           aria-pressed={sport === "DECISION"}
           onClick={() => setSport("DECISION")}
           style={buttonStyle(sport === "DECISION")}
@@ -119,7 +129,7 @@ export default function App() {
         </button>
       </nav>
 
-      {sport === "MARKET_LAB" ? <MarketLab /> : sport === "BEST_PLAYS" ? <BestPlays /> : sport === "DRAWS" ? <ProbabilityDraws /> : sport === "DECISION" ? <DecisionCenter /> : sport === "FOOTBALL" ? <FootballApp /> : sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
+      {sport === "MARKET_LAB" ? <MarketLab /> : sport === "BEST_PLAYS" ? <BestPlays /> : sport === "DRAWS" ? <ProbabilityDraws /> : sport === "DECISION" ? <DecisionCenter /> : sport === "FOOTBALL" ? <FootballApp /> : sport === "MLB" ? <MLBApp /> : sport === "NFL" ? <NFLApp /> : sport === "NHL" ? <NHLApp /> : sport === "TENNIS" ? <TennisApp /> : <NBAApp />}
     </>
     </AuthGate>
   );
