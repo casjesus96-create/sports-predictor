@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
-from nhl_client import NHLDataError, get_boxscore, get_games
+from nhl_client import NHLDataError, get_boxscore, get_games, get_team_season_schedule
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/nhl", tags=["NHL"])
@@ -34,6 +34,18 @@ def nhl_games(date_value: str | None = Query(None, alias="date")):
     except NHLDataError as exc:
         logger.warning("NHL scoreboard unavailable: %s", exc)
         raise HTTPException(status_code=502, detail={"error": "NHL_SOURCE_ERROR", "message": str(exc)}) from exc
+
+
+@router.get("/history/team-schedule/{team}/{season}")
+def nhl_team_season_schedule(team: str, season: str):
+    """Return one team's historical season schedule without persisting it."""
+    try:
+        return get_team_season_schedule(team, season)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NHLDataError as exc:
+        logger.warning("NHL season schedule unavailable for %s %s: %s", team, season, exc)
+        raise HTTPException(status_code=502, detail={"error": "NHL_HISTORY_SOURCE_ERROR", "message": str(exc)}) from exc
 
 
 @router.get("/games/{game_id}/boxscore")

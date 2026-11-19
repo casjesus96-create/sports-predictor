@@ -141,3 +141,69 @@ def test_boxscore_reads_nhl_sog_field_as_player_shots():
 
     assert result["stats_available"] is True
     assert result["teams"]["home"]["skaters"][0]["shots"] == 5
+
+
+
+def test_get_team_season_schedule_normalizes_and_sorts_games(monkeypatch):
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "currentSeason": 20252026,
+                "games": [
+                    {
+                        "id": 2025020202,
+                        "gameDate": "2025-10-12",
+                        "gameState": "OFF",
+                        "homeTeam": {"id": 1, "abbrev": "TOR", "score": 3},
+                        "awayTeam": {"id": 2, "abbrev": "BOS", "score": 2},
+                    },
+                    {
+                        "id": 2025020101,
+                        "gameDate": "2025-10-08",
+                        "gameState": "OFF",
+                        "homeTeam": {"id": 1, "abbrev": "TOR", "score": 4},
+                        "awayTeam": {"id": 3, "abbrev": "MTL", "score": 1},
+                    },
+                ],
+            }
+
+    def fake_get(url, headers, timeout):
+        captured.update({"url": url, "timeout": timeout})
+        return Response()
+
+    monkeypatch.setattr(nhl_client.requests, "get", fake_get)
+    result = nhl_client.get_team_season_schedule("tor", "20252026")
+
+    assert captured["url"] == "https://api-web.nhle.com/v1/club-schedule-season/TOR/20252026"
+    assert result["total"] == 2
+    assert [game["game_date"] for game in result["games"]] == ["2025-10-08", "2025-10-12"]
+    assert result["games"][0]["home"]["score"] == 4
+
+
+@pytest.mark.parametrize("team,season", [
+    ("", "20252026"),
+    ("TOR/../../score", "20252026"),
+    ("TOR", "20252025"),
+    ("TOR", "2025202"),
+])
+def test_get_team_season_schedule_rejects_invalid_parameters(team, season):
+    with pytest.raises(ValueError):
+        nhl_client.get_team_season_schedule(team, season)
+
+
+def test_get_team_season_schedule_rejects_malformed_payload(monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"games": {}}
+
+    monkeypatch.setattr(nhl_client.requests, "get", lambda *args, **kwargs: Response())
+    with pytest.raises(nhl_client.NHLDataError, match="lista de partidos"):
+        nhl_client.get_team_season_schedule("TOR", "20252026")
