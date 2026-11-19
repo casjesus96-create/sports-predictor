@@ -75,6 +75,7 @@ export default function NHLApp() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
+  const [detailUpdatedAt, setDetailUpdatedAt] = useState<Date | null>(null);
 
   const loadGames = useCallback(async () => {
     setLoading(true);
@@ -100,16 +101,21 @@ export default function NHLApp() {
 
   useEffect(() => { void loadGames(); }, [loadGames]);
 
-  const loadBoxscore = async (gameId: string) => {
-    if (selectedGame === gameId) {
+  const loadBoxscore = async (gameId: string, forceRefresh = false) => {
+    if (selectedGame === gameId && !forceRefresh) {
       setSelectedGame("");
       setBoxscore(null);
       setDetailError("");
+      setDetailUpdatedAt(null);
       return;
     }
+    const changingGame = selectedGame !== gameId;
     setSelectedGame(gameId);
     setDetailLoading(true);
-    setBoxscore(null);
+    if (changingGame) {
+      setBoxscore(null);
+      setDetailUpdatedAt(null);
+    }
     setDetailError("");
     try {
       const response = await fetch(`/api/v1/nhl/games/${encodeURIComponent(gameId)}/boxscore`, {
@@ -119,6 +125,7 @@ export default function NHLApp() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.detail?.message || data?.detail || "No fue posible cargar el boxscore.");
       setBoxscore(data);
+      setDetailUpdatedAt(new Date());
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : "Error al consultar las estadísticas.");
     } finally {
@@ -200,6 +207,21 @@ export default function NHLApp() {
                 </div>
                 {opened && (
                   <div className="nhl-boxscore">
+                    <div className="nhl-game-footer">
+                      <button
+                        type="button"
+                        className="secondary small"
+                        onClick={() => void loadBoxscore(game.game_id, true)}
+                        disabled={detailLoading}
+                      >
+                        {detailLoading ? "Actualizando…" : "Actualizar estadísticas"}
+                      </button>
+                      {detailUpdatedAt && (
+                        <span className="muted">
+                          Actualizado: {detailUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                        </span>
+                      )}
+                    </div>
                     {detailLoading ? <p className="muted">Cargando boxscore…</p> :
                       detailError ? <div className="message error">{detailError}</div> :
                       boxscore && boxscore.stats_available === false ? (
@@ -221,20 +243,20 @@ export default function NHLApp() {
                                 <h3>{displayName(team)}</h3>
                                 <div className="nhl-table-wrap">
                                   <table className="nhl-table">
-                                    <thead><tr><th>Jugador</th><th>G</th><th>A</th><th>P</th><th>TI</th><th>Golpes</th><th>Bloq.</th></tr></thead>
+                                    <thead><tr><th>Jugador</th><th>G</th><th>A</th><th>P</th><th>TI</th><th>Golpes</th><th>Bloq.</th><th>+/-</th><th>PIM</th></tr></thead>
                                     <tbody>{(data?.skaters || []).map((p, i) => <tr key={p.player_id ?? i}>
                                       <td><b>{p.name || "Jugador"}</b><small>{p.position || "—"}{p.time_on_ice ? ` · ${p.time_on_ice}` : ""}</small></td>
-                                      <td>{number(p.goals)}</td><td>{number(p.assists)}</td><td>{number(p.points)}</td><td>{number(p.shots)}</td><td>{number(p.hits)}</td><td>{number(p.blocked_shots)}</td>
+                                      <td>{number(p.goals)}</td><td>{number(p.assists)}</td><td>{number(p.points)}</td><td>{number(p.shots)}</td><td>{number(p.hits)}</td><td>{number(p.blocked_shots)}</td><td>{number(p.plus_minus)}</td><td>{number(p.penalty_minutes)}</td>
                                     </tr>)}</tbody>
                                   </table>
                                 </div>
                                 <h4>Porteros</h4>
                                 <div className="nhl-table-wrap">
                                   <table className="nhl-table">
-                                    <thead><tr><th>Portero</th><th>Atajadas</th><th>Tiros recibidos</th><th>% atajadas</th><th>Goles recibidos</th><th>Decisión</th></tr></thead>
+                                    <thead><tr><th>Portero</th><th>Atajadas</th><th>Tiros recibidos</th><th>% atajadas</th><th>Goles recibidos</th><th>Decisión</th><th>Tiempo</th></tr></thead>
                                     <tbody>{(data?.goalies || []).map((p, i) => <tr key={p.player_id ?? i}>
                                       <td><b>{p.name || "Portero"}</b><small>{p.time_on_ice || "—"}</small></td>
-                                      <td>{number(p.saves)}</td><td>{number(p.shots_against)}</td><td>{number(p.save_percentage, 3)}</td><td>{number(p.goals_against)}</td><td>{p.decision || "—"}</td>
+                                      <td>{number(p.saves)}</td><td>{number(p.shots_against)}</td><td>{number(p.save_percentage, 3)}</td><td>{number(p.goals_against)}</td><td>{p.decision || "—"}</td><td>{p.time_on_ice || "—"}</td>
                                     </tr>)}</tbody>
                                   </table>
                                 </div>
