@@ -15,6 +15,8 @@ type Game = {
   game_state: string;
   completed: boolean;
   game_type?: number | null;
+  period?: number | null;
+  period_type?: string | null;
   venue?: string | null;
   home: Team;
   away: Team;
