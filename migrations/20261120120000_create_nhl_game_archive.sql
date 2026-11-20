@@ -4,7 +4,7 @@
 create table if not exists nhl_game_archive (
     id uuid primary key default gen_random_uuid(),
     game_id text not null unique,
-    season text not null check (season ~ '^\\d{8}$'),
+    season text not null check (season ~ '^[0-9]{8}$'),
     game_date date not null,
     start_time_utc timestamptz,
     home_team_id bigint,
