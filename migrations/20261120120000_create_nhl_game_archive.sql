@@ -1,6 +1,6 @@
 -- Persistent, source-attributed NHL game results archive.
 -- This table is separate from prediction snapshots and does not activate a model.
--- NHL public web feed terms are not yet formally reviewed; preserve that status.
+-- Do not populate this table until a source with reviewed reuse terms is selected.
 create table if not exists nhl_game_archive (
     id uuid primary key default gen_random_uuid(),
     game_id text not null unique,
@@ -22,7 +22,7 @@ create table if not exists nhl_game_archive (
     observed_teams jsonb not null default '[]'::jsonb,
     training_eligible boolean not null default false,
     eligibility_reason text not null,
-    source text not null default 'NHL public club season schedule',
+    source text not null default 'unverified_source',
     source_url text not null,
     source_license text,
     source_terms_status text not null default 'review_required'
