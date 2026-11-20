@@ -125,3 +125,56 @@ def test_report_fails_closed_when_game_type_is_missing():
     )
     assert report["success"] is False
     assert report["games_missing_game_type"] == ["2025020001"]
+
+ 
+def test_report_lists_games_without_cross_team_confirmation():
+    game = _game(game_id="2024020999")
+    report = audit.build_season_coverage_report(
+        "20242025",
+        ["TOR", "BOS"],
+        {"TOR": {"games": [game]}, "BOS": {"games": []}},
+    )
+    assert report["success"] is True
+    assert report["review_required"] is True
+    assert report["games_without_cross_team_confirmation"] == [{
+        "game_id": "2024020999",
+        "game_date": "2025-10-08",
+        "home_team": "TOR",
+        "away_team": "BOS",
+        "home_score": 3,
+        "away_score": 2,
+        "game_state": "OFF",
+        "game_type": 2,
+        "observed_teams": ["TOR"],
+        "missing_team": "BOS",
+    }]
+
+
+def test_report_lists_non_completed_games_with_identity():
+    game = _game(game_id="2024021000")
+    game["game_state"] = "FUT"
+    game["completed"] = False
+    report = audit.build_season_coverage_report(
+        "20242025", ["TOR"], {"TOR": {"games": [game]}}
+    )
+    assert report["non_completed_games"] == [{
+        "game_id": "2024021000",
+        "game_date": "2025-10-08",
+        "home_team": "TOR",
+        "away_team": "BOS",
+        "home_score": 3,
+        "away_score": 2,
+        "game_state": "FUT",
+        "game_type": 2,
+    }]
+    assert report["review_required"] is True
+
+
+def test_review_required_is_false_when_all_games_are_confirmed_and_completed():
+    game = _game()
+    report = audit.build_season_coverage_report(
+        "20252026",
+        ["TOR", "BOS"],
+        {"TOR": {"games": [game]}, "BOS": {"games": [game]}},
+    )
+    assert report["review_required"] is False
