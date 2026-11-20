@@ -64,11 +64,35 @@ def build_season_coverage_report(
     game_type_counts: Counter[str] = Counter()
     game_state_counts: Counter[str] = Counter()
     team_observation_counts: Counter[str] = Counter()
+    games_without_cross_team_confirmation: list[dict[str, Any]] = []
+    non_completed_games: list[dict[str, Any]] = []
     for game_id, entries in observations.items():
         signatures = {_signature(game) for _, game in entries}
         if len(signatures) > 1:
             conflicts.append({"game_id": game_id, "teams": sorted({team for team, _ in entries})})
         canonical = entries[0][1]
+        home = canonical.get("home") or {}
+        away = canonical.get("away") or {}
+        game_state = str(canonical.get("game_state") or "UNKNOWN")
+        game_detail = {
+            "game_id": game_id,
+            "game_date": canonical.get("game_date"),
+            "home_team": home.get("abbreviation"),
+            "away_team": away.get("abbreviation"),
+            "home_score": home.get("score"),
+            "away_score": away.get("score"),
+            "game_state": game_state,
+            "game_type": canonical.get("game_type"),
+        }
+        observed_teams = sorted({team for team, _ in entries})
+        if len(observed_teams) < 2:
+            games_without_cross_team_confirmation.append({
+                **game_detail,
+                "observed_teams": observed_teams,
+                "missing_team": away.get("abbreviation") if home.get("abbreviation") in observed_teams else home.get("abbreviation"),
+            })
+        if not canonical.get("completed"):
+            non_completed_games.append(game_detail)
         game_type = canonical.get("game_type")
         if game_type is None:
             games_missing_game_type.append(game_id)
@@ -105,6 +129,9 @@ def build_season_coverage_report(
         "games_seen_from_multiple_team_schedules": double_confirmed,
         "cross_team_confirmation_rate": round(double_confirmed / unique_games, 4) if unique_games else None,
         "completed_games": completed_games,
+        "games_without_cross_team_confirmation": games_without_cross_team_confirmation,
+        "non_completed_games": non_completed_games,
+        "review_required": bool(games_without_cross_team_confirmation or non_completed_games),
         "game_type_counts": dict(sorted(game_type_counts.items())),
         "game_state_counts": dict(sorted(game_state_counts.items())),
         "games_missing_game_type": games_missing_game_type,
@@ -144,6 +171,9 @@ def render_markdown_summary(report: dict[str, Any]) -> str:
         f"| Teams requested / successful / failed | {report.get('teams_requested', 0)} / {report.get('teams_succeeded', 0)} / {report.get('teams_failed', 0)} |",
         f"| Unique games | {report.get('unique_games', 0)} |",
         f"| Completed games | {report.get('completed_games', 0)} |",
+        f"| Games without cross-team confirmation | {len(report.get('games_without_cross_team_confirmation', []))} |",
+        f"| Non-completed games requiring review | {len(report.get('non_completed_games', []))} |",
+        f"| Review required | {'YES' if report.get('review_required') else 'NO'} |",
         f"| Game types (raw NHL codes) | {json.dumps(report.get('game_type_counts', {}), sort_keys=True)} |",
         f"| Game states | {json.dumps(report.get('game_state_counts', {}), sort_keys=True)} |",
         f"| Games missing game type | {len(report.get('games_missing_game_type', []))} |",
@@ -165,6 +195,8 @@ def render_markdown_summary(report: dict[str, Any]) -> str:
         ("completed_games_missing_score", "Completed games missing score"),
         ("games_missing_game_type", "Games missing game type"),
         ("invalid_team_membership", "Invalid team membership"),
+        ("games_without_cross_team_confirmation", "Games without cross-team confirmation"),
+        ("non_completed_games", "Non-completed games requiring review"),
     ):
         values = report.get(key) or []
         if values:
