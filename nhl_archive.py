@@ -6,23 +6,16 @@ does not create predictions, modify model parameters, or import player stats.
 """
 from __future__ import annotations
 
-import logging
 import re
-from datetime import date, datetime, timezone
+from datetime import date
 from typing import Any
 
-from nhl_client import NHLDataError, get_team_season_schedule
-from nhl_history_audit import CURRENT_TEAM_ABBREVIATIONS, build_season_coverage_report
-from repository import get_supabase_client
-
-logger = logging.getLogger(__name__)
-TABLE = "nhl_game_archive"
-UPSERT_BATCH_SIZE = 500
-SOURCE_URL = "https://api-web.nhle.com/v1/club-schedule-season/{team}/{season}"
-SOURCE_ATTRIBUTION = (
-    "NHL public club season schedule feed; accessed through the NHL public web API. "
-    "Source terms and permitted archival reuse remain under review."
-)
+CURRENT_TEAM_ABBREVIATIONS = frozenset({
+    "ANA", "BOS", "BUF", "CGY", "CAR", "CHI", "COL", "CBJ",
+    "DAL", "DET", "EDM", "FLA", "LAK", "MIN", "MTL", "NSH",
+    "NJD", "NYI", "NYR", "OTT", "PHI", "PIT", "SJS", "SEA",
+    "STL", "TBL", "TOR", "UTA", "VAN", "VGK", "WSH", "WPG",
+})
 
 
 class NHLArchiveImportError(RuntimeError):
@@ -53,6 +46,11 @@ def build_archive_payloads(
     season: str,
     schedule_by_team: dict[str, dict[str, Any]],
     imported_at: str,
+    source_name: str,
+    source_url: str,
+    source_license: str,
+    source_attribution: str,
+    source_terms_status: str,
 ) -> dict[str, Any]:
     """Deduplicate schedules, reject contradictions, and classify eligibility.
 
@@ -61,6 +59,11 @@ def build_archive_payloads(
     assumed to mean cancelled; it remains NON_FINAL_REVIEW.
     """
     selected_season = _valid_season(season)
+    provenance = (source_name, source_url, source_license, source_attribution)
+    if any(not str(value or "").strip() for value in provenance):
+        raise ValueError("La fuente, URL, licencia y atribución son obligatorias.")
+    if source_terms_status != "reviewed":
+        raise ValueError("No se puede preparar una importación sin revisión de términos de la fuente.")
     observations: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     for requested_team, payload in schedule_by_team.items():
         for game in (payload or {}).get("games", []):
@@ -156,11 +159,11 @@ def build_archive_payloads(
             "observed_teams": observed_teams,
             "training_eligible": eligible,
             "eligibility_reason": eligibility_reason,
-            "source": "NHL public club season schedule",
-            "source_url": SOURCE_URL.format(team=observed_teams[0], season=selected_season),
-            "source_license": None,
-            "source_terms_status": "review_required",
-            "source_attribution": SOURCE_ATTRIBUTION,
+            "source": source_name,
+            "source_url": source_url,
+            "source_license": source_license,
+            "source_terms_status": source_terms_status,
+            "source_attribution": source_attribution,
             "imported_at": imported_at,
         })
 
@@ -176,91 +179,3 @@ def build_archive_payloads(
         },
     }
 
-
-def import_nhl_season(season: str, client=None) -> dict[str, Any]:
-    """Fetch all current-team schedules, validate fully, then idempotently upsert."""
-    selected_season = _valid_season(season)
-    schedules: dict[str, dict[str, Any]] = {}
-    failures: dict[str, str] = {}
-    for team in CURRENT_TEAM_ABBREVIATIONS:
-        try:
-            schedules[team] = get_team_season_schedule(team, selected_season)
-        except (NHLDataError, ValueError) as exc:
-            failures[team] = str(exc)[:200]
-
-    report = build_season_coverage_report(
-        selected_season, list(CURRENT_TEAM_ABBREVIATIONS), schedules, failures
-    )
-    if (
-        failures or report.get("missing_team_responses")
-        or not report.get("unique_games")
-        or report.get("identity_conflicts")
-        or report.get("completed_games_missing_score")
-        or report.get("games_missing_game_type")
-        or report.get("invalid_team_membership")
-    ):
-        raise NHLArchiveImportError(
-            f"Auditoría estructural fallida para {selected_season}; no se escribió nada. "
-            f"Fallos={len(failures)}, conflictos={len(report.get('identity_conflicts', []))}, "
-            f"marcadores incompletos={len(report.get('completed_games_missing_score', []))}."
-        )
-
-    imported_at = datetime.now(timezone.utc).isoformat()
-    parsed = build_archive_payloads(selected_season, schedules, imported_at)
-    db = client or get_supabase_client()
-    upserted = 0
-    rows = parsed["rows"]
-    for offset in range(0, len(rows), UPSERT_BATCH_SIZE):
-        batch = rows[offset:offset + UPSERT_BATCH_SIZE]
-        if batch:
-            db.table(TABLE).upsert(batch, on_conflict="game_id").execute()
-            upserted += len(batch)
-
-    return {
-        "success": True,
-        "season": selected_season,
-        "source": "NHL public club season schedule",
-        "source_terms_status": "review_required",
-        "persistence": "supabase_upsert",
-        "team_schedules_succeeded": len(schedules),
-        "schedule_observations": report["schedule_observations"],
-        "cross_team_confirmation_rate": report["cross_team_confirmation_rate"],
-        "review_required": report["review_required"],
-        **{key: value for key, value in parsed.items() if key != "rows"},
-        "upserted_rows": upserted,
-        "audit_report": report,
-    }
-
-
-def sync_nhl_archive(start_season: str, end_season: str) -> dict[str, Any]:
-    """Import an inclusive, consecutive season range; safe to rerun via game_id upsert."""
-    start = _valid_season(start_season)
-    end = _valid_season(end_season)
-    start_year = int(start[:4])
-    end_year = int(end[:4])
-    if end_year < start_year or end_year - start_year > 10:
-        raise ValueError("El rango debe ser ascendente y no superar 11 temporadas.")
-    results = []
-    errors = []
-    for year in range(start_year, end_year + 1):
-        season = f"{year}{year + 1}"
-        try:
-            results.append(import_nhl_season(season))
-        except Exception as exc:
-            logger.exception("NHL archive import failed for %s", season)
-            errors.append({"season": season, "error": str(exc)[:240]})
-            break
-    return {
-        "success": not errors and len(results) == end_year - start_year + 1,
-        "start_season": start,
-        "end_season": end,
-        "seasons_imported": len(results),
-        "total_upserted_rows": sum(item["upserted_rows"] for item in results),
-        "by_season": results,
-        "errors": errors,
-        "source_terms_status": "review_required",
-        "note": (
-            "Los términos de reutilización de la fuente NHL siguen pendientes de revisión. "
-            "Los registros no son una declaración de licencia abierta."
-        ),
-    }
