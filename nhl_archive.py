@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from nhl_client import NHLDataError, get_team_season_schedule
@@ -31,7 +31,7 @@ class NHLArchiveImportError(RuntimeError):
 
 def _valid_season(value: Any) -> str:
     season = str(value or "").strip()
-    match = re.fullmatch(r"(\\d{4})(\\d{4})", season)
+    match = re.fullmatch(r"([0-9]{4})([0-9]{4})", season)
     if not match or int(match.group(2)) != int(match.group(1)) + 1:
         raise ValueError("season debe usar YYYYYYYY con años consecutivos.")
     return season
@@ -87,7 +87,7 @@ def build_archive_payloads(
         away = game.get("away") or {}
         game_date = str(game.get("game_date") or "").strip()
         game_type = game.get("game_type")
-        if not re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", game_date):
+        if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", game_date):
             raise NHLArchiveImportError(f"Fecha inválida para el partido {game_id}.")
         if game_type not in {1, 2, 3}:
             raise NHLArchiveImportError(f"game_type ausente o inválido para {game_id}.")
@@ -150,7 +150,7 @@ def build_archive_payloads(
             "training_eligible": eligible,
             "eligibility_reason": eligibility_reason,
             "source": "NHL public club season schedule",
-            "source_url": SOURCE_URL.format(team="team-schedules", season=selected_season),
+            "source_url": SOURCE_URL.format(team=observed_teams[0], season=selected_season),
             "source_license": None,
             "source_terms_status": "review_required",
             "source_attribution": SOURCE_ATTRIBUTION,
