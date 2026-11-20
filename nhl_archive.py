@@ -89,6 +89,13 @@ def build_archive_payloads(
         game_type = game.get("game_type")
         if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", game_date):
             raise NHLArchiveImportError(f"Fecha inválida para el partido {game_id}.")
+        try:
+            date.fromisoformat(game_date)
+        except ValueError as exc:
+            raise NHLArchiveImportError(f"Fecha inválida para el partido {game_id}.") from exc
+        season_start = int(selected_season[:4])
+        if not (f"{season_start}-07-01" <= game_date <= f"{season_start + 1}-06-30"):
+            raise NHLArchiveImportError(f"El partido {game_id} está fuera del rango de su temporada.")
         if game_type not in {1, 2, 3}:
             raise NHLArchiveImportError(f"game_type ausente o inválido para {game_id}.")
         home_abbr = str(home.get("abbreviation") or "").strip().upper()
@@ -186,6 +193,7 @@ def import_nhl_season(season: str, client=None) -> dict[str, Any]:
     )
     if (
         failures or report.get("missing_team_responses")
+        or not report.get("unique_games")
         or report.get("identity_conflicts")
         or report.get("completed_games_missing_score")
         or report.get("games_missing_game_type")
