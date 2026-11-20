@@ -51,7 +51,7 @@ def test_keeps_external_exhibition_opponent_but_excludes_it_from_training():
 def test_preserves_nonfinal_game_without_claiming_it_was_cancelled():
     pending = game(
         game_id="2024010044", home="TBL", away="NSH",
-        game_type=1, completed=False,
+        game_type=1, completed=False, game_date="2024-10-07",
     )
     parsed = archive.build_archive_payloads(
         "20242025",
