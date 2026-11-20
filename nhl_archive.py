@@ -1,8 +1,8 @@
-"""Persistent, auditable NHL game-results archive.
+"""Source-neutral NHL archive normalization.
 
-The NHL public club schedule feed is undocumented. Imports preserve source
-provenance and explicitly mark source terms as requiring review. This module
-does not create predictions, modify model parameters, or import player stats.
+No data provider is approved by this module. It only validates and normalizes
+already obtained schedule rows after a human has reviewed the source terms.
+It does not fetch data or write to a database.
 """
 from __future__ import annotations
 
@@ -35,8 +35,9 @@ def _game_signature(game: dict[str, Any]) -> tuple[Any, ...]:
     away = game.get("away") or {}
     return (
         game.get("game_date"),
-        home.get("abbreviation"), away.get("abbreviation"),
-        home.get("score"), away.get("score"),
+        game.get("start_time_utc"),
+        home.get("id"), home.get("abbreviation"), home.get("name"), home.get("score"),
+        away.get("id"), away.get("abbreviation"), away.get("name"), away.get("score"),
         game.get("game_state"), game.get("game_type"),
         bool(game.get("completed")),
     )
