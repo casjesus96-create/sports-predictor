@@ -3,10 +3,10 @@ import pytest
 import nhl_archive as archive
 
 
-def game(game_id="2025020001", home="TOR", away="BOS", game_type=2, completed=True):
+def game(game_id="2025020001", home="TOR", away="BOS", game_type=2, completed=True, game_date="2025-10-08"):
     return {
         "game_id": game_id,
-        "game_date": "2025-10-08",
+        "game_date": game_date,
         "start_time_utc": "2025-10-08T23:00:00Z",
         "game_state": "OFF" if completed else "FUT",
         "completed": completed,
@@ -34,7 +34,7 @@ def test_deduplicates_cross_team_observations_and_marks_confirmed_regular_game_e
 
 def test_keeps_external_exhibition_opponent_but_excludes_it_from_training():
     exhibition = game(
-        game_id="2024010106", home="MUN", away="BUF", game_type=1
+        game_id="2024010106", home="MUN", away="BUF", game_type=1, game_date="2024-09-27"
     )
     parsed = archive.build_archive_payloads(
         "20242025", {"BUF": {"games": [exhibition]}},
