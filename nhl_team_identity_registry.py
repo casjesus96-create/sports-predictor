@@ -57,7 +57,6 @@ _ENTRIES: tuple[dict[str, Any], ...] = (
     # Historical abbreviations. Canonical keys represent statistical-history
     # groupings, not necessarily the same legal franchise or continuous ownership.
     {"abbreviation": "AEM", "valid_from": "1972-1973", "valid_to": "1979-1980", "canonical_key": "CGY", "source_url": _NHL_ABBREVIATIONS},
-    {"abbreviation": "AFM", "valid_from": "1972-1973", "valid_to": "1979-1980", "canonical_key": "CGY", "source_url": "https://media.nhl.com/site/asset/public/ext/2025-26/2025GlobalSeries.pdf"},
     {"abbreviation": "HFD", "valid_from": "1979-1980", "valid_to": "1996-1997", "canonical_key": "CAR", "source_url": _NHL_HISTORY},
     {"abbreviation": "QUE", "valid_from": "1979-1980", "valid_to": "1994-1995", "canonical_key": "COL", "source_url": _NHL_HISTORY},
     {"abbreviation": "MNS", "valid_from": "1967-1968", "valid_to": "1992-1993", "canonical_key": "DAL", "source_url": _NHL_HISTORY},
