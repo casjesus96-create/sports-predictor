@@ -19,7 +19,7 @@ def test_registry_has_a_version_and_current_team_codes_are_season_scoped():
 @pytest.mark.parametrize(
     ("season", "abbreviation", "expected"),
     [
-        ("1979-1980", "AFM", "CGY"),
+        ("1979-1980", "AEM", "CGY"),\n        ("1979-1980", "AFM", "CGY"),
         ("1979-1980", "HFD", "CAR"),
         ("1994-1995", "QUE", "COL"),
         ("1992-1993", "MNS", "DAL"),
