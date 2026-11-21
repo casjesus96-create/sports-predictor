@@ -39,7 +39,7 @@ def _game_signature(game: dict[str, Any]) -> tuple[Any, ...]:
         home.get("id"), home.get("abbreviation"), home.get("name"), home.get("score"),
         away.get("id"), away.get("abbreviation"), away.get("name"), away.get("score"),
         game.get("game_state"), game.get("game_type"),
-        bool(game.get("completed")),
+        game.get("completed"),
     )
 
 
@@ -65,19 +65,44 @@ def build_archive_payloads(
         raise ValueError("La fuente, URL, licencia y atribución son obligatorias.")
     if source_terms_status != "reviewed":
         raise ValueError("No se puede preparar una importación sin revisión de términos de la fuente.")
+    if not isinstance(schedule_by_team, dict):
+        raise NHLArchiveImportError("Los calendarios por equipo deben ser un objeto.")
+
     observations: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     for requested_team, payload in schedule_by_team.items():
-        for game in (payload or {}).get("games", []):
+        team_key = str(requested_team or "").strip().upper()
+        if not team_key:
+            raise NHLArchiveImportError("Se encontró un calendario sin equipo solicitado.")
+        if not isinstance(payload, dict):
+            raise NHLArchiveImportError(f"El calendario de {team_key} tiene un formato inválido.")
+        games = payload.get("games", [])
+        if not isinstance(games, list):
+            raise NHLArchiveImportError(f"La lista de partidos de {team_key} tiene un formato inválido.")
+        for game in games:
+            if not isinstance(game, dict):
+                raise NHLArchiveImportError(f"El calendario de {team_key} contiene un partido inválido.")
             game_id = str(game.get("game_id") or "").strip()
             if not game_id:
                 raise NHLArchiveImportError("Se encontró un partido sin game_id.")
-            home = (game.get("home") or {}).get("abbreviation")
-            away = (game.get("away") or {}).get("abbreviation")
-            if requested_team not in {home, away}:
+            completed = game.get("completed")
+            if not isinstance(completed, bool):
                 raise NHLArchiveImportError(
-                    f"El partido {game_id} no pertenece al calendario solicitado de {requested_team}."
+                    f"El indicador completed del partido {game_id} debe ser booleano."
                 )
-            observations.setdefault(game_id, []).append((requested_team, game))
+            game_type = game.get("game_type")
+            if isinstance(game_type, bool) or not isinstance(game_type, int) or game_type not in {1, 2, 3}:
+                raise NHLArchiveImportError(f"game_type ausente o inválido para {game_id}.")
+            home = game.get("home")
+            away = game.get("away")
+            if not isinstance(home, dict) or not isinstance(away, dict):
+                raise NHLArchiveImportError(f"Identidad de equipos inválida para {game_id}.")
+            home_abbr = str(home.get("abbreviation") or "").strip().upper()
+            away_abbr = str(away.get("abbreviation") or "").strip().upper()
+            if team_key not in {home_abbr, away_abbr}:
+                raise NHLArchiveImportError(
+                    f"El partido {game_id} no pertenece al calendario solicitado de {team_key}."
+                )
+            observations.setdefault(game_id, []).append((team_key, game))
 
     rows: list[dict[str, Any]] = []
     for game_id, entries in sorted(observations.items()):
@@ -87,10 +112,10 @@ def build_archive_payloads(
                 f"El game_id {game_id} presenta datos contradictorios entre calendarios."
             )
         game = entries[0][1]
-        home = game.get("home") or {}
-        away = game.get("away") or {}
+        home = game["home"]
+        away = game["away"]
         game_date = str(game.get("game_date") or "").strip()
-        game_type = game.get("game_type")
+        game_type = game["game_type"]
         if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", game_date):
             raise NHLArchiveImportError(f"Fecha inválida para el partido {game_id}.")
         try:
@@ -100,14 +125,12 @@ def build_archive_payloads(
         season_start = int(selected_season[:4])
         if not (f"{season_start}-07-01" <= game_date <= f"{season_start + 1}-06-30"):
             raise NHLArchiveImportError(f"El partido {game_id} está fuera del rango de su temporada.")
-        if game_type not in {1, 2, 3}:
-            raise NHLArchiveImportError(f"game_type ausente o inválido para {game_id}.")
         home_abbr = str(home.get("abbreviation") or "").strip().upper()
         away_abbr = str(away.get("abbreviation") or "").strip().upper()
         if not home_abbr or not away_abbr or home_abbr == away_abbr:
             raise NHLArchiveImportError(f"Identidad de equipos inválida para {game_id}.")
 
-        completed = bool(game.get("completed"))
+        completed = game["completed"]
         home_score = home.get("score")
         away_score = away.get("score")
         if completed and (
@@ -179,4 +202,3 @@ def build_archive_payloads(
             for code in (1, 2, 3)
         },
     }
-
