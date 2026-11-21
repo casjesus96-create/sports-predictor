@@ -591,27 +591,27 @@ def archive_team_lookup(
     normalized = normalize_team_key(search_text)
     client = _client_or_503()
     try:
-        filters = (
-            f"display_name.ilike.%{search_text}%,"
-            f"canonical_team_key.eq.{normalized},"
-            f"canonical_team_key.ilike.%{normalized}%"
-        )
         result = client.table("football_archive_teams").select(
             "canonical_team_key,display_name,competition_code"
-        ).eq("competition_code", code).or_(
-            filters
-        ).order("display_name").limit(50).execute()
+        ).eq("competition_code", code).order("display_name").limit(1000).execute()
         rows = result.data or []
     except Exception as exc:
         logger.exception("Could not search football archive teams")
         raise HTTPException(status_code=503, detail="No se pudieron buscar equipos en el archivo.") from exc
     unique = {}
     for row in rows:
-        key = str(row.get("canonical_team_key") or "")
-        if key:
+        key = str(row.get("canonical_team_key") or "").strip()
+        display_name = str(row.get("display_name") or key).strip()
+        if not key:
+            continue
+        # Match deterministic normalized text so Köln/Koln and legacy
+        # accent-bearing canonical keys remain searchable without fuzzy logic.
+        normalized_key = normalize_team_key(key)
+        normalized_display = normalize_team_key(display_name)
+        if normalized in normalized_key or normalized in normalized_display:
             unique[key] = {
                 "canonical_team_key": key,
-                "display_name": row.get("display_name") or key,
+                "display_name": display_name or key,
                 "competition_code": code,
             }
     return {
