@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-REGISTRY_VERSION = "2026-11-21.2"
+REGISTRY_VERSION = "2026-11-21.3"
 
 _NHL_HISTORY = "https://www.nhl.com/news/nhl-expansion-history-281005106"
 _NHL_RECORDS = "https://records.nhl.com/history"
@@ -54,8 +54,8 @@ _ENTRIES: tuple[dict[str, Any], ...] = (
     {"abbreviation": "VGK", "valid_from": "2017-2018", "valid_to": None, "canonical_key": "VGK", "source_url": _NHL_HISTORY},
     {"abbreviation": "WPG", "valid_from": "2011-2012", "valid_to": None, "canonical_key": "WPG", "source_url": _JETS_CONSOLIDATION},
     {"abbreviation": "WSH", "valid_from": "1974-1975", "valid_to": None, "canonical_key": "WSH", "source_url": _NHL_HISTORY},
-    # Historical abbreviations. Statistical lineage follows NHL's published
-    # history; it is not a claim that the clubs shared the same legal entity.
+    # Historical abbreviations. Canonical keys represent statistical-history
+    # groupings, not necessarily the same legal franchise or continuous ownership.
     {"abbreviation": "AEM", "valid_from": "1972-1973", "valid_to": "1979-1980", "canonical_key": "CGY", "source_url": _NHL_ABBREVIATIONS},
     {"abbreviation": "AFM", "valid_from": "1972-1973", "valid_to": "1979-1980", "canonical_key": "CGY", "source_url": "https://media.nhl.com/site/asset/public/ext/2025-26/2025GlobalSeries.pdf"},
     {"abbreviation": "HFD", "valid_from": "1979-1980", "valid_to": "1996-1997", "canonical_key": "CAR", "source_url": _NHL_HISTORY},
@@ -65,6 +65,25 @@ _ENTRIES: tuple[dict[str, Any], ...] = (
     {"abbreviation": "PHX", "valid_from": "1996-1997", "valid_to": "2013-2014", "canonical_key": "ARI", "source_url": _NHL_ABBREVIATIONS},
     {"abbreviation": "ARI", "valid_from": "2014-2015", "valid_to": "2023-2024", "canonical_key": "ARI", "source_url": _NHL_ABBREVIATIONS},
     {"abbreviation": "ATL", "valid_from": "1999-2000", "valid_to": "2010-2011", "canonical_key": "WPG", "source_url": _JETS_CONSOLIDATION},
+    {"abbreviation": "TAN", "valid_from": "1917-1918", "valid_to": "1918-1919", "canonical_key": "TOR", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "TSP", "valid_from": "1919-1920", "valid_to": "1926-1927", "canonical_key": "TOR", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "DCG", "valid_from": "1926-1927", "valid_to": "1929-1930", "canonical_key": "DET", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "DFL", "valid_from": "1930-1931", "valid_to": "1931-1932", "canonical_key": "DET", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "QBD", "valid_from": "1919-1920", "valid_to": "1919-1920", "canonical_key": "NYA", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "HAM", "valid_from": "1920-1921", "valid_to": "1924-1925", "canonical_key": "NYA", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "NYA", "valid_from": "1925-1926", "valid_to": "1940-1941", "canonical_key": "NYA", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "BRK", "valid_from": "1941-1942", "valid_to": "1941-1942", "canonical_key": "NYA", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "PIR", "valid_from": "1925-1926", "valid_to": "1929-1930", "canonical_key": "PIR", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "QUA", "valid_from": "1930-1931", "valid_to": "1930-1931", "canonical_key": "PIR", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "SEN", "valid_from": "1917-1918", "valid_to": "1933-1934", "canonical_key": "SEN", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "SLE", "valid_from": "1934-1935", "valid_to": "1934-1935", "canonical_key": "SEN", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "MWN", "valid_from": "1917-1918", "valid_to": "1917-1918", "canonical_key": "MWN", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "MMR", "valid_from": "1924-1925", "valid_to": "1937-1938", "canonical_key": "MMR", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "OAK", "valid_from": "1967-1968", "valid_to": "1969-1970", "canonical_key": "DAL", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "CGS", "valid_from": "1970-1971", "valid_to": "1975-1976", "canonical_key": "DAL", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "CLE", "valid_from": "1976-1977", "valid_to": "1977-1978", "canonical_key": "DAL", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "KCS", "valid_from": "1974-1975", "valid_to": "1975-1976", "canonical_key": "NJD", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "CLR", "valid_from": "1976-1977", "valid_to": "1981-1982", "canonical_key": "NJD", "source_url": _NHL_ABBREVIATIONS},
 )
 
 def _season_key(value: Any) -> str:
