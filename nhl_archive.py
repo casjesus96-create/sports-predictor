@@ -10,6 +10,8 @@ import re
 from datetime import date
 from typing import Any
 
+from nhl_team_identity_registry import build_season_team_identity_map
+
 CURRENT_TEAM_ABBREVIATIONS = frozenset({
     "ANA", "BOS", "BUF", "CGY", "CAR", "CHI", "COL", "CBJ",
     "DAL", "DET", "EDM", "FLA", "LAK", "MIN", "MTL", "NSH",
@@ -68,9 +70,10 @@ def build_archive_payloads(
         raise ValueError("No se puede preparar una importación sin revisión de términos de la fuente.")
     if not isinstance(schedule_by_team, dict):
         raise NHLArchiveImportError("Los calendarios por equipo deben ser un objeto.")
-    # Current abbreviations retain their existing behavior. Historical or
-    # renamed teams require an explicit, season-reviewed identity mapping.
-    identity_map = {abbr: abbr for abbr in CURRENT_TEAM_ABBREVIATIONS}
+    # Resolve only abbreviations valid in this exact season. Historical aliases
+    # come from the reviewed registry; unknown/out-of-period codes stay ineligible.
+    registry_season = f"{selected_season[:4]}-{selected_season[4:]}"
+    identity_map = build_season_team_identity_map(registry_season)
     if team_identity_by_abbreviation is not None:
         if not isinstance(team_identity_by_abbreviation, dict):
             raise NHLArchiveImportError("El mapa de identidades NHL debe ser un objeto.")
