@@ -499,30 +499,56 @@ def _safe_team_search(value: str) -> str:
 
 
 def _resolve_team_identity(client, competition: str, original_name: str) -> tuple[str, str]:
-    """Use verified competition aliases, then deterministic normalization; never fuzzy-match."""
+    """Resolve exact normalized identities against stored keys; never fuzzy-match."""
     normalized = normalize_team_key(original_name)
+    if not normalized:
+        return normalized, "unverified"
+
+    # Older archive rows/aliases may preserve accents, casing, or club suffixes
+    # in their stored key. Compare their deterministic normalized forms, but
+    # return the actual persisted canonical key so the H2H query matches rows.
     try:
         result = client.table("football_team_aliases").select(
-            "canonical_team_key"
-        ).eq("competition_code", competition).eq(
-            "alias_key", normalized
-        ).limit(2).execute()
+            "alias_key,canonical_team_key"
+        ).eq("competition_code", competition).limit(1000).execute()
         aliases = result.data or []
-        if len(aliases) == 1:
-            return str(aliases[0]["canonical_team_key"]), "verified_alias"
-        if len(aliases) > 1:
-            return normalized, "ambiguous_alias"
+        targets = {
+            str(row.get("canonical_team_key") or "").strip()
+            for row in aliases
+            if normalize_team_key(str(row.get("alias_key") or "")) == normalized
+            and str(row.get("canonical_team_key") or "").strip()
+        }
+        if len(targets) == 1:
+            return next(iter(targets)), "verified_alias"
+        if len(targets) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail=f"El nombre '{original_name}' coincide con varios alias confirmados; selecciona el club canónico.",
+            )
+    except HTTPException:
+        raise
     except Exception:
         logger.warning("Football team alias registry unavailable; using deterministic normalization")
 
     try:
         known = client.table("football_archive_teams").select(
             "canonical_team_key"
-        ).eq("competition_code", competition).eq(
-            "canonical_team_key", normalized
-        ).limit(1).execute()
-        if known.data:
-            return normalized, "exact"
+        ).eq("competition_code", competition).limit(1000).execute()
+        matching_keys = {
+            str(row.get("canonical_team_key") or "").strip()
+            for row in (known.data or [])
+            if normalize_team_key(str(row.get("canonical_team_key") or "")) == normalized
+            and str(row.get("canonical_team_key") or "").strip()
+        }
+        if len(matching_keys) == 1:
+            canonical_key = next(iter(matching_keys))
+            return canonical_key, "exact" if canonical_key == normalized else "normalized_exact"
+        if len(matching_keys) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail=f"El nombre '{original_name}' coincide con varias claves históricas; requiere una confirmación manual.",
+            )
+
         unresolved = client.table("football_unresolved_team_names").select(
             "id,seen_count"
         ).eq("provider", "football-data.org").eq(
@@ -543,6 +569,8 @@ def _resolve_team_identity(client, competition: str, original_name: str) -> tupl
                 "original_name": str(original_name)[:100],
                 "normalized_key": normalized,
             }).execute()
+    except HTTPException:
+        raise
     except Exception:
         logger.warning("Could not consult/log football team identity for %s", original_name)
     return normalized, "unverified"
@@ -563,27 +591,27 @@ def archive_team_lookup(
     normalized = normalize_team_key(search_text)
     client = _client_or_503()
     try:
-        filters = (
-            f"display_name.ilike.%{search_text}%,"
-            f"canonical_team_key.eq.{normalized},"
-            f"canonical_team_key.ilike.%{normalized}%"
-        )
         result = client.table("football_archive_teams").select(
             "canonical_team_key,display_name,competition_code"
-        ).eq("competition_code", code).or_(
-            filters
-        ).order("display_name").limit(50).execute()
+        ).eq("competition_code", code).order("display_name").limit(1000).execute()
         rows = result.data or []
     except Exception as exc:
         logger.exception("Could not search football archive teams")
         raise HTTPException(status_code=503, detail="No se pudieron buscar equipos en el archivo.") from exc
     unique = {}
     for row in rows:
-        key = str(row.get("canonical_team_key") or "")
-        if key:
+        key = str(row.get("canonical_team_key") or "").strip()
+        display_name = str(row.get("display_name") or key).strip()
+        if not key:
+            continue
+        # Match deterministic normalized text so Köln/Koln and legacy
+        # accent-bearing canonical keys remain searchable without fuzzy logic.
+        normalized_key = normalize_team_key(key)
+        normalized_display = normalize_team_key(display_name)
+        if normalized in normalized_key or normalized in normalized_display:
             unique[key] = {
                 "canonical_team_key": key,
-                "display_name": row.get("display_name") or key,
+                "display_name": display_name or key,
                 "competition_code": code,
             }
     return {
@@ -615,7 +643,7 @@ def archive_confirm_team_alias(payload: TeamAliasRequest):
         # Suffix normalization (FC/AFC/CF/SC) can make a provider label
         # identical to the canonical key. It is already resolvable exactly;
         # report success without inserting a forbidden self-alias.
-        if alias_key == target_key:
+        if alias_key == normalize_team_key(target_key):
             return {
                 "success": True, "created": False, "already_canonical": True,
                 "alias": payload.alias_name.strip(),

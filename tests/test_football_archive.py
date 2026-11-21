@@ -194,7 +194,7 @@ def test_resolver_prefers_confirmed_competition_alias():
     class Client:
         def table(self, name):
             if name == "football_team_aliases":
-                return Query([{"canonical_team_key": "hull"}])
+                return Query([{"alias_key": "the tigers", "canonical_team_key": "hull"}])
             raise AssertionError(f"Unexpected table access: {name}")
 
     key, resolution = football_archive._resolve_team_identity(Client(), "PL", "The Tigers")
@@ -222,6 +222,106 @@ def test_resolver_uses_exact_archive_key_when_no_alias_exists():
     assert key == "arsenal"
     assert resolution == "exact"
 
+
+
+def test_team_lookup_matches_diacritic_variants(monkeypatch):
+    import football_archive
+
+    class Query:
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, *_args, **_kwargs): return self
+        def order(self, *_args, **_kwargs): return self
+        def limit(self, *_args, **_kwargs): return self
+        def execute(self):
+            return type("Result", (), {"data": [{
+                "canonical_team_key": "FC Koln",
+                "display_name": "FC Köln",
+                "competition_code": "BL1",
+            }]})()
+
+    class Client:
+        def table(self, name):
+            assert name == "football_archive_teams"
+            return Query()
+
+    monkeypatch.setattr(football_archive, "_client_or_503", lambda: Client())
+    result = football_archive.archive_team_lookup("BL1", "FC Koln")
+    assert result["count"] == 1
+    assert result["candidates"][0]["canonical_team_key"] == "FC Koln"
+    assert result["candidates"][0]["display_name"] == "FC Köln"
+
+
+def test_resolver_matches_accented_provider_name_to_persisted_canonical_key():
+    import football_archive
+
+    class Query:
+        def __init__(self, rows): self.rows = rows
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, *_args, **_kwargs): return self
+        def limit(self, *_args, **_kwargs): return self
+        def execute(self): return type("Result", (), {"data": self.rows})()
+
+    class Client:
+        def table(self, name):
+            if name == "football_team_aliases":
+                return Query([])
+            if name == "football_archive_teams":
+                return Query([{"canonical_team_key": "FC Koln"}])
+            raise AssertionError(f"Unexpected table access: {name}")
+
+    key, resolution = football_archive._resolve_team_identity(Client(), "BL1", "FC Köln")
+    assert key == "FC Koln"
+    assert resolution == "normalized_exact"
+
+
+def test_resolver_matches_legacy_accented_alias_and_returns_real_canonical_key():
+    import football_archive
+
+    class Query:
+        def __init__(self, rows): self.rows = rows
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, *_args, **_kwargs): return self
+        def limit(self, *_args, **_kwargs): return self
+        def execute(self): return type("Result", (), {"data": self.rows})()
+
+    class Client:
+        def table(self, name):
+            if name == "football_team_aliases":
+                return Query([{"alias_key": "FC Köln", "canonical_team_key": "FC Koln"}])
+            raise AssertionError(f"Unexpected table access: {name}")
+
+    key, resolution = football_archive._resolve_team_identity(Client(), "BL1", "FC Koln")
+    assert key == "FC Koln"
+    assert resolution == "verified_alias"
+
+
+def test_resolver_fails_closed_when_normalized_canonical_key_is_ambiguous():
+    import football_archive
+
+    class Query:
+        def __init__(self, rows): self.rows = rows
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, *_args, **_kwargs): return self
+        def limit(self, *_args, **_kwargs): return self
+        def execute(self): return type("Result", (), {"data": self.rows})()
+
+    class Client:
+        def table(self, name):
+            if name == "football_team_aliases":
+                return Query([])
+            if name == "football_archive_teams":
+                return Query([
+                    {"canonical_team_key": "FC Köln"},
+                    {"canonical_team_key": "FC Koln"},
+                ])
+            raise AssertionError(f"Unexpected table access: {name}")
+
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        football_archive._resolve_team_identity(Client(), "BL1", "FC Koln")
+    assert exc.value.status_code == 409
 
 
 def test_h2h_summary_calculates_goal_markets_and_venue_splits():
