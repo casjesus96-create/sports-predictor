@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-REGISTRY_VERSION = "2026-11-21.1"
+REGISTRY_VERSION = "2026-11-21.2"
 
 _NHL_HISTORY = "https://www.nhl.com/news/nhl-expansion-history-281005106"
 _NHL_RECORDS = "https://records.nhl.com/history"
@@ -56,7 +56,7 @@ _ENTRIES: tuple[dict[str, Any], ...] = (
     {"abbreviation": "WSH", "valid_from": "1974-1975", "valid_to": None, "canonical_key": "WSH", "source_url": _NHL_HISTORY},
     # Historical abbreviations. Statistical lineage follows NHL's published
     # history; it is not a claim that the clubs shared the same legal entity.
-    {"abbreviation": "AFM", "valid_from": "1972-1973", "valid_to": "1979-1980", "canonical_key": "CGY", "source_url": _NHL_ABBREVIATIONS},
+    {"abbreviation": "AEM", "valid_from": "1972-1973", "valid_to": "1979-1980", "canonical_key": "CGY", "source_url": _NHL_ABBREVIATIONS},\n    {"abbreviation": "AFM", "valid_from": "1972-1973", "valid_to": "1979-1980", "canonical_key": "CGY", "source_url": "https://media.nhl.com/site/asset/public/ext/2025-26/2025GlobalSeries.pdf"},
     {"abbreviation": "HFD", "valid_from": "1979-1980", "valid_to": "1996-1997", "canonical_key": "CAR", "source_url": _NHL_HISTORY},
     {"abbreviation": "QUE", "valid_from": "1979-1980", "valid_to": "1994-1995", "canonical_key": "COL", "source_url": _NHL_HISTORY},
     {"abbreviation": "MNS", "valid_from": "1967-1968", "valid_to": "1992-1993", "canonical_key": "DAL", "source_url": _NHL_HISTORY},
