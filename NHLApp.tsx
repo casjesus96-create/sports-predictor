@@ -20,6 +20,15 @@ type Game = {
   venue?: string | null;
   home: Team;
   away: Team;
+  research_prediction?: {
+    status?: string;
+    message?: string;
+    probabilities?: { home_win?: number; away_win?: number } | null;
+    historical_games_used?: number;
+    home_team_games_used?: number;
+    away_team_games_used?: number;
+    model_version?: string;
+  };
 };
 type Player = {
   player_id?: number | null;
@@ -202,6 +211,24 @@ export default function NHLApp() {
                     <strong>{displayName(game.home)}</strong>
                     <small>{game.home?.abbreviation || "Local"}{game.home?.sog != null ? ` · Tiros ${number(game.home.sog)}` : ""}</small>
                   </div>
+                </div>
+                <div className="nhl-research-projection" aria-live="polite">
+                  <div className="section-kicker">PROYECCIÓN EXPERIMENTAL · ELO · SOLO ARCHIVO PROPIO</div>
+                  {game.research_prediction?.status === "RESEARCH_PROJECTION" && game.research_prediction.probabilities ? (
+                    <p>
+                      Local: <b>{number(game.research_prediction.probabilities.home_win, 2)}%</b>
+                      {" · "}
+                      Visitante: <b>{number(game.research_prediction.probabilities.away_win, 2)}%</b>
+                      <small className="muted"> · {game.research_prediction.historical_games_used ?? 0} partidos históricos · No es modelo oficial</small>
+                    </p>
+                  ) : (
+                    <p className="muted">
+                      {game.research_prediction?.message || "Proyección experimental no disponible."}
+                      {game.research_prediction?.status === "INSUFFICIENT_HISTORICAL_SAMPLE" ? (
+                        <small> Muestra: {game.research_prediction.historical_games_used ?? 0} partidos; {game.research_prediction.home_team_games_used ?? 0} local / {game.research_prediction.away_team_games_used ?? 0} visitante.</small>
+                      ) : null}
+                    </p>
+                  )}
                 </div>
                 <div className="nhl-game-footer">
                   <span className="muted">{game.venue || "Sede no disponible"}{game.start_time_utc ? ` · ${new Date(game.start_time_utc).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}` : ""}</span>
