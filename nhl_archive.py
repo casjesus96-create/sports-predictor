@@ -52,6 +52,7 @@ def build_archive_payloads(
     source_license: str,
     source_attribution: str,
     source_terms_status: str,
+    team_identity_by_abbreviation: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Deduplicate schedules, reject contradictions, and classify eligibility.
 
@@ -67,6 +68,18 @@ def build_archive_payloads(
         raise ValueError("No se puede preparar una importación sin revisión de términos de la fuente.")
     if not isinstance(schedule_by_team, dict):
         raise NHLArchiveImportError("Los calendarios por equipo deben ser un objeto.")
+    # Current abbreviations retain their existing behavior. Historical or
+    # renamed teams require an explicit, season-reviewed identity mapping.
+    identity_map = {abbr: abbr for abbr in CURRENT_TEAM_ABBREVIATIONS}
+    if team_identity_by_abbreviation is not None:
+        if not isinstance(team_identity_by_abbreviation, dict):
+            raise NHLArchiveImportError("El mapa de identidades NHL debe ser un objeto.")
+        for abbreviation, canonical_key in team_identity_by_abbreviation.items():
+            abbr = str(abbreviation or "").strip().upper()
+            key = str(canonical_key or "").strip().upper()
+            if not abbr or not key:
+                raise NHLArchiveImportError("Cada identidad histórica requiere abreviatura y clave canónica.")
+            identity_map[abbr] = key
 
     observations: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     for requested_team, payload in schedule_by_team.items():
@@ -144,10 +157,9 @@ def build_archive_payloads(
 
         observed_teams = sorted({team for team, _ in entries})
         cross_team_confirmed = len(observed_teams) >= 2
-        both_nhl_franchises = (
-            home_abbr in CURRENT_TEAM_ABBREVIATIONS
-            and away_abbr in CURRENT_TEAM_ABBREVIATIONS
-        )
+        home_canonical_key = identity_map.get(home_abbr)
+        away_canonical_key = identity_map.get(away_abbr)
+        both_nhl_franchises = bool(home_canonical_key and away_canonical_key)
         eligible = bool(
             completed and game_type in {2, 3}
             and cross_team_confirmed and both_nhl_franchises
@@ -157,7 +169,7 @@ def build_archive_payloads(
         elif game_type == 1:
             eligibility_reason = "preseason_or_exhibition_not_eligible"
         elif not both_nhl_franchises:
-            eligibility_reason = "opponent_not_in_current_franchise_map"
+            eligibility_reason = "team_identity_mapping_incomplete"
         elif not cross_team_confirmed:
             eligibility_reason = "missing_cross_team_confirmation"
         else:
@@ -170,10 +182,12 @@ def build_archive_payloads(
             "start_time_utc": game.get("start_time_utc"),
             "home_team_id": home.get("id"),
             "home_team_abbreviation": home_abbr,
+            "home_team_canonical_key": home_canonical_key,
             "home_team_name": home.get("name"),
             "home_score": home_score,
             "away_team_id": away.get("id"),
             "away_team_abbreviation": away_abbr,
+            "away_team_canonical_key": away_canonical_key,
             "away_team_name": away.get("name"),
             "away_score": away_score,
             "game_type": game_type,
