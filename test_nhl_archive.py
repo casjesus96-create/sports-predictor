@@ -162,19 +162,34 @@ def test_historical_abbreviation_requires_explicit_season_identity_mapping():
     assert row["training_eligible"] is True
 
 
-def test_unmapped_historical_abbreviation_is_retained_but_not_training_eligible():
+def test_unknown_historical_abbreviation_is_retained_but_not_training_eligible():
     historical = game(
-        game_id="1996020002", home="HFD", away="BOS",
+        game_id="1996020002", home="XYZ", away="BOS",
         game_date="1996-10-09",
+    )
+    parsed = build(
+        "19961997",
+        {"XYZ": {"games": [historical]}, "BOS": {"games": [historical]}},
+    )
+    row = parsed["rows"][0]
+    assert row["home_team_canonical_key"] is None
+    assert row["training_eligible"] is False
+    assert row["eligibility_reason"] == "team_identity_mapping_incomplete"
+
+
+def test_reviewed_historical_abbreviation_is_resolved_for_its_season():
+    historical = game(
+        game_id="1996020003", home="HFD", away="BOS",
+        game_date="1996-10-10",
     )
     parsed = build(
         "19961997",
         {"HFD": {"games": [historical]}, "BOS": {"games": [historical]}},
     )
     row = parsed["rows"][0]
-    assert row["home_team_canonical_key"] is None
-    assert row["training_eligible"] is False
-    assert row["eligibility_reason"] == "team_identity_mapping_incomplete"
+    assert row["home_team_canonical_key"] == "CAR"
+    assert row["away_team_canonical_key"] == "BOS"
+    assert row["training_eligible"] is True
 
 
 def test_rejects_invalid_explicit_team_identity_mapping():
