@@ -521,7 +521,10 @@ def _resolve_team_identity(client, competition: str, original_name: str) -> tupl
         if len(targets) == 1:
             return next(iter(targets)), "verified_alias"
         if len(targets) > 1:
-            return normalized, "ambiguous_alias"
+            raise HTTPException(
+                status_code=409,
+                detail=f"El nombre '{original_name}' coincide con varios alias confirmados; selecciona el club canónico.",
+            )
     except Exception:
         logger.warning("Football team alias registry unavailable; using deterministic normalization")
 
@@ -539,7 +542,10 @@ def _resolve_team_identity(client, competition: str, original_name: str) -> tupl
             canonical_key = next(iter(matching_keys))
             return canonical_key, "exact" if canonical_key == normalized else "normalized_exact"
         if len(matching_keys) > 1:
-            return normalized, "ambiguous_canonical"
+            raise HTTPException(
+                status_code=409,
+                detail=f"El nombre '{original_name}' coincide con varias claves históricas; requiere una confirmación manual.",
+            )
 
         unresolved = client.table("football_unresolved_team_names").select(
             "id,seen_count"
