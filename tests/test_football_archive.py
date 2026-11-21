@@ -289,9 +289,12 @@ def test_resolver_fails_closed_when_normalized_canonical_key_is_ambiguous():
                 ])
             raise AssertionError(f"Unexpected table access: {name}")
 
-    key, resolution = football_archive._resolve_team_identity(Client(), "BL1", "FC Koln")
-    assert key == "koln"
-    assert resolution == "ambiguous_canonical"
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        football_archive._resolve_team_identity(Client(), "BL1", "FC Koln")
+    assert exc.value.status_code == 409
 
 
 def test_h2h_summary_calculates_goal_markets_and_venue_splits():
