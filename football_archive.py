@@ -525,6 +525,8 @@ def _resolve_team_identity(client, competition: str, original_name: str) -> tupl
                 status_code=409,
                 detail=f"El nombre '{original_name}' coincide con varios alias confirmados; selecciona el club canónico.",
             )
+    except HTTPException:
+        raise
     except Exception:
         logger.warning("Football team alias registry unavailable; using deterministic normalization")
 
@@ -567,6 +569,8 @@ def _resolve_team_identity(client, competition: str, original_name: str) -> tupl
                 "original_name": str(original_name)[:100],
                 "normalized_key": normalized,
             }).execute()
+    except HTTPException:
+        raise
     except Exception:
         logger.warning("Could not consult/log football team identity for %s", original_name)
     return normalized, "unverified"
