@@ -116,6 +116,9 @@ TEAM_ALIASES = {
     "psg": "paris saint germain",
     "inter": "internazionale",
     "ac milan": "milan",
+    # Provider labels use the official club prefix "1. FC Köln"; the owned
+    # archive stores this same club under the canonical key "koln".
+    "1 koln": "koln",
 }
 
 
