@@ -30,6 +30,20 @@ def test_registry_has_a_version_and_current_team_codes_are_season_scoped():
         ("2014-2015", "ARI", "ARI"),
         ("2010-2011", "ATL", "WPG"),
         ("2011-2012", "WPG", "WPG"),
+        ("1917-1918", "TAN", "TOR"),
+        ("1924-1925", "TSP", "TOR"),
+        ("1926-1927", "DCG", "DET"),
+        ("1930-1931", "DFL", "DET"),
+        ("1919-1920", "QBD", "NYA"),
+        ("1924-1925", "HAM", "NYA"),
+        ("1941-1942", "BRK", "NYA"),
+        ("1930-1931", "QUA", "PIR"),
+        ("1934-1935", "SLE", "SEN"),
+        ("1967-1968", "OAK", "DAL"),
+        ("1975-1976", "CGS", "DAL"),
+        ("1977-1978", "CLE", "DAL"),
+        ("1974-1975", "KCS", "NJD"),
+        ("1981-1982", "CLR", "NJD"),
     ],
 )
 def test_historical_statistical_lineage_by_season(season, abbreviation, expected):
@@ -41,6 +55,9 @@ def test_historical_abbreviation_is_rejected_outside_its_valid_period():
     assert resolve_team_identity("2014-2015", "PHX") is None
     assert resolve_team_identity("2024-2025", "ARI") is None
     assert resolve_team_identity("1995-1996", "HFD") == "CAR"
+    assert resolve_team_identity("1942-1943", "BRK") is None
+    assert resolve_team_identity("1978-1979", "CLE") is None
+    assert resolve_team_identity("1982-1983", "CLR") is None
 
 
 def test_build_map_only_returns_codes_valid_in_requested_season():
