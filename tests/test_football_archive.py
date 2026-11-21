@@ -16,6 +16,31 @@ def test_team_key_normalizes_accents_and_club_suffixes():
     assert normalize_team_key("Spurs") == "tottenham"
     assert normalize_team_key("Leeds United FC") == "leeds"
     assert normalize_team_key("Tottenham Hotspur FC") == "tottenham"
+    assert normalize_team_key("1. FC Köln") == "koln"
+    assert normalize_team_key("1. FC Koln") == "koln"
+
+
+
+def test_app_finalized_identity_resolves_official_fc_koeln_provider_name():
+    import football_archive
+
+    class Query:
+        def __init__(self, rows): self.rows = rows
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, *_args, **_kwargs): return self
+        def limit(self, *_args, **_kwargs): return self
+        def execute(self):
+            return type("Result", (), {"data": self.rows})()
+
+    class Client:
+        def table(self, name):
+            if name == "football_team_aliases":
+                return Query([])
+            if name == "football_archive_teams":
+                return Query([{"canonical_team_key": "koln"}])
+            raise AssertionError(f"Unexpected table access: {name}")
+
+    assert football_archive._resolve_known_archive_team(Client(), "BL1", "1. FC Köln") == "koln"
 
 
 def test_season_code_uses_two_digit_start_and_end_years():
