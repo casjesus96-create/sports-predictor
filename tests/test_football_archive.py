@@ -224,6 +224,33 @@ def test_resolver_uses_exact_archive_key_when_no_alias_exists():
 
 
 
+def test_team_lookup_matches_diacritic_variants(monkeypatch):
+    import football_archive
+
+    class Query:
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, *_args, **_kwargs): return self
+        def order(self, *_args, **_kwargs): return self
+        def limit(self, *_args, **_kwargs): return self
+        def execute(self):
+            return type("Result", (), {"data": [{
+                "canonical_team_key": "FC Koln",
+                "display_name": "FC Köln",
+                "competition_code": "BL1",
+            }]})()
+
+    class Client:
+        def table(self, name):
+            assert name == "football_archive_teams"
+            return Query()
+
+    monkeypatch.setattr(football_archive, "_client_or_503", lambda: Client())
+    result = football_archive.archive_team_lookup("BL1", "FC Koln")
+    assert result["count"] == 1
+    assert result["candidates"][0]["canonical_team_key"] == "FC Koln"
+    assert result["candidates"][0]["display_name"] == "FC Köln"
+
+
 def test_resolver_matches_accented_provider_name_to_persisted_canonical_key():
     import football_archive
 
