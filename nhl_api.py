@@ -1,4 +1,4 @@
-"""Read-only NHL data endpoints; no prediction model is active."""
+"""Read-only NHL data endpoints with an isolated, research-only Elo projection."""
 import logging
 from datetime import date, datetime, timezone
 
@@ -85,7 +85,9 @@ def nhl_games(date_value: str | None = Query(None, alias="date")):
             "sport": "NHL",
             "date": selected_date,
             "source": "NHL public web feed",
-            "model_status": "research_only",\n            "research_model_version": "NHL-ELO-RESEARCH-0.1.0",\n            "research_archive_status": archive_status,
+            "model_status": "research_only",
+            "research_model_version": "NHL-ELO-RESEARCH-0.1.0",
+            "research_archive_status": archive_status,
             "total": len(games),
             "games": games,
         }
