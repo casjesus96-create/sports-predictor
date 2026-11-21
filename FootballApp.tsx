@@ -624,7 +624,9 @@ function HeadToHeadPanel({ competition, match }: { competition: string; match: M
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "No se pudo confirmar la identidad.");
       const selected = aliasCandidates.find(item => item.canonical_team_key === selectedAliasKey);
-      setAliasMessage(`Alias confirmado: ${aliasName.trim()} → ${selected?.display_name || selectedAliasKey}. Se guardó para esta competición.`);
+      setAliasMessage(body.already_canonical
+        ? `${aliasName.trim()} ya coincide con la clave canónica de ${selected?.display_name || selectedAliasKey} después de normalizar sufijos. No hacía falta crear un alias adicional.`
+        : `Alias confirmado: ${aliasName.trim()} → ${selected?.display_name || selectedAliasKey}. Se guardó para esta competición.`);
       setAliasCandidates([]);
       setSelectedAliasKey("");
       await loadHistory();
