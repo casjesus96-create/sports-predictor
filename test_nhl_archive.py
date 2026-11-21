@@ -110,6 +110,30 @@ def test_rejects_missing_game_type_and_invalid_team_identity():
         build("20252026", {"TOR": {"games": [invalid]}})
 
 
+def test_rejects_truthy_string_completed_flag():
+    invalid = game(completed="false")
+    with pytest.raises(archive.NHLArchiveImportError, match="completed.*booleano"):
+        build("20252026", {"TOR": {"games": [invalid]}})
+
+
+@pytest.mark.parametrize("invalid_type", [True, False, "1", 1.0, 0, 4, None])
+def test_rejects_non_integer_or_out_of_range_game_type(invalid_type):
+    invalid = game(game_type=invalid_type)
+    with pytest.raises(archive.NHLArchiveImportError, match="game_type"):
+        build("20252026", {"TOR": {"games": [invalid]}})
+
+
+def test_normalizes_requested_team_abbreviation_case():
+    source = game(home="TOR", away="BOS")
+    parsed = build("20252026", {" tor ": {"games": [source]}})
+    assert parsed["rows"][0]["home_team_abbreviation"] == "TOR"
+
+
+def test_rejects_malformed_schedule_container():
+    with pytest.raises(archive.NHLArchiveImportError, match="formato inválido"):
+        build("20252026", {"TOR": {"games": "not-a-list"}})
+
+
 def test_rejects_unreviewed_or_incomplete_source_provenance():
     source = game()
     with pytest.raises(ValueError, match="revisión de términos"):
