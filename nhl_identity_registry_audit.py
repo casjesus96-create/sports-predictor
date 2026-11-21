@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from typing import Any
 
 from nhl_team_identity_registry import (
@@ -35,8 +35,12 @@ def build_identity_registry_audit(
     observed_abbreviations_by_season is caller-supplied data only. This module
     never fetches it. Unknown codes are reported, never auto-mapped.
     """
+    if isinstance(start_year, bool) or not isinstance(start_year, int):
+        raise TypeError("start_year debe ser un entero.")
     if isinstance(end_year, bool) or not isinstance(end_year, int):
         raise TypeError("end_year debe ser un entero.")
+    if start_year < 1917 or start_year > 9998:
+        raise ValueError("start_year debe estar entre 1917 y 9998.")
     if end_year < start_year:
         raise ValueError("end_year no puede ser menor que start_year.")
     if end_year > 9998:
