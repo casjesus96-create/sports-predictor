@@ -13,6 +13,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/nhl", tags=["NHL"])
 
 
+def _archive_failure_status(exc: Exception) -> str:
+    """Classify archive failures without exposing credentials or connection details."""
+    code = getattr(exc, "code", None)
+    message = str(exc).lower()
+    if code == "42501" or "permission denied" in message:
+        return "ARCHIVE_PERMISSION_DENIED"
+    if isinstance(exc, RuntimeError) and "SUPABASE_URL" in str(exc):
+        return "ARCHIVE_CONFIGURATION_ERROR"
+    return "ARCHIVE_QUERY_ERROR"
+
+
+def _archive_failure_message(status: str) -> str:
+    messages = {
+        "ARCHIVE_PERMISSION_DENIED": "Render no tiene permiso de lectura sobre el histórico NHL. Revisa la migración de permisos.",
+        "ARCHIVE_CONFIGURATION_ERROR": "Falta la configuración de conexión de Supabase en el servicio.",
+        "ARCHIVE_QUERY_ERROR": "No se pudo consultar el histórico NHL por un error de base de datos.",
+    }
+    return messages.get(status, "No fue posible consultar el archivo histórico propio; no se publica una probabilidad.")
+
+
 @router.get("/games")
 def nhl_games(date_value: str | None = Query(None, alias="date")):
     """Return the NHL scoreboard for a single UTC calendar date."""
@@ -25,6 +45,7 @@ def nhl_games(date_value: str | None = Query(None, alias="date")):
         games = get_games(selected_date)
         archive_rows = []
         archive_status = "AVAILABLE"
+        archive_error_code = None
         try:
             supabase = get_supabase_client()
             offset = 0
@@ -46,8 +67,15 @@ def nhl_games(date_value: str | None = Query(None, alias="date")):
                     break
                 offset += page_size
         except Exception as exc:
-            archive_status = "ARCHIVE_UNAVAILABLE"
-            logger.warning("NHL approved archive unavailable: %s", exc)
+            archive_status = _archive_failure_status(exc)
+            archive_error_code = getattr(exc, "code", None)
+            logger.warning(
+                "NHL approved archive query failed status=%s error_type=%s code=%s",
+                archive_status,
+                type(exc).__name__,
+                archive_error_code,
+                exc_info=True,
+            )
 
         for game in games:
             game_type = game.get("game_type")
@@ -58,7 +86,7 @@ def nhl_games(date_value: str | None = Query(None, alias="date")):
             if archive_status != "AVAILABLE":
                 game["research_prediction"] = {
                     "status": archive_status,
-                    "message": "No fue posible consultar el archivo histórico propio; no se publica una probabilidad.",
+                    "message": _archive_failure_message(archive_status),
                 }
             elif not home_key or not away_key or game_type not in (2, 3):
                 game["research_prediction"] = {
@@ -88,6 +116,8 @@ def nhl_games(date_value: str | None = Query(None, alias="date")):
             "model_status": "research_only",
             "research_model_version": "NHL-ELO-RESEARCH-0.1.0",
             "research_archive_status": archive_status,
+            "research_archive_rows": len(archive_rows),
+            "research_archive_error_code": archive_error_code,
             "total": len(games),
             "games": games,
         }
