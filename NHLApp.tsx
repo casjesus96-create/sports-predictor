@@ -278,7 +278,7 @@ export default function NHLApp() {
           })}
         </div>
       }
-      <p className="muted nhl-disclaimer">Esta sección es informativa. Todavía no genera probabilidades, recomendaciones ni predicciones NHL.</p>
+      <p className="muted nhl-disclaimer">El Elo mostrado es experimental y separado del modelo oficial. Solo utiliza resultados históricos propios con fuente y términos revisados; nunca utiliza estadísticas del feed del partido para entrenar.</p>
     </main>
   );
 }
