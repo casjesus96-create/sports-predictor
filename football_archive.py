@@ -601,8 +601,8 @@ def archive_confirm_team_alias(payload: TeamAliasRequest):
         raise HTTPException(status_code=400, detail="Competición no admitida.")
     alias_key = normalize_team_key(payload.alias_name)
     target_key = str(payload.canonical_team_key).strip()
-    if not alias_key or not target_key or alias_key == target_key:
-        raise HTTPException(status_code=400, detail="El alias debe ser distinto de la clave canónica.")
+    if not alias_key or not target_key:
+        raise HTTPException(status_code=400, detail="El alias y el equipo canónico son obligatorios.")
     client = _client_or_503()
     try:
         target = client.table("football_archive_teams").select(
@@ -612,6 +612,16 @@ def archive_confirm_team_alias(payload: TeamAliasRequest):
         ).limit(1).execute()
         if not target.data:
             raise HTTPException(status_code=404, detail="El equipo elegido no existe en el histórico de esta competición.")
+        # Suffix normalization (FC/AFC/CF/SC) can make a provider label
+        # identical to the canonical key. It is already resolvable exactly;
+        # report success without inserting a forbidden self-alias.
+        if alias_key == target_key:
+            return {
+                "success": True, "created": False, "already_canonical": True,
+                "alias": payload.alias_name.strip(),
+                "alias_key": alias_key, "canonical_team_key": target_key,
+                "competition_code": code, "scope": "competition",
+            }
         existing = client.table("football_team_aliases").select(
             "canonical_team_key"
         ).eq("competition_code", code).eq("alias_key", alias_key).limit(2).execute()

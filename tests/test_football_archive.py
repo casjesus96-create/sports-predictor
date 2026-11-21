@@ -649,3 +649,42 @@ def test_calendar_year_season_comparison_uses_calendar_neighbors(monkeypatch):
 
     assert result["selected_competition_name"] == "Brasileirão Série A"
     assert {"2023", "2024", "2025"}.issubset(set(captured))
+
+
+
+def test_confirm_team_alias_treats_normalized_canonical_name_as_success_without_self_alias(monkeypatch):
+    import football_archive
+
+    captured = {"tables": [], "inserted": []}
+
+    class Query:
+        def __init__(self, table):
+            self.table_name = table
+        def select(self, *_args, **_kwargs): return self
+        def eq(self, *_args, **_kwargs): return self
+        def limit(self, *_args, **_kwargs): return self
+        def execute(self):
+            if self.table_name == "football_archive_teams":
+                return type("Result", (), {"data": [{"canonical_team_key": "crystal palace"}]})()
+            raise AssertionError("A normalized canonical name must not query or insert aliases")
+
+    class Client:
+        def table(self, name):
+            captured["tables"].append(name)
+            return Query(name)
+
+    monkeypatch.setattr(football_archive, "_client_or_503", lambda: Client())
+    result = football_archive.archive_confirm_team_alias(
+        football_archive.TeamAliasRequest(
+            competition_code="PL",
+            alias_name="Crystal Palace FC",
+            canonical_team_key="crystal palace",
+        )
+    )
+
+    assert result["success"] is True
+    assert result["created"] is False
+    assert result["already_canonical"] is True
+    assert result["alias_key"] == "crystal palace"
+    assert result["canonical_team_key"] == "crystal palace"
+    assert captured["tables"] == ["football_archive_teams"]
