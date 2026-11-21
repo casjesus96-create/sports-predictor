@@ -157,9 +157,9 @@ export default function NHLApp() {
         <div>
           <div className="eyebrow">SPORTS PREDICTOR · NUEVO DEPORTE</div>
           <h1>NHL</h1>
-          <p>Marcadores oficiales y estadísticas observadas de jugadores y porteros.</p>
+          <p>Marcadores y estadísticas observadas, con proyección Elo experimental basada en histórico propio aprobado.</p>
         </div>
-        <div className="model-pill"><b>Fase 1</b> · Datos, sin modelo activo</div>
+        <div className="model-pill"><b>Investigación</b> · Elo experimental, no oficial</div>
       </header>
 
       <section className="panel toolbar nhl-toolbar">
