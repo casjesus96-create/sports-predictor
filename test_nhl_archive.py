@@ -144,3 +144,44 @@ def test_rejects_unreviewed_or_incomplete_source_provenance():
         )
     with pytest.raises(ValueError, match="son obligatorias"):
         build("20252026", {"TOR": {"games": [source]}}, source_license="")
+
+
+def test_historical_abbreviation_requires_explicit_season_identity_mapping():
+    historical = game(
+        game_id="1996020001", home="HFD", away="BOS",
+        game_date="1996-10-08",
+    )
+    parsed = build(
+        "19961997",
+        {"HFD": {"games": [historical]}, "BOS": {"games": [historical]}},
+        team_identity_by_abbreviation={"HFD": "CAR"},
+    )
+    row = parsed["rows"][0]
+    assert row["home_team_canonical_key"] == "CAR"
+    assert row["away_team_canonical_key"] == "BOS"
+    assert row["training_eligible"] is True
+
+
+def test_unmapped_historical_abbreviation_is_retained_but_not_training_eligible():
+    historical = game(
+        game_id="1996020002", home="HFD", away="BOS",
+        game_date="1996-10-09",
+    )
+    parsed = build(
+        "19961997",
+        {"HFD": {"games": [historical]}, "BOS": {"games": [historical]}},
+    )
+    row = parsed["rows"][0]
+    assert row["home_team_canonical_key"] is None
+    assert row["training_eligible"] is False
+    assert row["eligibility_reason"] == "team_identity_mapping_incomplete"
+
+
+def test_rejects_invalid_explicit_team_identity_mapping():
+    source = game()
+    with pytest.raises(archive.NHLArchiveImportError, match="clave canónica"):
+        build(
+            "20252026",
+            {"TOR": {"games": [source]}},
+            team_identity_by_abbreviation={"TOR": " "},
+        )
