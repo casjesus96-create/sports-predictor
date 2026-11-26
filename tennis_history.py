@@ -150,33 +150,69 @@ def _sum_available(values: list[int | None]) -> int | None:
 
 
 def _aggregate_service_stats(matches: list[tuple[dict[str, str], str]]) -> dict[str, Any]:
-    # Only matches with a valid service-points denominator count as played
-    # observations for service coverage and per-match averages.
+    # A match contributes to a metric only when that metric's own numerator
+    # and denominator are both present and internally consistent.
     stats = [
         item for item in (_match_stats(row, side) for row, side in matches)
         if item["svpt"] is not None and item["svpt"] > 0
     ]
-    aces = _sum_available([item["ace"] for item in stats])
-    double_faults = _sum_available([item["df"] for item in stats])
-    serve_points = _sum_available([item["svpt"] for item in stats])
-    first_in = _sum_available([item["1stIn"] for item in stats])
-    first_won = _sum_available([item["1stWon"] for item in stats])
-    second_won = _sum_available([item["2ndWon"] for item in stats])
-    bp_saved = _sum_available([item["bpSaved"] for item in stats])
-    bp_faced = _sum_available([item["bpFaced"] for item in stats])
-    second_attempts = (
-        sum(item["svpt"] - item["1stIn"] for item in stats if item["svpt"] is not None and item["1stIn"] is not None)
-        if any(item["svpt"] is not None and item["1stIn"] is not None for item in stats)
-        else None
-    )
+
+    ace_rows = [
+        item for item in stats
+        if item["ace"] is not None and item["ace"] <= item["svpt"]
+    ]
+    double_fault_rows = [
+        item for item in stats
+        if item["df"] is not None and item["df"] <= item["svpt"]
+    ]
+    first_serve_rows = [
+        item for item in stats
+        if item["1stIn"] is not None and item["1stIn"] <= item["svpt"]
+    ]
+    first_won_rows = [
+        item for item in first_serve_rows
+        if item["1stWon"] is not None and item["1stWon"] <= item["1stIn"]
+    ]
+    second_won_rows = [
+        item for item in first_serve_rows
+        if item["2ndWon"] is not None
+        and item["2ndWon"] <= item["svpt"] - item["1stIn"]
+    ]
+    break_point_rows = [
+        item for item in stats
+        if item["bpSaved"] is not None
+        and item["bpFaced"] is not None
+        and item["bpFaced"] > 0
+        and item["bpSaved"] <= item["bpFaced"]
+    ]
+
+    aces = _sum_available([item["ace"] for item in ace_rows])
+    double_faults = _sum_available([item["df"] for item in double_fault_rows])
+    first_in = _sum_available([item["1stIn"] for item in first_serve_rows])
+    serve_points_for_first_serve = _sum_available([item["svpt"] for item in first_serve_rows])
+    first_won = _sum_available([item["1stWon"] for item in first_won_rows])
+    first_in_for_points_won = _sum_available([item["1stIn"] for item in first_won_rows])
+    second_won = _sum_available([item["2ndWon"] for item in second_won_rows])
+    second_attempts = _sum_available([
+        item["svpt"] - item["1stIn"] for item in second_won_rows
+    ])
+    bp_saved = _sum_available([item["bpSaved"] for item in break_point_rows])
+    bp_faced = _sum_available([item["bpFaced"] for item in break_point_rows])
+
     return {
         "matches_with_service_stats": len(stats),
+        "matches_with_aces": len(ace_rows),
+        "matches_with_double_faults": len(double_fault_rows),
+        "matches_with_first_serve_stats": len(first_serve_rows),
+        "matches_with_first_serve_points_won": len(first_won_rows),
+        "matches_with_second_serve_points_won": len(second_won_rows),
+        "matches_with_break_point_stats": len(break_point_rows),
         "aces_total": aces,
         "double_faults_total": double_faults,
-        "aces_per_match": round(aces / len(stats), 3) if aces is not None and stats else None,
-        "double_faults_per_match": round(double_faults / len(stats), 3) if double_faults is not None and stats else None,
-        "first_serve_in_pct": _ratio(first_in, serve_points),
-        "first_serve_points_won_pct": _ratio(first_won, first_in),
+        "aces_per_match": round(aces / len(ace_rows), 3) if aces is not None and ace_rows else None,
+        "double_faults_per_match": round(double_faults / len(double_fault_rows), 3) if double_faults is not None and double_fault_rows else None,
+        "first_serve_in_pct": _ratio(first_in, serve_points_for_first_serve),
+        "first_serve_points_won_pct": _ratio(first_won, first_in_for_points_won),
         "second_serve_points_won_pct": _ratio(second_won, second_attempts),
         "break_points_saved_pct": _ratio(bp_saved, bp_faced),
     }
