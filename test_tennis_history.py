@@ -273,3 +273,50 @@ def test_backtest_fails_clearly_when_no_historical_files_load(monkeypatch):
             end_date="2025-10-02",
             warmup_years=1,
         )
+
+
+
+def test_partial_service_fields_use_metric_specific_sample_denominators():
+    stats = _aggregate_service_stats([
+        ({
+            "w_ace": "3", "w_df": "1", "w_svpt": "50", "w_1stIn": "30",
+            "w_1stWon": "24", "w_2ndWon": "12", "w_bpSaved": "2", "w_bpFaced": "4",
+        }, "winner"),
+        ({
+            "l_df": "2", "l_svpt": "40", "l_1stWon": "12", "l_2ndWon": "8",
+            "l_bpSaved": "1", "l_bpFaced": "3",
+        }, "loser"),
+    ])
+
+    assert stats["matches_with_service_stats"] == 2
+    assert stats["matches_with_aces"] == 1
+    assert stats["matches_with_double_faults"] == 2
+    assert stats["matches_with_first_serve_stats"] == 1
+    assert stats["matches_with_first_serve_points_won"] == 1
+    assert stats["matches_with_second_serve_points_won"] == 1
+    assert stats["matches_with_break_point_stats"] == 2
+    assert stats["aces_per_match"] == 3.0
+    assert stats["double_faults_per_match"] == 1.5
+    assert stats["first_serve_in_pct"] == 0.6
+    assert stats["first_serve_points_won_pct"] == 0.8
+    assert stats["second_serve_points_won_pct"] == 0.6
+    assert stats["break_points_saved_pct"] == 0.4286
+
+
+def test_service_aggregator_excludes_inconsistent_match_level_counts():
+    stats = _aggregate_service_stats([
+        ({
+            "w_ace": "55", "w_df": "1", "w_svpt": "50", "w_1stIn": "60",
+            "w_1stWon": "61", "w_2ndWon": "30", "w_bpSaved": "5", "w_bpFaced": "4",
+        }, "winner"),
+    ])
+
+    assert stats["matches_with_service_stats"] == 1
+    assert stats["matches_with_aces"] == 0
+    assert stats["matches_with_first_serve_stats"] == 0
+    assert stats["matches_with_first_serve_points_won"] == 0
+    assert stats["matches_with_second_serve_points_won"] == 0
+    assert stats["matches_with_break_point_stats"] == 0
+    assert stats["aces_per_match"] is None
+    assert stats["first_serve_in_pct"] is None
+    assert stats["break_points_saved_pct"] is None
