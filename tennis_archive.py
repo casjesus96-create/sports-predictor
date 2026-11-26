@@ -28,6 +28,26 @@ from tennis_external_source import (
 logger = logging.getLogger(__name__)
 TABLE = "tennis_match_archive"
 UPSERT_BATCH_SIZE = 500
+
+ARCHIVE_READ_PAGE_SIZE = 1000
+
+
+def _fetch_all_archive_rows(query, page_size: int = ARCHIVE_READ_PAGE_SIZE) -> list[dict[str, Any]]:
+    """Read every matching archive row in stable PostgREST range pages.
+
+    Supabase commonly caps a response at 1,000 rows. Explicit range pagination
+    prevents silent truncation while retaining deterministic page boundaries.
+    """
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        response = query.range(offset, offset + page_size - 1).execute()
+        page = response.data or []
+        rows.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+    return rows
 MIN_YEAR = 2021
 SUPPORTED_LEAGUES = {"ATP", "WTA"}
 ELIGIBLE_CATEGORIES = {"main tour", "masters", "grand chelem", "grand slam", "challenger"}
@@ -455,22 +475,26 @@ def get_player_archive_profile(
         "round_code,player1_id,player1_name,player1_name_key,player2_id,"
         "player2_name,player2_name_key,winner_id,score"
     )
-    first = (
+    first_query = (
         client.table(TABLE).select(columns)
         .eq("league", selected_league)
         .eq("player1_name_key", target)
         .gte("match_date", start.isoformat())
         .lt("match_date", cutoff_date.isoformat())
-        .order("match_date", desc=False).limit(1000).execute()
-    ).data or []
-    second = (
+        .order("match_date", desc=False)
+        .order("source_match_id", desc=False)
+    )
+    second_query = (
         client.table(TABLE).select(columns)
         .eq("league", selected_league)
         .eq("player2_name_key", target)
         .gte("match_date", start.isoformat())
         .lt("match_date", cutoff_date.isoformat())
-        .order("match_date", desc=False).limit(1000).execute()
-    ).data or []
+        .order("match_date", desc=False)
+        .order("source_match_id", desc=False)
+    )
+    first = _fetch_all_archive_rows(first_query)
+    second = _fetch_all_archive_rows(second_query)
 
     unique: dict[str, dict[str, Any]] = {}
     for row in first + second:
@@ -636,18 +660,22 @@ def _archive_rows_for_player(client, league: str, target: str, cutoff_date: date
         "player1_id,player1_name,player1_name_key,player2_id,player2_name,"
         "player2_name_key,winner_id,score"
     )
-    first = (
+    first_query = (
         client.table(TABLE).select(columns)
         .eq("league", league).eq("player1_name_key", target)
         .lt("match_date", cutoff_date.isoformat())
-        .order("match_date", desc=True).limit(1000).execute()
-    ).data or []
-    second = (
+        .order("match_date", desc=True)
+        .order("source_match_id", desc=True)
+    )
+    second_query = (
         client.table(TABLE).select(columns)
         .eq("league", league).eq("player2_name_key", target)
         .lt("match_date", cutoff_date.isoformat())
-        .order("match_date", desc=True).limit(1000).execute()
-    ).data or []
+        .order("match_date", desc=True)
+        .order("source_match_id", desc=True)
+    )
+    first = _fetch_all_archive_rows(first_query)
+    second = _fetch_all_archive_rows(second_query)
     unique = {}
     for row in first + second:
         key = str(row.get("source_match_id") or "")

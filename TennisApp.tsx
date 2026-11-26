@@ -1453,7 +1453,7 @@ export default function TennisApp() {
                       { label: "Últimos 5", value: `${profile.last_5.wins}V – ${profile.last_5.losses}D` },
                       { label: "Últimos 10", value: `${profile.last_10.wins}V – ${profile.last_10.losses}D` },
                       { label: isValuebetennisArchive ? "Cobertura de estadísticas de saque (archivo anterior)" : "Cobertura de estadísticas de saque (últimos 10)", value: formatCoverage(service.matches_with_service_stats, isValuebetennisArchive ? (profile.data_quality.legacy_service_stats_window_matches ?? 0) : profile.last_10.matches) },
-                      { label: "Victorias en muestra filtrada", value: `${profile.surface_window.wins} / ${profile.surface_window.matches}` },
+                      { label: "Victorias en muestra del perfil", value: `${profile.surface_window.wins} / ${profile.surface_window.matches}` },
                       { label: "Último ranking observado", value: formatMetric(profile.ranking_latest_in_window) },
                       { label: hasExactMatchDates ? "Días desde el último partido registrado" : "Días desde inicio del último torneo registrado", value: formatMetric(profile.days_since_last_match) },
                       { label: "Partidos últimos 7 días", value: formatMetric(profile.workload_matches_last_7_days) },

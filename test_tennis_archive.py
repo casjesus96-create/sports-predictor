@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -147,6 +147,8 @@ class FakeQuery:
     def __init__(self, rows):
         self.rows = rows
         self.filters = []
+        self.range_start = 0
+        self.range_end = None
 
     def select(self, _columns):
         return self
@@ -169,6 +171,11 @@ class FakeQuery:
     def limit(self, _count):
         return self
 
+    def range(self, start, end):
+        self.range_start = start
+        self.range_end = end
+        return self
+
     def execute(self):
         data = list(self.rows)
         for operator, key, value in self.filters:
@@ -180,6 +187,8 @@ class FakeQuery:
                 data = [row for row in data if str(row.get(key) or "") < value]
         if any(key == "match_date" for _, key, _ in self.filters) and len(data) > 0:
             data.sort(key=lambda row: str(row.get("match_date") or ""))
+        if self.range_end is not None:
+            data = data[self.range_start:self.range_end + 1]
         if len(data) == 0 and self.filters == []:
             return FakeResponse([])
         if any(key == "league" for _, key, _ in self.filters) and any(key == "player1_name_key" for _, key, _ in self.filters):
@@ -417,3 +426,28 @@ def test_sync_reports_missing_wta_instead_of_success_when_only_atp_is_present(mo
     assert result["by_year"][0]["leagues"]["ATP"]["upserted_rows"] == 1
     assert result["by_year"][0]["leagues"]["WTA"]["eligible_matches"] == 0
     assert len(writes) == 1
+
+
+
+def test_persisted_profile_paginates_beyond_supabase_default_row_cap(monkeypatch):
+    rows = [
+        archive_row(
+            f"bulk-{index}",
+            (date(2020, 1, 1) + timedelta(days=index)).isoformat(),
+            "101",
+            "Player One",
+            f"opponent-{index}",
+            f"Opponent {index}",
+            "101",
+        )
+        for index in range(1001)
+    ]
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: FakeClient(rows))
+
+    profile = archive.get_player_archive_profile(
+        "Player One", "ATP", date(2024, 1, 1), 1500
+    )
+
+    assert profile["matches_in_window"] == 1001
+    assert profile["wins_in_window"] == 1001
+    assert profile["recent_matches"][0]["date"] == "2022-09-27"
