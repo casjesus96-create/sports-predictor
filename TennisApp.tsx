@@ -67,6 +67,40 @@ type HistoricalProfile = {
   }>;
 };
 
+
+type HeadToHeadResponse = {
+  success: boolean;
+  league: string;
+  player1_name: string;
+  player2_name: string;
+  cutoff_date_exclusive: string;
+  identity_ambiguous: boolean;
+  identity_resolved: boolean;
+  message: string | null;
+  total_matches: number;
+  player1_wins: number;
+  player2_wins: number;
+  surface_breakdown: Array<{
+    surface: string;
+    matches: number;
+    player1_wins: number;
+    player2_wins: number;
+  }>;
+  recent_matches: Array<{
+    date: string;
+    tournament: string | null;
+    category: string | null;
+    surface: string | null;
+    round: string | null;
+    player1_name: string;
+    player2_name: string;
+    winner_name: string;
+    result_for_player1: "W" | "L";
+    score: string | null;
+  }>;
+  data_limitations?: string;
+};
+
 type Match = {
   match_id: string;
   event_id?: string;
@@ -377,6 +411,7 @@ export default function TennisApp() {
   const [date, setDate] = useState(localDate());
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [historicalProfiles, setHistoricalProfiles] = useState<HistoricalProfile[]>([]);
+  const [headToHead, setHeadToHead] = useState<HeadToHeadResponse | null>(null);
   const profileRequestId = useRef(0);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -556,6 +591,7 @@ export default function TennisApp() {
     setProfileLoading(true);
     setProfileError("");
     setHistoricalProfiles([]);
+    setHeadToHead(null);
     try {
       const buildUrl = (name: string) => {
         const params = new URLSearchParams({
@@ -566,11 +602,21 @@ export default function TennisApp() {
         });
         return `/api/v1/tennis/history/profile?${params.toString()}`;
       };
-      const [first, second] = await Promise.all([
+      const h2hParams = new URLSearchParams({
+        player1_name: player1,
+        player2_name: player2,
+        league,
+        cutoff_date: cutoff,
+      });
+      const [first, second, h2h] = await Promise.all([
         request<HistoricalProfile>(buildUrl(player1)),
         request<HistoricalProfile>(buildUrl(player2)),
+        request<HeadToHeadResponse>(`/api/v1/tennis/history/head-to-head?${h2hParams.toString()}`),
       ]);
-      if (requestId === profileRequestId.current) setHistoricalProfiles([first, second]);
+      if (requestId === profileRequestId.current) {
+        setHistoricalProfiles([first, second]);
+        setHeadToHead(h2h);
+      }
     } catch (err) {
       if (requestId === profileRequestId.current) setProfileError(err instanceof Error ? err.message : "No se pudieron cargar los perfiles históricos.");
     } finally {
@@ -1346,6 +1392,48 @@ export default function TennisApp() {
                     </div>
                   );
                 })() : null}
+                {headToHead ? (
+                  <section aria-label="Enfrentamientos directos" style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, marginBottom: 12, background: "#10253a" }}>
+                    <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Enfrentamientos directos · H2H</h4>
+                    <p style={{ color: "#b7c8d8", fontSize: 11, lineHeight: 1.45, margin: "0 0 10px" }}>
+                      Historial anterior al {headToHead.cutoff_date_exclusive}. Se resuelven identidades por nombre normalizado e ID exacto; no se mezclan identidades ambiguas.
+                    </p>
+                    {headToHead.identity_resolved ? (
+                      <>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, textAlign: "center" }}>
+                          <div><strong style={{ display: "block", fontSize: 20 }}>{headToHead.player1_wins}</strong><small style={{ color: "#b7c8d8" }}>{headToHead.player1_name}</small></div>
+                          <div><strong style={{ display: "block", fontSize: 20 }}>{headToHead.total_matches}</strong><small style={{ color: "#b7c8d8" }}>Partidos</small></div>
+                          <div><strong style={{ display: "block", fontSize: 20 }}>{headToHead.player2_wins}</strong><small style={{ color: "#b7c8d8" }}>{headToHead.player2_name}</small></div>
+                        </div>
+                        {headToHead.surface_breakdown.length ? (
+                          <div style={{ overflowX: "auto", marginTop: 10 }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                              <thead><tr style={{ color: "#b7c8d8", textAlign: "left" }}><th style={{ padding: 6 }}>Superficie</th><th style={{ padding: 6 }}>Partidos</th><th style={{ padding: 6 }}>{headToHead.player1_name}</th><th style={{ padding: 6 }}>{headToHead.player2_name}</th></tr></thead>
+                              <tbody>{headToHead.surface_breakdown.map((item) => (
+                                <tr key={item.surface} style={{ borderTop: "1px solid #29445b" }}>
+                                  <td style={{ padding: 6 }}>{item.surface}</td><td style={{ padding: 6 }}>{item.matches}</td><td style={{ padding: 6 }}>{item.player1_wins}</td><td style={{ padding: 6 }}>{item.player2_wins}</td>
+                                </tr>
+                              ))}</tbody>
+                            </table>
+                          </div>
+                        ) : <p style={{ color: "#b7c8d8", fontSize: 11 }}>No hay enfrentamientos directos registrados.</p>}
+                        {headToHead.recent_matches.length ? (
+                          <div style={{ overflowX: "auto", marginTop: 10 }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 430 }}>
+                              <thead><tr style={{ color: "#b7c8d8", textAlign: "left" }}><th style={{ padding: 6 }}>Fecha</th><th style={{ padding: 6 }}>Torneo</th><th style={{ padding: 6 }}>Superficie</th><th style={{ padding: 6 }}>Ganador</th><th style={{ padding: 6 }}>Marcador</th></tr></thead>
+                              <tbody>{headToHead.recent_matches.map((item) => (
+                                <tr key={`${item.date}-${item.tournament}-${item.score}`} style={{ borderTop: "1px solid #29445b" }}>
+                                  <td style={{ padding: 6, whiteSpace: "nowrap" }}>{item.date}</td><td style={{ padding: 6 }}>{item.tournament || "—"}</td><td style={{ padding: 6 }}>{item.surface || "—"}</td><td style={{ padding: 6 }}>{item.winner_name}</td><td style={{ padding: 6, whiteSpace: "nowrap" }}>{item.score || "—"}</td>
+                                </tr>
+                              ))}</tbody>
+                            </table>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : <p style={{ color: "#fbbf24", fontSize: 11 }}>{headToHead.message || "No fue posible resolver las identidades con seguridad."}</p>}
+                    {headToHead.data_limitations ? <p style={{ color: "#8fa8bd", fontSize: 10, lineHeight: 1.45, marginBottom: 0 }}>{headToHead.data_limitations}</p> : null}
+                  </section>
+                ) : null}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 12 }}>
                   {historicalProfiles.map((profile) => {
                     const service = profile.service_return_stats_last_10_matches;
