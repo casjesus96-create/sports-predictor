@@ -613,7 +613,7 @@ export default function TennisApp() {
     });
     const h2hRequest = request<HeadToHeadResponse>(
       `/api/v1/tennis/history/head-to-head?${h2hParams.toString()}`,
-    );
+    ).then((data) => ({ data })).catch((error: unknown) => ({ error }));
     try {
       const [first, second] = await Promise.all([
         request<HistoricalProfile>(buildUrl(player1)),
@@ -630,8 +630,9 @@ export default function TennisApp() {
       if (requestId === profileRequestId.current) setProfileLoading(false);
     }
     try {
-      const h2h = await h2hRequest;
-      if (requestId === profileRequestId.current) setHeadToHead(h2h);
+      const h2hResult = await h2hRequest;
+      if ("error" in h2hResult) throw h2hResult.error;
+      if (requestId === profileRequestId.current) setHeadToHead(h2hResult.data);
     } catch (err) {
       if (requestId === profileRequestId.current) {
         setHeadToHeadError(err instanceof Error ? err.message : "No se pudo consultar el historial H2H.");
