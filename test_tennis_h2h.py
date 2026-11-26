@@ -12,6 +12,8 @@ class FakeQuery:
     def __init__(self, rows):
         self.rows = rows
         self.filters = []
+        self.range_start = 0
+        self.range_end = None
 
     def select(self, _columns):
         return self
@@ -30,6 +32,11 @@ class FakeQuery:
     def limit(self, _value):
         return self
 
+    def range(self, start, end):
+        self.range_start = start
+        self.range_end = end
+        return self
+
     def execute(self):
         rows = self.rows
         for kind, key, value in self.filters:
@@ -37,6 +44,8 @@ class FakeQuery:
                 rows = [row for row in rows if str(row.get(key) or "") == str(value)]
             elif kind == "lt":
                 rows = [row for row in rows if str(row.get(key) or "") < value]
+        if self.range_end is not None:
+            rows = rows[self.range_start:self.range_end + 1]
         return FakeResponse(rows)
 
 
@@ -119,3 +128,33 @@ def test_head_to_head_rejects_invalid_league_and_same_player():
         tennis_archive.get_head_to_head_archive(
             "Player One", "player-one", "ATP", date(2026, 1, 1)
         )
+
+
+
+def test_head_to_head_paginates_full_player_histories(monkeypatch):
+    from datetime import timedelta
+
+    rows = [
+        _row(
+            f"long-h2h-{index}",
+            (date(2020, 1, 1) + timedelta(days=index)).isoformat(),
+            "p1",
+            "Player One",
+            "p2",
+            "Player Two",
+            "p1" if index % 2 == 0 else "p2",
+            "Hard" if index % 2 == 0 else "Clay",
+            "6-4 6-3",
+        )
+        for index in range(1001)
+    ]
+    monkeypatch.setattr(tennis_archive, "get_supabase_client", lambda: FakeClient(rows))
+
+    result = tennis_archive.get_head_to_head_archive(
+        "Player One", "Player Two", "ATP", date(2024, 1, 1)
+    )
+
+    assert result["identity_resolved"] is True
+    assert result["total_matches"] == 1001
+    assert result["player1_wins"] == 501
+    assert result["player2_wins"] == 500
