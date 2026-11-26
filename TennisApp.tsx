@@ -412,6 +412,8 @@ export default function TennisApp() {
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [historicalProfiles, setHistoricalProfiles] = useState<HistoricalProfile[]>([]);
   const [headToHead, setHeadToHead] = useState<HeadToHeadResponse | null>(null);
+  const [headToHeadLoading, setHeadToHeadLoading] = useState(false);
+  const [headToHeadError, setHeadToHeadError] = useState("");
   const profileRequestId = useRef(0);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -592,35 +594,51 @@ export default function TennisApp() {
     setProfileError("");
     setHistoricalProfiles([]);
     setHeadToHead(null);
-    try {
-      const buildUrl = (name: string) => {
-        const params = new URLSearchParams({
-          player_name: name,
-          league,
-          cutoff_date: cutoff,
-          lookback_days: "365",
-        });
-        return `/api/v1/tennis/history/profile?${params.toString()}`;
-      };
-      const h2hParams = new URLSearchParams({
-        player1_name: player1,
-        player2_name: player2,
+    setHeadToHeadLoading(true);
+    setHeadToHeadError("");
+    const buildUrl = (name: string) => {
+      const params = new URLSearchParams({
+        player_name: name,
         league,
         cutoff_date: cutoff,
+        lookback_days: "365",
       });
-      const [first, second, h2h] = await Promise.all([
+      return `/api/v1/tennis/history/profile?${params.toString()}`;
+    };
+    const h2hParams = new URLSearchParams({
+      player1_name: player1,
+      player2_name: player2,
+      league,
+      cutoff_date: cutoff,
+    });
+    const h2hRequest = request<HeadToHeadResponse>(
+      `/api/v1/tennis/history/head-to-head?${h2hParams.toString()}`,
+    ).then((data) => ({ data })).catch((error: unknown) => ({ error }));
+    try {
+      const [first, second] = await Promise.all([
         request<HistoricalProfile>(buildUrl(player1)),
         request<HistoricalProfile>(buildUrl(player2)),
-        request<HeadToHeadResponse>(`/api/v1/tennis/history/head-to-head?${h2hParams.toString()}`),
       ]);
       if (requestId === profileRequestId.current) {
         setHistoricalProfiles([first, second]);
-        setHeadToHead(h2h);
       }
     } catch (err) {
-      if (requestId === profileRequestId.current) setProfileError(err instanceof Error ? err.message : "No se pudieron cargar los perfiles históricos.");
+      if (requestId === profileRequestId.current) {
+        setProfileError(err instanceof Error ? err.message : "No se pudieron cargar los perfiles históricos.");
+      }
     } finally {
       if (requestId === profileRequestId.current) setProfileLoading(false);
+    }
+    try {
+      const h2hResult = await h2hRequest;
+      if ("error" in h2hResult) throw h2hResult.error;
+      if (requestId === profileRequestId.current) setHeadToHead(h2hResult.data);
+    } catch (err) {
+      if (requestId === profileRequestId.current) {
+        setHeadToHeadError(err instanceof Error ? err.message : "No se pudo consultar el historial H2H.");
+      }
+    } finally {
+      if (requestId === profileRequestId.current) setHeadToHeadLoading(false);
     }
   }, [date, league]);
 
@@ -1392,7 +1410,17 @@ export default function TennisApp() {
                     </div>
                   );
                 })() : null}
-                {headToHead ? (
+                {headToHeadLoading ? (
+                  <section aria-label="Enfrentamientos directos" style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, marginBottom: 12, background: "#10253a" }}>
+                    <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Enfrentamientos directos · H2H</h4>
+                    <p role="status" style={{ color: "#b7c8d8", fontSize: 11 }}>Consultando el historial directo anterior al partido…</p>
+                  </section>
+                ) : headToHeadError ? (
+                  <section aria-label="Enfrentamientos directos" style={{ border: "1px solid #8b5960", borderRadius: 10, padding: 14, marginBottom: 12, background: "#10253a" }}>
+                    <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Enfrentamientos directos · H2H</h4>
+                    <p role="alert" style={{ color: "#fca5a5", fontSize: 11 }}>No se pudo consultar el H2H: {headToHeadError}</p>
+                  </section>
+                ) : headToHead ? (
                   <section aria-label="Enfrentamientos directos" style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, marginBottom: 12, background: "#10253a" }}>
                     <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Enfrentamientos directos · H2H</h4>
                     <p style={{ color: "#b7c8d8", fontSize: 11, lineHeight: 1.45, margin: "0 0 10px" }}>
@@ -1433,7 +1461,12 @@ export default function TennisApp() {
                     ) : <p style={{ color: "#fbbf24", fontSize: 11 }}>{headToHead.message || "No fue posible resolver las identidades con seguridad."}</p>}
                     {headToHead.data_limitations ? <p style={{ color: "#8fa8bd", fontSize: 10, lineHeight: 1.45, marginBottom: 0 }}>{headToHead.data_limitations}</p> : null}
                   </section>
-                ) : null}
+                ) : (
+                  <section aria-label="Enfrentamientos directos" style={{ border: "1px solid #29445b", borderRadius: 10, padding: 14, marginBottom: 12, background: "#10253a" }}>
+                    <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Enfrentamientos directos · H2H</h4>
+                    <p style={{ color: "#b7c8d8", fontSize: 11 }}>La consulta no devolvió una respuesta H2H. No se mostrará un balance hasta verificar la respuesta del archivo.</p>
+                  </section>
+                )}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 12 }}>
                   {historicalProfiles.map((profile) => {
                     const service = profile.service_return_stats_last_10_matches;
