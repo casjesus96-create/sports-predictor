@@ -93,6 +93,38 @@ def _stable_source_match_id(
     return f"derived:{digest}", True
 
 
+
+def _normalize_surface(surface_detail: str | None) -> str | None:
+    """Map source surface labels to canonical groups without altering raw labels.
+
+    Valuebetennis uses English and French labels. Some CSV exports contain
+    the common UTF-8-as-Latin-1 form of "é" (rendered as "Ã©"); normalize that
+    known sequence only for classification and preserve surface_detail verbatim.
+    """
+    if not surface_detail:
+        return None
+
+    raw = surface_detail.casefold().strip().replace("ã©", "e")
+    decomposed = unicodedata.normalize("NFKD", raw)
+    plain = "".join(char for char in decomposed if not unicodedata.combining(char))
+    key = " ".join(re.sub(r"[^a-z0-9]+", " ", plain).split())
+
+    surface_groups = {
+        "hard": "Hard",
+        "indoor hard": "Hard",
+        "i hard": "Hard",
+        "ihard": "Hard",
+        "dur": "Hard",
+        "dur interieur": "Hard",
+        "clay": "Clay",
+        "terre battue": "Clay",
+        "grass": "Grass",
+        "gazon": "Grass",
+        "carpet": "Carpet",
+        "moquette interieur": "Carpet",
+    }
+    return surface_groups.get(key, "Other")
+
 def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any] | None:
     """Validate and normalize one source row; invalid rows are never guessed."""
     league = str(row.get("genre") or "").strip().upper()
@@ -123,17 +155,7 @@ def build_match_payload(row: dict[str, Any], imported_at: str) -> dict[str, Any]
 
     source_match_id, _derived_id = _stable_source_match_id(row, league, match_date)
     surface_detail = str(row.get("surface") or "").strip() or None
-    surface_key = (surface_detail or "").casefold().replace(".", "").strip()
-    if surface_key in {"hard", "indoor hard", "i hard", "ihard"}:
-        surface = "Hard"
-    elif surface_key == "clay":
-        surface = "Clay"
-    elif surface_key == "grass":
-        surface = "Grass"
-    elif surface_key == "carpet":
-        surface = "Carpet"
-    else:
-        surface = "Other" if surface_detail else None
+    surface = _normalize_surface(surface_detail)
 
     return {
         "source_match_id": source_match_id,
