@@ -605,3 +605,165 @@ def get_player_archive_profile(
             ),
         },
     }
+
+
+
+def _archive_rows_for_player(client, league: str, target: str, cutoff_date: date) -> list[dict[str, Any]]:
+    columns = (
+        "source_match_id,match_date,tournament,category,surface,round_code,"
+        "player1_id,player1_name,player1_name_key,player2_id,player2_name,"
+        "player2_name_key,winner_id,score"
+    )
+    first = (
+        client.table(TABLE).select(columns)
+        .eq("league", league).eq("player1_name_key", target)
+        .lt("match_date", cutoff_date.isoformat())
+        .order("match_date", desc=True).limit(1000).execute()
+    ).data or []
+    second = (
+        client.table(TABLE).select(columns)
+        .eq("league", league).eq("player2_name_key", target)
+        .lt("match_date", cutoff_date.isoformat())
+        .order("match_date", desc=True).limit(1000).execute()
+    ).data or []
+    unique = {}
+    for row in first + second:
+        key = str(row.get("source_match_id") or "")
+        if key:
+            unique[key] = row
+    return list(unique.values())
+
+
+def get_head_to_head_archive(
+    player1_name: str,
+    player2_name: str,
+    league: str,
+    cutoff_date: date,
+) -> dict[str, Any]:
+    """Return exact-ID H2H results from the persisted archive; never fuzzy-match."""
+    first_key = normalize_player_name(player1_name)
+    second_key = normalize_player_name(player2_name)
+    selected_league = str(league or "").strip().upper()
+    if selected_league not in SUPPORTED_LEAGUES:
+        raise ValueError("league debe ser ATP o WTA.")
+    if not first_key or not second_key or first_key == second_key:
+        raise ValueError("Se necesitan dos nombres de jugadores distintos.")
+
+    client = get_supabase_client()
+    first_rows = _archive_rows_for_player(client, selected_league, first_key, cutoff_date)
+    second_rows = _archive_rows_for_player(client, selected_league, second_key, cutoff_date)
+
+    def resolve_player_id(rows: list[dict[str, Any]], key: str) -> set[str]:
+        ids = set()
+        for row in rows:
+            if row.get("player1_name_key") == key and row.get("player1_id"):
+                ids.add(str(row["player1_id"]))
+            if row.get("player2_name_key") == key and row.get("player2_id"):
+                ids.add(str(row["player2_id"]))
+        return ids
+
+    first_ids = resolve_player_id(first_rows, first_key)
+    second_ids = resolve_player_id(second_rows, second_key)
+    base = {
+        "success": True,
+        "league": selected_league,
+        "player1_name": player1_name,
+        "player2_name": player2_name,
+        "cutoff_date_exclusive": cutoff_date.isoformat(),
+        "source": "Valuebetennis ATP/WTA historical match archive",
+        "source_attribution": SOURCE_ATTRIBUTION,
+    }
+    if len(first_ids) != 1 or len(second_ids) != 1:
+        return {
+            **base,
+            "identity_ambiguous": len(first_ids) > 1 or len(second_ids) > 1,
+            "identity_resolved": False,
+            "message": (
+                "La identidad de uno o ambos jugadores no pudo resolverse de forma unívoca."
+                if first_ids or second_ids
+                else "No hay historial suficiente de ambos jugadores en el archivo consultado."
+            ),
+            "total_matches": 0,
+            "player1_wins": 0,
+            "player2_wins": 0,
+            "surface_breakdown": [],
+            "recent_matches": [],
+        }
+
+    first_id = next(iter(first_ids))
+    second_id = next(iter(second_ids))
+    if first_id == second_id:
+        return {
+            **base,
+            "identity_ambiguous": True,
+            "identity_resolved": False,
+            "message": "Los nombres resolvieron al mismo identificador de jugador.",
+            "total_matches": 0,
+            "player1_wins": 0,
+            "player2_wins": 0,
+            "surface_breakdown": [],
+            "recent_matches": [],
+        }
+
+    matches_by_id = {}
+    for row in first_rows:
+        p1_id = str(row.get("player1_id") or "")
+        p2_id = str(row.get("player2_id") or "")
+        if {p1_id, p2_id} != {first_id, second_id}:
+            continue
+        winner_id = str(row.get("winner_id") or "")
+        if winner_id not in {first_id, second_id}:
+            continue
+        match_id = str(row.get("source_match_id") or "")
+        if match_id:
+            matches_by_id[match_id] = row
+
+    matches = sorted(
+        matches_by_id.values(),
+        key=lambda row: (str(row.get("match_date") or ""), str(row.get("source_match_id") or "")),
+        reverse=True,
+    )
+    first_wins = sum(str(row.get("winner_id")) == first_id for row in matches)
+    second_wins = len(matches) - first_wins
+    surfaces: dict[str, dict[str, int]] = {}
+    recent = []
+    for row in matches:
+        surface = str(row.get("surface") or "Sin dato")
+        item = surfaces.setdefault(surface, {"surface": surface, "matches": 0, "player1_wins": 0, "player2_wins": 0})
+        item["matches"] += 1
+        winner_id = str(row.get("winner_id"))
+        if winner_id == first_id:
+            item["player1_wins"] += 1
+        else:
+            item["player2_wins"] += 1
+        if len(recent) < 10:
+            row_first_id = str(row.get("player1_id") or "")
+            recent.append({
+                "date": str(row.get("match_date") or ""),
+                "tournament": row.get("tournament"),
+                "category": row.get("category"),
+                "surface": row.get("surface"),
+                "round": str(row.get("round_code")) if row.get("round_code") is not None else None,
+                "player1_name": player1_name if row_first_id == first_id else player2_name,
+                "player2_name": player2_name if row_first_id == first_id else player1_name,
+                "winner_name": player1_name if winner_id == first_id else player2_name,
+                "result_for_player1": "W" if winner_id == first_id else "L",
+                "score": str(row.get("score") or "").strip() or None,
+            })
+
+    return {
+        **base,
+        "identity_ambiguous": False,
+        "identity_resolved": True,
+        "message": None if matches else "No se encontraron enfrentamientos directos anteriores al partido.",
+        "total_matches": len(matches),
+        "player1_wins": first_wins,
+        "player2_wins": second_wins,
+        "surface_breakdown": sorted(surfaces.values(), key=lambda item: item["surface"]),
+        "recent_matches": recent,
+        "data_limitations": (
+            "El H2H incluye únicamente partidos presentes en el archivo Valuebetennis: "
+            "Main Tour, Masters, Grand Slam y Challenger; no representa necesariamente "
+            "todos los enfrentamientos ITF ni toda la carrera de los jugadores."
+        ),
+    }
