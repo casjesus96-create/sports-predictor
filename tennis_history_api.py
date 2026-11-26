@@ -5,6 +5,7 @@ coverage audits, source reconciliation, and the Elo backtest are research tools
 pending validation.
 """
 import logging
+from datetime import date, datetime, timezone
 
 import requests
 from fastapi import APIRouter, HTTPException, Query
@@ -14,6 +15,7 @@ from tennis_surface_backtest import run_surface_elo_backtest
 from tennis_surface_validation import run_chronological_surface_validation
 from tennis_external_source import ExternalTennisSourceError, audit_external_coverage
 from tennis_history import HistoricalDataError, get_player_profile
+from tennis_archive import get_head_to_head_archive
 from tennis_reconciliation import audit_external_reconciliation
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,27 @@ def player_profile(
                 "message": "No fue posible consultar los históricos de tenis.",
             },
         ) from exc
+
+
+
+
+@router.get("/head-to-head")
+def tennis_head_to_head(
+    player1_name: str = Query(..., min_length=1, max_length=120),
+    player2_name: str = Query(..., min_length=1, max_length=120),
+    league: str = Query("ATP", pattern="^(?i:ATP|WTA)$"),
+    cutoff_date: str | None = Query(None, description="Fecha límite exclusiva YYYY-MM-DD"),
+):
+    try:
+        cutoff = date.fromisoformat(cutoff_date) if cutoff_date else datetime.now(timezone.utc).date()
+        return get_head_to_head_archive(
+            player1_name=player1_name,
+            player2_name=player2_name,
+            league=league,
+            cutoff_date=cutoff,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/backtest")
