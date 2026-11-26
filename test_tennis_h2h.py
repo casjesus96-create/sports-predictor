@@ -50,6 +50,7 @@ class FakeClient:
 
 def _row(match_id, day, p1_id, p1_name, p2_id, p2_name, winner, surface, score):
     return {
+        "league": "ATP",
         "source_match_id": match_id,
         "match_date": day,
         "tournament": "Test Open",
