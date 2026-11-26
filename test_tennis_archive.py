@@ -97,6 +97,37 @@ def test_resolve_year_range_defaults_and_manual_full_backfill():
     assert resolve_year_range("2021", "2026", 2026) == (2021, 2026)
 
 
+
+@pytest.mark.parametrize(
+    ("surface_detail", "expected_surface"),
+    [
+        ("Hard", "Hard"),
+        ("Indoor Hard", "Hard"),
+        ("I.hard", "Hard"),
+        ("dur", "Hard"),
+        ("dur intérieur", "Hard"),
+        ("dur intÃ©rieur", "Hard"),
+        ("Clay", "Clay"),
+        ("terre battue", "Clay"),
+        ("Grass", "Grass"),
+        ("gazon", "Grass"),
+        ("Carpet", "Carpet"),
+        ("moquette intérieur", "Carpet"),
+        ("moquette intÃ©rieur", "Carpet"),
+        ("unknown court", "Other"),
+        ("", None),
+    ],
+)
+def test_surface_normalization_supports_english_french_and_mojibake(
+    surface_detail, expected_surface
+):
+    payload = archive.build_match_payload(
+        row(surface=surface_detail),
+        "2026-11-18T00:00:00+00:00",
+    )
+    assert payload["surface"] == expected_surface
+    assert payload["surface_detail"] == (surface_detail or None)
+
 def test_indoor_hard_is_grouped_as_hard_but_raw_label_is_preserved():
     payload = archive.build_match_payload(
         row(surface="I.hard"),
