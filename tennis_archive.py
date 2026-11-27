@@ -479,7 +479,6 @@ def get_player_archive_profile(
         client.table(TABLE).select(columns)
         .eq("league", selected_league)
         .eq("player1_name_key", target)
-        .gte("match_date", start.isoformat())
         .lt("match_date", cutoff_date.isoformat())
         .order("match_date", desc=False)
         .order("source_match_id", desc=False)
@@ -488,7 +487,6 @@ def get_player_archive_profile(
         client.table(TABLE).select(columns)
         .eq("league", selected_league)
         .eq("player2_name_key", target)
-        .gte("match_date", start.isoformat())
         .lt("match_date", cutoff_date.isoformat())
         .order("match_date", desc=False)
         .order("source_match_id", desc=False)
@@ -498,16 +496,18 @@ def get_player_archive_profile(
 
     unique: dict[str, dict[str, Any]] = {}
     for row in first + second:
-        unique[str(row.get("source_match_id") or "")] = row
-    # The importer enforces competition-tier eligibility before persistence.
-    # Do not re-filter persisted rows here: source labels can vary in casing or
-    # spelling across annual files, while the archive table is already scoped.
-    rows = list(unique.values())
-    if not rows:
+        source_match_id = str(row.get("source_match_id") or "")
+        if source_match_id:
+            unique[source_match_id] = row
+    # Resolve the normalized name against the player's complete archive history
+    # before applying the requested form window. Otherwise, a namesake whose
+    # matches fall outside the lookback could be silently ignored.
+    identity_rows = list(unique.values())
+    if not identity_rows:
         return None
 
     player_ids = set()
-    for row in rows:
+    for row in identity_rows:
         if row.get("player1_name_key") == target:
             player_ids.add(str(row.get("player1_id") or ""))
         if row.get("player2_name_key") == target:
@@ -517,6 +517,15 @@ def get_player_archive_profile(
         return {"identity_ambiguous": True}
 
     player_id = next(iter(player_ids))
+    # Identity resolution uses all prior history; descriptive form metrics
+    # remain strictly limited to the caller's requested lookback window.
+    rows = [
+        row for row in identity_rows
+        if start.isoformat() <= str(row.get("match_date") or "") < cutoff_date.isoformat()
+    ]
+    if not rows:
+        return None
+
     rows.sort(key=lambda row: (
         str(row.get("match_date") or ""),
         str(row.get("match_datetime_utc") or ""),
