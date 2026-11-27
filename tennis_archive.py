@@ -450,6 +450,23 @@ def normalize_player_name(value: Any) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", ascii_name).split())
 
 
+def _confirmed_player_alias_id(client, league: str, alias_key: str) -> str | None:
+    """Return a manually confirmed stable player ID; never infer from similarity."""
+    try:
+        rows = client.table("tennis_player_aliases").select(
+            "player_id"
+        ).eq("league", league).eq("alias_key", alias_key).limit(2).execute().data or []
+    except Exception as exc:
+        # Keep legacy exact-key lookup operational before the registry migration
+        # is applied, or during a temporary alias-table outage.
+        logger.warning("Tennis player alias registry unavailable: %s", exc)
+        return None
+    ids = {str(row.get("player_id") or "").strip() for row in rows if row.get("player_id")}
+    if len(ids) > 1:
+        raise ValueError("La equivalencia manual de este nombre es ambigua; requiere revisión.")
+    return next(iter(ids)) if ids else None
+
+
 def get_player_archive_profile(
     player_name: str,
     league: str,
@@ -475,22 +492,21 @@ def get_player_archive_profile(
         "round_code,player1_id,player1_name,player1_name_key,player2_id,"
         "player2_name,player2_name_key,winner_id,score"
     )
+    confirmed_player_id = _confirmed_player_alias_id(client, selected_league, target)
     first_query = (
         client.table(TABLE).select(columns)
         .eq("league", selected_league)
-        .eq("player1_name_key", target)
-        .lt("match_date", cutoff_date.isoformat())
-        .order("match_date", desc=False)
-        .order("source_match_id", desc=False)
+        .eq("player1_id", confirmed_player_id) if confirmed_player_id else
+        client.table(TABLE).select(columns).eq("league", selected_league).eq("player1_name_key", target)
     )
+    first_query = first_query.lt("match_date", cutoff_date.isoformat()).order("match_date", desc=False).order("source_match_id", desc=False)
     second_query = (
         client.table(TABLE).select(columns)
         .eq("league", selected_league)
-        .eq("player2_name_key", target)
-        .lt("match_date", cutoff_date.isoformat())
-        .order("match_date", desc=False)
-        .order("source_match_id", desc=False)
+        .eq("player2_id", confirmed_player_id) if confirmed_player_id else
+        client.table(TABLE).select(columns).eq("league", selected_league).eq("player2_name_key", target)
     )
+    second_query = second_query.lt("match_date", cutoff_date.isoformat()).order("match_date", desc=False).order("source_match_id", desc=False)
     first = _fetch_all_archive_rows(first_query)
     second = _fetch_all_archive_rows(second_query)
 
@@ -506,13 +522,14 @@ def get_player_archive_profile(
     if not identity_rows:
         return None
 
-    player_ids = set()
-    for row in identity_rows:
-        if row.get("player1_name_key") == target:
-            player_ids.add(str(row.get("player1_id") or ""))
-        if row.get("player2_name_key") == target:
-            player_ids.add(str(row.get("player2_id") or ""))
-    player_ids.discard("")
+    player_ids = {confirmed_player_id} if confirmed_player_id else set()
+    if not confirmed_player_id:
+        for row in identity_rows:
+            if row.get("player1_name_key") == target:
+                player_ids.add(str(row.get("player1_id") or ""))
+            if row.get("player2_name_key") == target:
+                player_ids.add(str(row.get("player2_id") or ""))
+        player_ids.discard("")
     if len(player_ids) != 1:
         return {"identity_ambiguous": True}
 
@@ -669,20 +686,19 @@ def _archive_rows_for_player(client, league: str, target: str, cutoff_date: date
         "player1_id,player1_name,player1_name_key,player2_id,player2_name,"
         "player2_name_key,winner_id,score"
     )
+    confirmed_player_id = _confirmed_player_alias_id(client, league, target)
     first_query = (
         client.table(TABLE).select(columns)
-        .eq("league", league).eq("player1_name_key", target)
-        .lt("match_date", cutoff_date.isoformat())
-        .order("match_date", desc=True)
-        .order("source_match_id", desc=True)
+        .eq("league", league).eq("player1_id", confirmed_player_id) if confirmed_player_id
+        else client.table(TABLE).select(columns).eq("league", league).eq("player1_name_key", target)
     )
+    first_query = first_query.lt("match_date", cutoff_date.isoformat()).order("match_date", desc=True).order("source_match_id", desc=True)
     second_query = (
         client.table(TABLE).select(columns)
-        .eq("league", league).eq("player2_name_key", target)
-        .lt("match_date", cutoff_date.isoformat())
-        .order("match_date", desc=True)
-        .order("source_match_id", desc=True)
+        .eq("league", league).eq("player2_id", confirmed_player_id) if confirmed_player_id
+        else client.table(TABLE).select(columns).eq("league", league).eq("player2_name_key", target)
     )
+    second_query = second_query.lt("match_date", cutoff_date.isoformat()).order("match_date", desc=True).order("source_match_id", desc=True)
     first = _fetch_all_archive_rows(first_query)
     second = _fetch_all_archive_rows(second_query)
     unique = {}
@@ -712,7 +728,12 @@ def get_head_to_head_archive(
     first_rows = _archive_rows_for_player(client, selected_league, first_key, cutoff_date)
     second_rows = _archive_rows_for_player(client, selected_league, second_key, cutoff_date)
 
-    def resolve_player_id(rows: list[dict[str, Any]], key: str) -> set[str]:
+    first_alias_id = _confirmed_player_alias_id(client, selected_league, first_key)
+    second_alias_id = _confirmed_player_alias_id(client, selected_league, second_key)
+
+    def resolve_player_id(rows: list[dict[str, Any]], key: str, confirmed_id: str | None) -> set[str]:
+        if confirmed_id:
+            return {confirmed_id}
         ids = set()
         for row in rows:
             if row.get("player1_name_key") == key and row.get("player1_id"):
@@ -721,8 +742,8 @@ def get_head_to_head_archive(
                 ids.add(str(row["player2_id"]))
         return ids
 
-    first_ids = resolve_player_id(first_rows, first_key)
-    second_ids = resolve_player_id(second_rows, second_key)
+    first_ids = resolve_player_id(first_rows, first_key, first_alias_id)
+    second_ids = resolve_player_id(second_rows, second_key, second_alias_id)
     base = {
         "success": True,
         "league": selected_league,

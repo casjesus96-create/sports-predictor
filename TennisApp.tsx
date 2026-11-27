@@ -1,4 +1,5 @@
 import PercentageSignal from "./PercentageSignal";
+import TennisIdentityResolver from "./TennisIdentityResolver";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Player = {
@@ -1381,6 +1382,7 @@ export default function TennisApp() {
             {profileError ? (
               <div role="alert" style={{ marginTop: 14, padding: 12, border: "1px solid #b94b59", borderRadius: 8, color: "#ffd9de" }}>{profileError}</div>
             ) : null}
+            <TennisIdentityResolver league={league} />
             {historicalProfiles.length ? (
               <div style={{ marginTop: 16 }}>
                 <h3 style={{ marginBottom: 6 }}>Perfiles históricos previos al partido</h3>
