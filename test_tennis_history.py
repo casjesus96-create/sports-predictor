@@ -15,7 +15,7 @@ def disable_persistent_archive_by_default(monkeypatch):
     monkeypatch.setattr("tennis_history.get_player_archive_profile", lambda **kwargs: None)
 
 
-def test_archive_form_is_primary_and_legacy_serve_stats_are_retained(monkeypatch):
+def test_archive_form_is_primary_and_legacy_stats_remain_provenance_only(monkeypatch):
     archived = {
         "success": True,
         "league": "ATP",
@@ -28,6 +28,7 @@ def test_archive_form_is_primary_and_legacy_serve_stats_are_retained(monkeypatch
         "last_10": {"matches": 1, "wins": 1, "losses": 0, "win_rate": 1.0},
         "recent_matches": [{"date": "2026-11-17", "date_precision": "exact_match_date", "opponent": "Player Two", "result": "W"}],
         "surface_window": {"matches": 1, "wins": 1, "losses": 0, "win_rate": 1.0},
+        "ranking_latest_in_window": 8,
         "days_since_last_match": 1,
         "workload_matches_last_7_days": 1,
         "workload_matches_last_14_days": 1,
@@ -66,6 +67,8 @@ def test_archive_form_is_primary_and_legacy_serve_stats_are_retained(monkeypatch
     assert profile["days_since_last_match"] == 1
     assert profile["service_return_stats_last_10_matches"]["matches_with_service_stats"] == 1
     assert profile["service_return_stats_last_10_matches"]["aces_total"] == 5
+    assert profile["ranking_latest_in_window"] is None
+    assert profile["data_quality"]["legacy_ranking_latest_in_window"] == 14
     assert profile["data_quality"]["source_data_age_days"] == 1
     assert profile["data_quality"]["legacy_service_stats_latest_match_date"] == "2026-05-25"
     assert profile["data_quality"]["legacy_service_stats_age_days"] == 177
