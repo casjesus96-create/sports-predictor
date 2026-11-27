@@ -15,7 +15,7 @@ from tennis_surface_backtest import run_surface_elo_backtest
 from tennis_surface_validation import run_chronological_surface_validation
 from tennis_external_source import ExternalTennisSourceError, audit_external_coverage
 from tennis_history import HistoricalDataError, get_player_profile
-from tennis_archive import get_head_to_head_archive
+from tennis_archive import TennisIdentityRegistryError, get_head_to_head_archive
 from tennis_reconciliation import audit_external_reconciliation
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,12 @@ def tennis_head_to_head(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TennisIdentityRegistryError as exc:
+        logger.exception("Confirmed tennis identity registry unavailable during H2H lookup")
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "TENNIS_IDENTITY_REGISTRY_UNAVAILABLE", "message": str(exc)},
+        ) from exc
 
 
 @router.get("/backtest")
