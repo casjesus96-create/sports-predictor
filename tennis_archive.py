@@ -57,6 +57,10 @@ class TennisArchiveImportError(RuntimeError):
     """Raised when source rows cannot be safely persisted."""
 
 
+class TennisIdentityRegistryError(RuntimeError):
+    """Raised when the confirmed alias registry cannot be queried safely."""
+
+
 def _optional_nonnegative_int(value: Any) -> int | None:
     raw = str(value or "").strip()
     if not raw:
@@ -450,16 +454,24 @@ def normalize_player_name(value: Any) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", ascii_name).split())
 
 
-def _confirmed_player_alias_id(client, league: str, alias_key: str) -> str | None:
-    """Return a manually confirmed stable player ID; never infer from similarity."""
+def _confirmed_player_alias_id(
+    client, league: str, alias_key: str, *, strict: bool = False
+) -> str | None:
+    """Return a manually confirmed stable player ID; never infer from similarity.
+
+    H2H uses strict mode because silently ignoring a confirmed alias can make
+    a known player appear unresolved. Profile reads retain their legacy fallback.
+    """
     try:
         rows = client.table("tennis_player_aliases").select(
             "player_id"
         ).eq("league", league).eq("alias_key", alias_key).limit(2).execute().data or []
     except Exception as exc:
-        # Keep legacy exact-key lookup operational before the registry migration
-        # is applied, or during a temporary alias-table outage.
         logger.warning("Tennis player alias registry unavailable: %s", exc)
+        if strict:
+            raise TennisIdentityRegistryError(
+                "No se pudo consultar el registro de identidades confirmadas."
+            ) from exc
         return None
     ids = {str(row.get("player_id") or "").strip() for row in rows if row.get("player_id")}
     if len(ids) > 1:
@@ -680,13 +692,17 @@ def get_player_archive_profile(
 
 
 
-def _archive_rows_for_player(client, league: str, target: str, cutoff_date: date) -> list[dict[str, Any]]:
+def _archive_rows_for_player(
+    client, league: str, target: str, cutoff_date: date, *, strict_alias: bool = False
+) -> list[dict[str, Any]]:
     columns = (
         "source_match_id,match_date,tournament,category,surface,round_code,"
         "player1_id,player1_name,player1_name_key,player2_id,player2_name,"
         "player2_name_key,winner_id,score"
     )
-    confirmed_player_id = _confirmed_player_alias_id(client, league, target)
+    confirmed_player_id = _confirmed_player_alias_id(
+        client, league, target, strict=strict_alias
+    )
     first_query = (
         client.table(TABLE).select(columns)
         .eq("league", league).eq("player1_id", confirmed_player_id) if confirmed_player_id
@@ -725,11 +741,19 @@ def get_head_to_head_archive(
         raise ValueError("Se necesitan dos nombres de jugadores distintos.")
 
     client = get_supabase_client()
-    first_rows = _archive_rows_for_player(client, selected_league, first_key, cutoff_date)
-    second_rows = _archive_rows_for_player(client, selected_league, second_key, cutoff_date)
+    first_rows = _archive_rows_for_player(
+        client, selected_league, first_key, cutoff_date, strict_alias=True
+    )
+    second_rows = _archive_rows_for_player(
+        client, selected_league, second_key, cutoff_date, strict_alias=True
+    )
 
-    first_alias_id = _confirmed_player_alias_id(client, selected_league, first_key)
-    second_alias_id = _confirmed_player_alias_id(client, selected_league, second_key)
+    first_alias_id = _confirmed_player_alias_id(
+        client, selected_league, first_key, strict=True
+    )
+    second_alias_id = _confirmed_player_alias_id(
+        client, selected_league, second_key, strict=True
+    )
 
     def resolve_player_id(rows: list[dict[str, Any]], key: str, confirmed_id: str | None) -> set[str]:
         if confirmed_id:

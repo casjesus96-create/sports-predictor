@@ -556,3 +556,69 @@ def test_confirmed_alias_is_used_by_h2h_identity_resolution(monkeypatch):
     assert result["identity_resolved"] is True
     assert result["total_matches"] == 1
     assert result["player1_wins"] == 1
+
+
+def test_guiomar_alias_resolves_h2h_against_maria_lourdes_carle(monkeypatch):
+    """Regression: a manually confirmed WTA alias must resolve by stable ID."""
+    match = archive_row(
+        "wta-guiomar-carle",
+        "2024-11-28",
+        "14966",
+        "Maria Lourdes Carle",
+        "13883",
+        "Guiomar Zuleta De Reales",
+        "14966",
+    )
+    match["league"] = "WTA"
+    alias_rows = [{
+        "league": "WTA",
+        "alias_key": "guiomar maristany zuleta de reales",
+        "player_id": "13883",
+    }]
+
+    class AliasTable:
+        def select(self, *_args, **_kwargs):
+            return FakeQuery(alias_rows)
+
+    class Client:
+        def table(self, name):
+            if name == "tennis_player_aliases":
+                return AliasTable()
+            if name == archive.TABLE:
+                return FakeTable([match])
+            raise AssertionError(f"Unexpected table: {name}")
+
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: Client())
+    result = archive.get_head_to_head_archive(
+        "Guiomar Maristany Zuleta De Reales",
+        "Maria Lourdes Carle",
+        "WTA",
+        date(2026, 7, 10),
+    )
+
+    assert result["identity_resolved"] is True
+    assert result["identity_ambiguous"] is False
+    assert result["total_matches"] == 1
+    assert result["recent_matches"][0]["date"] == "2024-11-28"
+
+
+def test_h2h_does_not_silently_ignore_unavailable_alias_registry(monkeypatch):
+    class BrokenAliasTable:
+        def select(self, *_args, **_kwargs):
+            raise RuntimeError("permission denied")
+
+    class Client:
+        def table(self, name):
+            if name == "tennis_player_aliases":
+                return BrokenAliasTable()
+            raise AssertionError(f"Unexpected table: {name}")
+
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: Client())
+
+    with pytest.raises(archive.TennisIdentityRegistryError):
+        archive.get_head_to_head_archive(
+            "Guiomar Maristany Zuleta De Reales",
+            "Maria Lourdes Carle",
+            "WTA",
+            date(2026, 7, 10),
+        )
