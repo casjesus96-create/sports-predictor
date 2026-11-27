@@ -414,14 +414,16 @@ def get_player_profile(
             "legacy_service_stats_window_matches": (legacy_profile.get("last_10") or {}).get("matches", 0),
             "matches_with_service_stats": legacy_quality.get("matches_with_service_stats", 0),
         })
+        archive_quality["legacy_ranking_latest_in_window"] = legacy_profile.get("ranking_latest_in_window")
         archive_quality["warning"] = (
             str(archive_quality.get("warning") or "")
-            + " Las estadísticas de saque y el ranking se conservan desde el archivo histórico anterior; "
-            "su muestra no está alineada partido a partido con los resultados exactos de la fuente nueva."
+            + " Las estadísticas de saque y el ranking histórico proceden del archivo anterior y no están alineados "
+            "partido a partido con los resultados exactos. El ranking se conserva solo como procedencia y no se "
+            "presenta como ranking del perfil exacto."
         )
         archived_profile["data_quality"] = archive_quality
         archived_profile["service_return_stats_last_10_matches"] = legacy_service
-        archived_profile["ranking_latest_in_window"] = legacy_profile.get("ranking_latest_in_window")
+        archived_profile["ranking_latest_in_window"] = None
         return archived_profile
 
     return legacy_profile
