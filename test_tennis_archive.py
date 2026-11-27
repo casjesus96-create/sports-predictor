@@ -299,6 +299,36 @@ def test_persisted_profile_refuses_ambiguous_name_to_player_id(monkeypatch):
     assert profile == {"identity_ambiguous": True}
 
 
+def test_persisted_profile_detects_namesake_outside_requested_lookback(monkeypatch):
+    rows = [
+        archive_row("old-namesake", "2023-01-10", "999", "Player One", "303", "Player Three", "999"),
+        archive_row("current-player", "2026-11-17", "101", "Player One", "202", "Player Two", "101"),
+    ]
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: FakeClient(rows))
+
+    profile = archive.get_player_archive_profile(
+        "Player One", "ATP", date(2026, 11, 18), 365
+    )
+
+    assert profile == {"identity_ambiguous": True}
+
+
+def test_persisted_profile_resolves_identity_globally_but_limits_form_to_lookback(monkeypatch):
+    rows = [
+        archive_row("old-match", "2023-01-10", "101", "Player One", "303", "Player Three", "101"),
+        archive_row("recent-match", "2026-11-17", "101", "Player One", "202", "Player Two", "101"),
+    ]
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: FakeClient(rows))
+
+    profile = archive.get_player_archive_profile(
+        "Player One", "ATP", date(2026, 11, 18), 365
+    )
+
+    assert profile["matches_in_window"] == 1
+    assert profile["wins_in_window"] == 1
+    assert [item["date"] for item in profile["recent_matches"]] == ["2026-11-17"]
+
+
 def test_same_source_match_id_can_exist_in_both_tours():
     atp = row(genre="ATP")
     wta = row(genre="WTA", joueur1_id="501", joueur2_id="502", vainqueur_id="501")
