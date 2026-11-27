@@ -481,3 +481,79 @@ def test_persisted_profile_paginates_beyond_supabase_default_row_cap(monkeypatch
     assert profile["matches_in_window"] == 1001
     assert profile["wins_in_window"] == 1001
     assert profile["recent_matches"][0]["date"] == "2022-09-27"
+
+
+def test_confirmed_alias_profile_uses_stable_player_id(monkeypatch):
+    from datetime import date
+
+    rows = [
+        archive_row("wta-alias-1", "2026-11-20", "13883", "Guiomar Zuleta De Reales",
+                    "900", "Opponent One", "13883"),
+        archive_row("wta-alias-2", "2026-11-24", "901", "Opponent Two",
+                    "13883", "Guiomar Zuleta De Reales", "901"),
+    ]
+    for item in rows:
+        item["league"] = "WTA"
+    alias_rows = [{
+        "league": "WTA",
+        "alias_key": "guiomar maristany zuleta de reales",
+        "player_id": "13883",
+    }]
+
+    class AliasTable:
+        def select(self, *_args, **_kwargs):
+            return FakeQuery(alias_rows)
+
+    class Client:
+        def table(self, name):
+            if name == "tennis_player_aliases":
+                return AliasTable()
+            if name == archive.TABLE:
+                return FakeTable(rows)
+            raise AssertionError(f"Unexpected table: {name}")
+
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: Client())
+    profile = archive.get_player_archive_profile(
+        "Guiomar Maristany Zuleta De Reales", "WTA", date(2026, 11, 26), 365
+    )
+
+    assert profile["player_id"] == "13883"
+    assert profile["matches_in_window"] == 2
+    assert profile["wins_in_window"] == 1
+    assert profile["losses_in_window"] == 1
+
+
+def test_confirmed_alias_is_used_by_h2h_identity_resolution(monkeypatch):
+    rows = [
+        archive_row("h2h-alias-1", "2026-11-20", "13883", "Guiomar Zuleta De Reales",
+                    "222", "Opponent", "13883"),
+    ]
+    for item in rows:
+        item["league"] = "WTA"
+    alias_rows = [{
+        "league": "WTA",
+        "alias_key": "guiomar maristany zuleta de reales",
+        "player_id": "13883",
+    }]
+
+    class AliasTable:
+        def select(self, *_args, **_kwargs):
+            return FakeQuery(alias_rows)
+
+    class Client:
+        def table(self, name):
+            if name == "tennis_player_aliases":
+                return AliasTable()
+            if name == archive.TABLE:
+                return FakeTable(rows)
+            raise AssertionError(f"Unexpected table: {name}")
+
+    monkeypatch.setattr(archive, "get_supabase_client", lambda: Client())
+    result = archive.get_head_to_head_archive(
+        "Guiomar Maristany Zuleta De Reales", "Opponent",
+        "WTA", date(2026, 11, 26)
+    )
+
+    assert result["identity_resolved"] is True
+    assert result["total_matches"] == 1
+    assert result["player1_wins"] == 1
