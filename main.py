@@ -19,6 +19,7 @@ from pending_predictions import router as pending_router
 from mlb_backtest_api import router as mlb_backtest_router
 from tennis_api import router as tennis_router
 from tennis_history_api import router as tennis_history_router
+from tennis_identity_api import router as tennis_identity_router
 from decision_api import router as decision_router
 from best_plays_api import router as best_plays_router
 from market_lab_api import router as market_lab_router
@@ -270,6 +271,7 @@ app.include_router(pending_router)
 app.include_router(mlb_backtest_router)
 app.include_router(tennis_router)
 app.include_router(tennis_history_router)
+app.include_router(tennis_identity_router)
 app.include_router(decision_router)
 app.include_router(best_plays_router)
 app.include_router(market_lab_router)
