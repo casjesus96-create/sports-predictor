@@ -15,6 +15,7 @@ COPY NFLApp.tsx ./
 COPY PercentageSignal.tsx ./
 COPY NBAApp.tsx ./
 COPY TennisApp.tsx ./
+COPY TennisIdentityResolver.tsx ./
 COPY FootballApp.tsx ./
 COPY NHLApp.tsx ./
 COPY DecisionCenter.tsx ./
