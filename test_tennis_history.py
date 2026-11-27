@@ -65,7 +65,6 @@ def test_archive_form_is_primary_and_legacy_stats_remain_provenance_only(monkeyp
     assert profile["recent_matches"][0]["date"] == "2026-11-17"
     assert profile["recent_matches"][0]["date_precision"] == "exact_match_date"
     assert profile["days_since_last_match"] == 1
-    assert profile["service_return_stats_last_10_matches"]["matches_with_service_stats"] == 1
     assert profile["service_return_stats_last_10_matches"]["matches_with_service_stats"] == 0
     assert profile["service_return_stats_last_10_matches"]["aces_total"] is None
     assert profile["data_quality"]["legacy_service_stats"]["matches_with_service_stats"] == 1
