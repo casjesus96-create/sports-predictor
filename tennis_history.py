@@ -415,6 +415,7 @@ def get_player_profile(
             "matches_with_service_stats": legacy_quality.get("matches_with_service_stats", 0),
         })
         archive_quality["legacy_ranking_latest_in_window"] = legacy_profile.get("ranking_latest_in_window")
+        archive_quality["legacy_service_stats"] = legacy_service
         archive_quality["warning"] = (
             str(archive_quality.get("warning") or "")
             + " Las estadísticas de saque y el ranking histórico proceden del archivo anterior y no están alineados "
@@ -422,7 +423,9 @@ def get_player_profile(
             "presenta como ranking del perfil exacto."
         )
         archived_profile["data_quality"] = archive_quality
-        archived_profile["service_return_stats_last_10_matches"] = legacy_service
+        # Keep historical serve metrics explicitly namespaced as legacy provenance.
+        # The primary field belongs only to the exact-date profile source.
+        archived_profile["service_return_stats_last_10_matches"] = _aggregate_service_stats([])
         archived_profile["ranking_latest_in_window"] = None
         return archived_profile
 

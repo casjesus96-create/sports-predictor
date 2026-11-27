@@ -51,6 +51,23 @@ type HistoricalProfile = {
     legacy_service_stats_latest_match_date?: string | null;
     legacy_service_stats_age_days?: number | null;
     legacy_service_stats_window_matches?: number;
+    legacy_service_stats?: {
+      matches_with_service_stats: number;
+      matches_with_aces: number;
+      matches_with_double_faults: number;
+      matches_with_first_serve_stats: number;
+      matches_with_first_serve_points_won: number;
+      matches_with_second_serve_points_won: number;
+      matches_with_break_point_stats: number;
+      aces_total: number | null;
+      double_faults_total: number | null;
+      aces_per_match: number | null;
+      double_faults_per_match: number | null;
+      first_serve_in_pct: number | null;
+      first_serve_points_won_pct: number | null;
+      second_serve_points_won_pct: number | null;
+      break_points_saved_pct: number | null;
+    };
     legacy_ranking_latest_in_window?: number | null;
     warning: string;
   };
