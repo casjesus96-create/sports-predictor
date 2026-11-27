@@ -41,6 +41,7 @@ create index if not exists tennis_player_aliases_player_idx
 alter table public.tennis_player_aliases enable row level security;
 revoke all on public.tennis_player_aliases from anon, authenticated;
 grant all on public.tennis_player_aliases to service_role;
+grant usage, select on sequence public.tennis_player_aliases_id_seq to service_role;
 grant select on public.tennis_archive_players to service_role;
 
 -- Stable-ID lookups used after an alias has been explicitly confirmed.
