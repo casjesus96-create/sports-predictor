@@ -51,6 +51,7 @@ type HistoricalProfile = {
     legacy_service_stats_latest_match_date?: string | null;
     legacy_service_stats_age_days?: number | null;
     legacy_service_stats_window_matches?: number;
+    legacy_ranking_latest_in_window?: number | null;
     warning: string;
   };
   recent_matches: Array<{
@@ -1503,7 +1504,7 @@ export default function TennisApp() {
                         <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{profile.player_name}</h4>
                         <p style={{ margin: "0 0 12px", color: "#b7c8d8", fontSize: 12 }}>Histórico {profile.league} · 365 días · {isValuebetennisArchive ? "Resultados exactos · estadísticas de saque no vinculadas a esta muestra" : `${profile.data_quality.matches_with_service_stats} partidos con estadísticas de saque en la fuente histórica`}</p>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
-                          {(isValuebetennisArchive ? metrics.filter((metric) => !/saque|aces por partido|dobles faltas|puntos ganados|break points/i.test(metric.label)) : metrics).map((metric) => (
+                          {(isValuebetennisArchive ? metrics.filter((metric) => !/saque|aces por partido|dobles faltas|puntos ganados|break points|ranking/i.test(metric.label)) : metrics).map((metric) => (
                             <div key={metric.label} style={{ border: "1px solid #29445b", borderRadius: 8, padding: 9 }}>
                               <div style={{ fontSize: 11, color: "#b7c8d8", lineHeight: 1.35 }}>{metric.label}</div>
                               <strong style={{ display: "block", fontSize: 15, marginTop: 4, overflowWrap: "anywhere" }}>{metric.value}</strong>
