@@ -76,6 +76,20 @@ def test_archive_form_is_primary_and_legacy_stats_remain_provenance_only(monkeyp
     assert profile["data_quality"]["legacy_service_stats_age_days"] == 177
 
 
+def test_ambiguous_exact_archive_identity_never_falls_back_to_legacy(monkeypatch):
+    monkeypatch.setattr(
+        "tennis_history.get_player_archive_profile",
+        lambda **kwargs: {"identity_ambiguous": True},
+    )
+    monkeypatch.setattr(
+        "tennis_history.load_year",
+        lambda *args: (_ for _ in ()).throw(AssertionError("legacy fallback must not run")),
+    )
+
+    with pytest.raises(ValueError, match="Identidad ambigua"):
+        get_player_profile("Player One", "ATP", "2026-11-18", lookback_days=365)
+
+
 def test_archive_profile_survives_legacy_source_failure(monkeypatch):
     archived = {
         "success": True,
