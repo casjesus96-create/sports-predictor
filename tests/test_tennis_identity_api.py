@@ -116,7 +116,7 @@ def test_alias_conflict_is_never_overwritten(monkeypatch):
     }]
     client = Client({
         "tennis_archive_players": Query(players),
-        "tennis_player_aliases": Query([{"player_id": "555"}]),
+        "tennis_player_aliases": Query([{"league": "WTA", "alias_key": "guiomar maristany zuleta de reales", "player_id": "555"}]),
     })
     monkeypatch.setattr(identity, "get_supabase_client", lambda: client)
 
