@@ -35,6 +35,9 @@ class Query:
                 rows = [row for row in rows if row.get(key) == value]
             elif key == "alias_key":
                 rows = [row for row in rows if row.get(key) == value]
+        # Supabase creates a fresh query builder for each table(...).select(...).
+        # Reset filters so this lightweight fake does not leak predicates across calls.
+        self.filters = []
         return type("Result", (), {"data": rows})()
 
 
