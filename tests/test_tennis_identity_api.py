@@ -66,7 +66,7 @@ def test_player_search_returns_candidates_without_auto_resolving(monkeypatch):
 
 def test_confirm_alias_persists_only_after_explicit_player_id(monkeypatch):
     players = [{
-        "player_id": "13883", "player_name": "Guiomar Zuleta De Reales",
+        "league": "WTA", "player_id": "13883", "player_name": "Guiomar Zuleta De Reales",
         "player_name_key": "guiomar zuleta de reales",
     }]
     alias_table = Query([])
@@ -88,9 +88,9 @@ def test_confirm_alias_persists_only_after_explicit_player_id(monkeypatch):
 
 def test_alias_cannot_shadow_another_canonical_player(monkeypatch):
     players = [
-        {"player_id": "13883", "player_name": "Guiomar Zuleta De Reales",
+        {"league": "WTA", "player_id": "13883", "player_name": "Guiomar Zuleta De Reales",
          "player_name_key": "guiomar zuleta de reales"},
-        {"player_id": "999", "player_name": "Other Player",
+        {"league": "WTA", "player_id": "999", "player_name": "Other Player",
          "player_name_key": "guiomar maristany zuleta de reales"},
     ]
     client = Client({
@@ -108,7 +108,7 @@ def test_alias_cannot_shadow_another_canonical_player(monkeypatch):
 
 def test_alias_conflict_is_never_overwritten(monkeypatch):
     players = [{
-        "player_id": "13883", "player_name": "Guiomar Zuleta De Reales",
+        "league": "WTA", "player_id": "13883", "player_name": "Guiomar Zuleta De Reales",
         "player_name_key": "guiomar zuleta de reales",
     }]
     client = Client({
