@@ -250,10 +250,16 @@ def get_player_profile(
             lookback_days=int(lookback_days),
             surface=selected_surface,
         )
-        if archived_profile and archived_profile.get("identity_ambiguous"):
-            archived_profile = None
     except Exception as exc:
         logger.warning("Persistent tennis archive unavailable; using legacy source: %s", exc)
+
+    # An exact archive ambiguity is authoritative: never fall back to a
+    # name-only legacy source, which could silently select a namesake.
+    if archived_profile and archived_profile.get("identity_ambiguous"):
+        raise ValueError(
+            "Identidad ambigua: el nombre coincide con varios jugadores del archivo ATP/WTA. "
+            "Se necesita un identificador de jugador más preciso; no se usará el histórico aproximado."
+        )
 
     # Include enough recent seasons to cover the lookback window. The profile
     # uses event dates strictly earlier than cutoff to prevent target leakage.
